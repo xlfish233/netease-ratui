@@ -270,14 +270,34 @@ impl NeteaseClient {
         headers: HeaderMap,
         form: Vec<(&'static str, String)>,
     ) -> Result<Value, NeteaseError> {
-        let resp = self
+        let resp = match self
             .http
-            .post(url)
-            .headers(headers)
+            .post(url.clone())
+            .headers(headers.clone())
             .form(&form)
             .send()
             .await
-            .map_err(NeteaseError::Reqwest)?;
+        {
+            Ok(r) => r,
+            Err(e) => {
+                // 某些环境下 `interface.music.163.com` 可能 DNS 失败，降级到 `music.163.com`
+                if url.contains("https://interface.music.163.com/") {
+                    let fallback = url.replace(
+                        "https://interface.music.163.com/",
+                        "https://music.163.com/",
+                    );
+                    self.http
+                        .post(fallback)
+                        .headers(headers)
+                        .form(&form)
+                        .send()
+                        .await
+                        .map_err(NeteaseError::Reqwest)?
+                } else {
+                    return Err(NeteaseError::Reqwest(e));
+                }
+            }
+        };
 
         let set_cookies = resp
             .headers()

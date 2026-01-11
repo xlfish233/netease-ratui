@@ -20,6 +20,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // 便于排查二维码登录接口返回结构
+    if env::var("NETEASE_QR_KEY").ok().as_deref() == Some("1") {
+        let mut client = NeteaseClient::new(cfg)?;
+        let v = client.login_qr_key().await?;
+        println!("login_qr_key 响应: {v}");
+        let unikey = v
+            .pointer("/unikey")
+            .and_then(|x| x.as_str())
+            .or_else(|| v.pointer("/data/unikey").and_then(|x| x.as_str()))
+            .ok_or("未找到 unikey")?;
+        println!("unikey: {unikey}");
+        println!("qrurl: {}", client.login_qr_url(unikey, netease::QrPlatform::Pc));
+        return Ok(());
+    }
+
     let (tx, rx) = api_worker::spawn_api_worker(cfg);
     tui::run_tui(App::default(), tx, rx).await?;
     Ok(())
