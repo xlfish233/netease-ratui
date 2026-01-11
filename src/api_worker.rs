@@ -8,6 +8,7 @@ pub enum ApiRequest {
     LoginQrKey,
     LoginQrCheck { key: String },
     Search { keywords: String },
+    SongUrl { id: i64 },
 }
 
 #[derive(Debug)]
@@ -18,6 +19,7 @@ pub enum ApiEvent {
     LoginQrReady { unikey: String, url: String, ascii: String },
     LoginQrStatus { code: i64, message: String, logged_in: bool },
     SearchResult(Value),
+    SongUrlReady { id: i64, url: String },
 }
 
 pub fn spawn_api_worker(
@@ -94,6 +96,25 @@ pub fn spawn_api_worker(
                 ApiRequest::Search { keywords } => match client.cloudsearch(&keywords, 1, 30, 0).await {
                     Ok(v) => {
                         let _ = tx_evt.send(ApiEvent::SearchResult(v)).await;
+                    }
+                    Err(e) => {
+                        let _ = tx_evt.send(ApiEvent::Error(format!("{e}"))).await;
+                    }
+                },
+                ApiRequest::SongUrl { id } => match client.song_url(&[id], 999000).await {
+                    Ok(v) => {
+                        let url = v
+                            .pointer("/data/0/url")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_owned();
+                        if url.is_empty() {
+                            let _ = tx_evt
+                                .send(ApiEvent::Error(format!("未获取到播放链接，响应={v}")))
+                                .await;
+                            continue;
+                        }
+                        let _ = tx_evt.send(ApiEvent::SongUrlReady { id, url }).await;
                     }
                     Err(e) => {
                         let _ = tx_evt.send(ApiEvent::Error(format!("{e}"))).await;

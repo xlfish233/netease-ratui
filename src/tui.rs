@@ -1,4 +1,5 @@
 use crate::api_worker::{ApiEvent, ApiRequest};
+use crate::audio_worker::{AudioCommand, AudioEvent};
 use crate::app::{parse_search_songs, App, View};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -15,13 +16,16 @@ use ratatui::{
 };
 use std::io;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
+use std::sync::mpsc;
+use tokio::sync::mpsc as tokio_mpsc;
 
 pub async fn run_tui(
     mut app: App,
-    tx: mpsc::Sender<ApiRequest>,
-    mut rx: mpsc::Receiver<ApiEvent>,
+    tx: tokio_mpsc::Sender<ApiRequest>,
+    mut rx: tokio_mpsc::Receiver<ApiEvent>,
 ) -> io::Result<()> {
+    let (tx_audio, rx_audio) = crate::audio_worker::spawn_audio_worker();
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -34,7 +38,10 @@ pub async fn run_tui(
 
     loop {
         while let Ok(evt) = rx.try_recv() {
-            handle_api_event(&mut app, evt);
+            handle_api_event(&mut app, evt, &tx_audio);
+        }
+        while let Ok(evt) = rx_audio.try_recv() {
+            handle_audio_event(&mut app, evt);
         }
 
         if app.login_unikey.is_some() && !app.logged_in && last_qr_poll.elapsed() >= Duration::from_secs(2) {
@@ -49,7 +56,7 @@ pub async fn run_tui(
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if handle_key(&mut app, key, &tx).await {
+                if handle_key(&mut app, key, &tx, &tx_audio).await {
                     break;
                 }
             }
@@ -66,7 +73,7 @@ pub async fn run_tui(
     Ok(())
 }
 
-fn handle_api_event(app: &mut App, evt: ApiEvent) {
+fn handle_api_event(app: &mut App, evt: ApiEvent, tx_audio: &mpsc::Sender<AudioCommand>) {
     match evt {
         ApiEvent::Info(s) => match app.view {
             View::Login => app.login_status = s,
@@ -105,10 +112,41 @@ fn handle_api_event(app: &mut App, evt: ApiEvent) {
             app.search_selected = 0;
             app.search_status = format!("结果: {} 首", app.search_results.len());
         }
+        ApiEvent::SongUrlReady { id: _, url } => {
+            let title = selected_song_title(app);
+            app.play_status = "开始播放...".to_owned();
+            let _ = tx_audio.send(AudioCommand::PlayUrl { url, title });
+        }
     }
 }
 
-async fn handle_key(app: &mut App, key: KeyEvent, tx: &mpsc::Sender<ApiRequest>) -> bool {
+fn handle_audio_event(app: &mut App, evt: AudioEvent) {
+    match evt {
+        AudioEvent::NowPlaying { title } => {
+            app.now_playing = Some(title);
+            app.paused = false;
+            app.play_status = "播放中".to_owned();
+        }
+        AudioEvent::Paused(p) => {
+            app.paused = p;
+            app.play_status = if p { "已暂停" } else { "播放中" }.to_owned();
+        }
+        AudioEvent::Stopped => {
+            app.paused = false;
+            app.play_status = "已停止".to_owned();
+        }
+        AudioEvent::Error(e) => {
+            app.play_status = format!("播放错误: {e}");
+        }
+    }
+}
+
+async fn handle_key(
+    app: &mut App,
+    key: KeyEvent,
+    tx: &tokio_mpsc::Sender<ApiRequest>,
+    tx_audio: &mpsc::Sender<AudioCommand>,
+) -> bool {
     match key {
         KeyEvent {
             code: KeyCode::Char('q'),
@@ -140,6 +178,18 @@ async fn handle_key(app: &mut App, key: KeyEvent, tx: &mpsc::Sender<ApiRequest>)
             _ => {}
         },
         View::Search => match key.code {
+            KeyCode::Char('p') => {
+                if let Some(s) = app.search_results.get(app.search_selected) {
+                    app.play_status = "获取播放链接...".to_owned();
+                    let _ = tx.send(ApiRequest::SongUrl { id: s.id }).await;
+                }
+            }
+            KeyCode::Char(' ') => {
+                let _ = tx_audio.send(AudioCommand::TogglePause);
+            }
+            KeyCode::Char('s') => {
+                let _ = tx_audio.send(AudioCommand::Stop);
+            }
             KeyCode::Enter => {
                 let q = app.search_input.trim().to_owned();
                 if q.is_empty() {
@@ -240,7 +290,11 @@ fn draw_login(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) {
 fn draw_search(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(8), Constraint::Length(3)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(8),
+            Constraint::Length(5),
+        ])
         .split(area);
 
     let input = Paragraph::new(app.search_input.as_str())
@@ -262,11 +316,12 @@ fn draw_search(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
         .highlight_style(Style::default().fg(Color::Yellow));
     f.render_stateful_widget(list, chunks[1], &mut list_state(app.search_selected));
 
+    let now = app.now_playing.as_deref().unwrap_or("-");
     let status = Paragraph::new(format!(
-        "状态: {} | 操作: 输入/回车搜索/↑↓选择 | Tab 切换 | q 退出",
-        app.search_status
+        "搜索: {}\n播放: {} | Now: {}\n操作: 输入/回车搜索/↑↓选择 | p 播放 | 空格 暂停/继续 | s 停止 | q 退出",
+        app.search_status, app.play_status, now
     ))
-    .block(Block::default().borders(Borders::ALL).title("信息"));
+    .block(Block::default().borders(Borders::ALL).title("状态"));
     f.render_widget(status, chunks[2]);
 }
 
@@ -274,4 +329,11 @@ fn list_state(selected: usize) -> ratatui::widgets::ListState {
     let mut st = ratatui::widgets::ListState::default();
     st.select(Some(selected));
     st
+}
+
+fn selected_song_title(app: &App) -> String {
+    app.search_results
+        .get(app.search_selected)
+        .map(|s| format!("{} - {}", s.name, s.artists))
+        .unwrap_or_else(|| "未知歌曲".to_owned())
 }

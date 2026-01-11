@@ -1,5 +1,6 @@
 mod api_worker;
 mod app;
+mod audio_worker;
 mod netease;
 mod tui;
 

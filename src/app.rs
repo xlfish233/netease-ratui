@@ -27,6 +27,10 @@ pub struct App {
     pub search_results: Vec<Song>,
     pub search_selected: usize,
     pub search_status: String,
+
+    pub now_playing: Option<String>,
+    pub play_status: String,
+    pub paused: bool,
 }
 
 impl Default for App {
@@ -42,6 +46,9 @@ impl Default for App {
             search_results: Vec::new(),
             search_selected: 0,
             search_status: "输入关键词，回车搜索".to_owned(),
+            now_playing: None,
+            play_status: "未播放".to_owned(),
+            paused: false,
         }
     }
 }
