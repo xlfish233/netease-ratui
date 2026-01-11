@@ -1,24 +1,38 @@
 use reqwest::blocking::Client;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::env;
+use std::fs;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 
 #[derive(Debug)]
 pub enum AudioCommand {
-    PlayUrl { url: String, title: String },
+    PlayTrack {
+        id: i64,
+        br: i64,
+        url: String,
+        title: String,
+    },
     TogglePause,
     Stop,
+    SeekToMs(u64),
+    SetVolume(f32),
 }
 
 #[derive(Debug)]
 pub enum AudioEvent {
     NowPlaying {
+        song_id: i64,
         play_id: u64,
         title: String,
         duration_ms: Option<u64>,
@@ -31,7 +45,9 @@ pub enum AudioEvent {
     Error(String),
 }
 
-pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<AudioEvent>) {
+pub fn spawn_audio_worker(
+    data_dir: PathBuf,
+) -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<AudioEvent>) {
     let (tx_cmd, rx_cmd) = mpsc::channel::<AudioCommand>();
     let (tx_evt, rx_evt) = mpsc::channel::<AudioEvent>();
 
@@ -52,14 +68,16 @@ pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<Audio
         };
 
         let _stream_guard = stream;
-        let mut state = PlayerState::new(handle);
+        let cache = AudioCache::new(&data_dir);
+        let mut state = PlayerState::new(handle, cache);
 
         while let Ok(cmd) = rx_cmd.recv() {
             match cmd {
-                AudioCommand::PlayUrl { url, title } => {
-                    match play_url(&http, &tx_evt, &mut state, &url, &title) {
+                AudioCommand::PlayTrack { id, br, url, title } => {
+                    match play_track(&http, &tx_evt, &mut state, id, br, &url, &title) {
                         Ok((play_id, duration_ms)) => {
                             let _ = tx_evt.send(AudioEvent::NowPlaying {
+                                song_id: id,
                                 play_id,
                                 title,
                                 duration_ms,
@@ -74,9 +92,11 @@ pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<Audio
                     if let Some(sink) = state.sink.as_ref() {
                         if sink.is_paused() {
                             sink.play();
+                            state.paused = false;
                             let _ = tx_evt.send(AudioEvent::Paused(false));
                         } else {
                             sink.pause();
+                            state.paused = true;
                             let _ = tx_evt.send(AudioEvent::Paused(true));
                         }
                     }
@@ -84,6 +104,17 @@ pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<Audio
                 AudioCommand::Stop => {
                     state.stop();
                     let _ = tx_evt.send(AudioEvent::Stopped);
+                }
+                AudioCommand::SeekToMs(ms) => {
+                    if let Err(e) = seek_to_ms(&tx_evt, &mut state, ms) {
+                        let _ = tx_evt.send(AudioEvent::Error(e));
+                    }
+                }
+                AudioCommand::SetVolume(v) => {
+                    state.volume = v.clamp(0.0, 2.0);
+                    if let Some(sink) = state.sink.as_ref() {
+                        sink.set_volume(state.volume);
+                    }
                 }
             }
         }
@@ -95,19 +126,27 @@ pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<Audio
 struct PlayerState {
     handle: OutputStreamHandle,
     sink: Option<Arc<Sink>>,
-    _temp: Option<NamedTempFile>,
+    temp: Option<NamedTempFile>,
+    path: Option<PathBuf>,
     end_cancel: Option<Arc<AtomicBool>>,
     play_id: u64,
+    paused: bool,
+    volume: f32,
+    cache: AudioCache,
 }
 
 impl PlayerState {
-    fn new(handle: OutputStreamHandle) -> Self {
+    fn new(handle: OutputStreamHandle, cache: AudioCache) -> Self {
         Self {
             handle,
             sink: None,
-            _temp: None,
+            temp: None,
+            path: None,
             end_cancel: None,
             play_id: 0,
+            paused: false,
+            volume: 1.0,
+            cache,
         }
     }
 
@@ -119,22 +158,351 @@ impl PlayerState {
         if let Some(s) = self.sink.take() {
             s.stop();
         }
-        self._temp = None;
+        self.temp = None;
+        self.path = None;
+    }
+
+    fn restart_keep_play_id(&mut self) {
+        if let Some(c) = self.end_cancel.take() {
+            c.store(true, Ordering::Relaxed);
+        }
+        if let Some(s) = self.sink.take() {
+            s.stop();
+        }
     }
 }
 
-fn play_url(
+fn play_track(
     http: &Client,
     tx_evt: &mpsc::Sender<AudioEvent>,
     state: &mut PlayerState,
+    song_id: i64,
+    br: i64,
     url: &str,
     title: &str,
 ) -> Result<(u64, Option<u64>), String> {
     state.stop();
 
-    let mut tmp = NamedTempFile::new().map_err(|e| format!("创建临时文件失败: {e}"))?;
-    let path = tmp.path().to_path_buf();
+    let resolved = state
+        .cache
+        .resolve_audio_file(http, song_id, br, url, title)?;
+    let is_cached = matches!(resolved, ResolvedAudio::Path(_));
+    let path = match resolved {
+        ResolvedAudio::Path(path) => {
+            state.temp = None;
+            path
+        }
+        ResolvedAudio::Temp(tmp) => {
+            let path = tmp.path().to_path_buf();
+            state.temp = Some(tmp);
+            path
+        }
+    };
+    state.path = Some(path.clone());
 
+    let (sink, duration_ms) = match build_sink_from_path(&state.handle, &path, None, title) {
+        Ok(v) => v,
+        Err(e) => {
+            // 如果是缓存文件损坏/解码失败，清掉缓存并重试一次下载
+            if is_cached {
+                state.cache.invalidate(song_id, br);
+                let resolved = state
+                    .cache
+                    .resolve_audio_file(http, song_id, br, url, title)?;
+                let path = match resolved {
+                    ResolvedAudio::Path(path) => {
+                        state.temp = None;
+                        path
+                    }
+                    ResolvedAudio::Temp(tmp) => {
+                        let path = tmp.path().to_path_buf();
+                        state.temp = Some(tmp);
+                        path
+                    }
+                };
+                state.path = Some(path.clone());
+                build_sink_from_path(&state.handle, &path, None, title)?
+            } else {
+                return Err(e);
+            }
+        }
+    };
+    sink.set_volume(state.volume);
+    if state.paused {
+        sink.pause();
+    } else {
+        sink.play();
+    }
+    let sink = Arc::new(sink);
+
+    let play_id = state.play_id;
+    let tx_end = tx_evt.clone();
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.end_cancel = Some(Arc::clone(&cancel));
+    let sink_end = Arc::clone(&sink);
+    thread::spawn(move || {
+        sink_end.sleep_until_end();
+        if !cancel.load(Ordering::Relaxed) {
+            let _ = tx_end.send(AudioEvent::Ended { play_id });
+        }
+    });
+
+    state.sink = Some(sink);
+    Ok((play_id, duration_ms))
+}
+
+fn seek_to_ms(
+    tx_evt: &mpsc::Sender<AudioEvent>,
+    state: &mut PlayerState,
+    position_ms: u64,
+) -> Result<(), String> {
+    let Some(path) = state.path.clone() else {
+        return Ok(());
+    };
+
+    state.restart_keep_play_id();
+
+    let seek = Duration::from_millis(position_ms);
+    let (sink, _duration_ms) = build_sink_from_path(&state.handle, &path, Some(seek), "seek")?;
+    sink.set_volume(state.volume);
+    if state.paused {
+        sink.pause();
+    } else {
+        sink.play();
+    }
+    let sink = Arc::new(sink);
+
+    let play_id = state.play_id;
+    let tx_end = tx_evt.clone();
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.end_cancel = Some(Arc::clone(&cancel));
+    let sink_end = Arc::clone(&sink);
+    thread::spawn(move || {
+        sink_end.sleep_until_end();
+        if !cancel.load(Ordering::Relaxed) {
+            let _ = tx_end.send(AudioEvent::Ended { play_id });
+        }
+    });
+
+    state.sink = Some(sink);
+    Ok(())
+}
+
+fn build_sink_from_path(
+    handle: &OutputStreamHandle,
+    path: &Path,
+    seek: Option<Duration>,
+    title: &str,
+) -> Result<(Sink, Option<u64>), String> {
+    let file = File::open(path).map_err(|e| format!("打开音频文件失败({title}): {e}"))?;
+    let decoder =
+        Decoder::new(BufReader::new(file)).map_err(|e| format!("解码失败({title}): {e}"))?;
+    let duration_ms = decoder.total_duration().map(|d| d.as_millis() as u64);
+    let source: Box<dyn Source<Item = i16> + Send> = if let Some(seek) = seek {
+        Box::new(decoder.skip_duration(seek))
+    } else {
+        Box::new(decoder)
+    };
+
+    let sink = Sink::try_new(handle).map_err(|e| format!("创建 Sink 失败: {e}"))?;
+    sink.append(source);
+    Ok((sink, duration_ms))
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct CacheIndex {
+    entries: HashMap<String, CacheEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CacheEntry {
+    file_name: String,
+    size_bytes: u64,
+    last_access_ms: u64,
+}
+
+enum ResolvedAudio {
+    Path(PathBuf),
+    Temp(NamedTempFile),
+}
+
+struct AudioCache {
+    dir: Option<PathBuf>,
+    index_path: Option<PathBuf>,
+    index: CacheIndex,
+    max_bytes: u64,
+}
+
+impl AudioCache {
+    fn new(data_dir: &Path) -> Self {
+        let max_bytes = env::var("NETEASE_AUDIO_CACHE_MAX_MB")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(2048)
+            .saturating_mul(1024)
+            .saturating_mul(1024);
+
+        let dir = data_dir.join("audio_cache");
+        if fs::create_dir_all(&dir).is_err() {
+            return Self {
+                dir: None,
+                index_path: None,
+                index: CacheIndex::default(),
+                max_bytes,
+            };
+        }
+
+        let index_path = dir.join("index.json");
+        let index = fs::read(&index_path)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<CacheIndex>(&b).ok())
+            .unwrap_or_default();
+
+        Self {
+            dir: Some(dir),
+            index_path: Some(index_path),
+            index,
+            max_bytes,
+        }
+    }
+
+    fn resolve_audio_file(
+        &mut self,
+        http: &Client,
+        song_id: i64,
+        br: i64,
+        url: &str,
+        title: &str,
+    ) -> Result<ResolvedAudio, String> {
+        let Some(dir) = self.dir.as_ref() else {
+            // fallback: no cache dir
+            let mut tmp = NamedTempFile::new().map_err(|e| format!("创建临时文件失败: {e}"))?;
+            download_to_file(http, &mut tmp, url, title)?;
+            return Ok(ResolvedAudio::Temp(tmp));
+        };
+
+        let key = format!("{song_id}_{br}");
+        let file_name = format!("{key}.bin");
+        let path = dir.join(&file_name);
+
+        if path.exists() {
+            self.touch(&key, &file_name, &path);
+            self.persist_index();
+            return Ok(ResolvedAudio::Path(path));
+        }
+
+        let mut tmp = NamedTempFile::new_in(dir)
+            .map_err(|e| format!("创建缓存临时文件失败({title}): {e}"))?;
+        download_to_file(http, &mut tmp, url, title)?;
+
+        if path.exists() {
+            let _ = fs::remove_file(&path);
+        }
+
+        tmp.persist(&path)
+            .map_err(|e| format!("写入缓存文件失败({title}): {e}"))?;
+
+        self.touch(&key, &file_name, &path);
+        self.cleanup(Some(&path));
+        self.persist_index();
+
+        Ok(ResolvedAudio::Path(path))
+    }
+
+    fn touch(&mut self, key: &str, file_name: &str, path: &Path) {
+        let size_bytes = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        self.index.entries.insert(
+            key.to_owned(),
+            CacheEntry {
+                file_name: file_name.to_owned(),
+                size_bytes,
+                last_access_ms: now_ms(),
+            },
+        );
+    }
+
+    fn cleanup(&mut self, keep: Option<&Path>) {
+        let Some(dir) = self.dir.as_ref() else {
+            return;
+        };
+
+        // remove missing
+        self.index
+            .entries
+            .retain(|_, ent| dir.join(&ent.file_name).exists());
+
+        let mut total: u64 = self.index.entries.values().map(|e| e.size_bytes).sum();
+        if total <= self.max_bytes {
+            return;
+        }
+
+        let mut entries = self
+            .index
+            .entries
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.to_owned(),
+                    v.last_access_ms,
+                    v.file_name.clone(),
+                    v.size_bytes,
+                )
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by_key(|(_, ts, _, _)| *ts);
+
+        for (k, _ts, file_name, size) in entries {
+            if total <= self.max_bytes {
+                break;
+            }
+            let p = dir.join(&file_name);
+            if keep.is_some_and(|kp| kp == p.as_path()) {
+                continue;
+            }
+            let _ = fs::remove_file(&p);
+            self.index.entries.remove(&k);
+            total = total.saturating_sub(size);
+        }
+    }
+
+    fn persist_index(&self) {
+        let (Some(dir), Some(index_path)) = (self.dir.as_ref(), self.index_path.as_ref()) else {
+            return;
+        };
+        let bytes = match serde_json::to_vec_pretty(&self.index) {
+            Ok(b) => b,
+            Err(_) => return,
+        };
+        let mut tmp = match NamedTempFile::new_in(dir) {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        if tmp.write_all(&bytes).is_err() {
+            return;
+        }
+        let _ = tmp.persist(index_path);
+    }
+
+    fn invalidate(&mut self, song_id: i64, br: i64) {
+        let Some(dir) = self.dir.as_ref() else {
+            return;
+        };
+        let key = format!("{song_id}_{br}");
+        if let Some(ent) = self.index.entries.remove(&key) {
+            let _ = fs::remove_file(dir.join(ent.file_name));
+        } else {
+            let _ = fs::remove_file(dir.join(format!("{key}.bin")));
+        }
+        self.persist_index();
+    }
+}
+
+fn download_to_file(
+    http: &Client,
+    out: &mut NamedTempFile,
+    url: &str,
+    title: &str,
+) -> Result<(), String> {
     let mut resp = http
         .get(url)
         .send()
@@ -151,35 +519,15 @@ fn play_url(
         if n == 0 {
             break;
         }
-        tmp.write_all(&buf[..n])
+        out.write_all(&buf[..n])
             .map_err(|e| format!("写入临时文件失败({title}): {e}"))?;
     }
+    Ok(())
+}
 
-    let file = File::open(&path).map_err(|e| format!("打开临时文件失败({title}): {e}"))?;
-    let source =
-        Decoder::new(BufReader::new(file)).map_err(|e| format!("解码失败({title}): {e}"))?;
-    let duration_ms = source
-        .total_duration()
-        .map(|d: std::time::Duration| d.as_millis() as u64);
-
-    let sink = Sink::try_new(&state.handle).map_err(|e| format!("创建 Sink 失败: {e}"))?;
-    sink.append(source);
-    sink.play();
-    let sink = Arc::new(sink);
-
-    let play_id = state.play_id;
-    let tx_end = tx_evt.clone();
-    let cancel = Arc::new(AtomicBool::new(false));
-    state.end_cancel = Some(Arc::clone(&cancel));
-    let sink_end = Arc::clone(&sink);
-    thread::spawn(move || {
-        sink_end.sleep_until_end();
-        if !cancel.load(Ordering::Relaxed) {
-            let _ = tx_end.send(AudioEvent::Ended { play_id });
-        }
-    });
-
-    state.sink = Some(sink);
-    state._temp = Some(tmp);
-    Ok((play_id, duration_ms))
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }

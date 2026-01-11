@@ -16,6 +16,14 @@ pub enum PlaylistMode {
     Tracks,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayMode {
+    Sequential,
+    ListLoop,
+    SingleLoop,
+    Shuffle,
+}
+
 #[derive(Debug, Clone)]
 pub struct App {
     pub view: View,
@@ -41,6 +49,10 @@ pub struct App {
     pub play_id: Option<u64>,
     pub queue: Vec<Song>,
     pub queue_pos: Option<usize>,
+    pub play_mode: PlayMode,
+    pub volume: f32,
+    pub play_song_id: Option<i64>,
+    pub play_error_count: u32,
 
     pub account_uid: Option<i64>,
     pub account_nickname: Option<String>,
@@ -75,6 +87,10 @@ impl Default for App {
             play_id: None,
             queue: Vec::new(),
             queue_pos: None,
+            play_mode: PlayMode::ListLoop,
+            volume: 1.0,
+            play_song_id: None,
+            play_error_count: 0,
             account_uid: None,
             account_nickname: None,
             playlists: Vec::new(),

@@ -107,6 +107,49 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
         _ => {}
     }
 
+    // Global player controls (avoid interfering with text input as much as possible)
+    match (key.code, key.modifiers) {
+        (KeyCode::Char(' '), _) => {
+            let _ = tx.send(AppCommand::PlayerTogglePause).await;
+            return false;
+        }
+        (KeyCode::Char('['), _) => {
+            let _ = tx.send(AppCommand::PlayerPrev).await;
+            return false;
+        }
+        (KeyCode::Char(']'), _) => {
+            let _ = tx.send(AppCommand::PlayerNext).await;
+            return false;
+        }
+        (KeyCode::Char('M'), _) => {
+            let _ = tx.send(AppCommand::PlayerCycleMode).await;
+            return false;
+        }
+        (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => {
+            let _ = tx.send(AppCommand::PlayerStop).await;
+            return false;
+        }
+        (KeyCode::Left, m) if m.contains(KeyModifiers::CONTROL) => {
+            let _ = tx
+                .send(AppCommand::PlayerSeekBackwardMs { ms: 5_000 })
+                .await;
+            return false;
+        }
+        (KeyCode::Right, m) if m.contains(KeyModifiers::CONTROL) => {
+            let _ = tx.send(AppCommand::PlayerSeekForwardMs { ms: 5_000 }).await;
+            return false;
+        }
+        (KeyCode::Up, m) if m.contains(KeyModifiers::ALT) => {
+            let _ = tx.send(AppCommand::PlayerVolumeUp).await;
+            return false;
+        }
+        (KeyCode::Down, m) if m.contains(KeyModifiers::ALT) => {
+            let _ = tx.send(AppCommand::PlayerVolumeDown).await;
+            return false;
+        }
+        _ => {}
+    }
+
     match app.view {
         View::Login => {
             if let KeyCode::Char('l') = key.code {
@@ -139,23 +182,11 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
                     let _ = tx.send(AppCommand::PlaylistTracksMoveDown).await;
                 }
             },
-            KeyCode::Char(' ') => {
-                let _ = tx.send(AppCommand::PlayerTogglePause).await;
-            }
-            KeyCode::Char('s') => {
-                let _ = tx.send(AppCommand::PlayerStop).await;
-            }
             _ => {}
         },
         View::Search => match key.code {
             KeyCode::Char('p') => {
                 let _ = tx.send(AppCommand::SearchPlaySelected).await;
-            }
-            KeyCode::Char(' ') => {
-                let _ = tx.send(AppCommand::PlayerTogglePause).await;
-            }
-            KeyCode::Char('s') => {
-                let _ = tx.send(AppCommand::PlayerStop).await;
             }
             KeyCode::Enter => {
                 let _ = tx.send(AppCommand::SearchSubmit).await;
@@ -420,7 +451,7 @@ fn draw_player_status(
     );
 
     let status = Paragraph::new(format!(
-        "{}: {}\n播放: {} | Now: {}\n时间: {}\n操作: p 播放 | 空格 暂停/继续 | s 停止 | q 退出",
+        "{}: {}\n播放: {} | Now: {}\n时间: {}\n操作: 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | q 退出",
         context_label, context_value, app.play_status, now, time_text
     ))
     .block(Block::default().borders(Borders::ALL).title(title));
@@ -428,7 +459,7 @@ fn draw_player_status(
 
     // 底栏帮助提示
     let help = Paragraph::new(
-        "帮助: Tab 切换页 | ↑↓ 选择 | Enter 打开歌单 | p 播放 | 空格 暂停/继续 | s 停止 | q 退出",
+        "帮助: Tab 切换页 | ↑↓ 选择 | Enter 打开歌单 | p 播放选中 | 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | q 退出",
     )
     .block(Block::default().borders(Borders::ALL).title("帮助"));
     f.render_widget(help, status_chunks[1]);

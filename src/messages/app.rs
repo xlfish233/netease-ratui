@@ -20,6 +20,13 @@ pub enum AppCommand {
     Back,
     PlayerTogglePause,
     PlayerStop,
+    PlayerPrev,
+    PlayerNext,
+    PlayerSeekBackwardMs { ms: u64 },
+    PlayerSeekForwardMs { ms: u64 },
+    PlayerVolumeDown,
+    PlayerVolumeUp,
+    PlayerCycleMode,
     Quit,
 }
 
