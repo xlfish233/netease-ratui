@@ -63,9 +63,12 @@ pub fn spawn_app_actor(
                     {
                         let id = next_id(&mut req_id);
                         pending_login_poll = Some(id);
-                        let _ = tx_netease_hi
+                        if let Err(e) = tx_netease_hi
                             .send(NeteaseCommand::LoginQrCheck { req_id: id, key })
-                            .await;
+                            .await
+                        {
+                            tracing::warn!(err = %e, "NeteaseActor 通道已关闭：LoginQrCheck 发送失败");
+                        }
                     }
                 }
                 Some(cmd) = rx_cmd.recv() => {
@@ -75,7 +78,11 @@ pub fn spawn_app_actor(
                             app.login_status = "初始化中...".to_owned();
                             push_state(&tx_evt, &app).await;
                             let id = next_id(&mut req_id);
-                            let _ = tx_netease_hi.send(NeteaseCommand::Init { req_id: id }).await;
+                            if let Err(e) =
+                                tx_netease_hi.send(NeteaseCommand::Init { req_id: id }).await
+                            {
+                                tracing::warn!(err = %e, "NeteaseActor 通道已关闭：Init 发送失败");
+                            }
                         }
                         AppCommand::TabNext => {
                             if app.logged_in {
@@ -105,7 +112,11 @@ pub fn spawn_app_actor(
                             push_state(&tx_evt, &app).await;
                             let id = next_id(&mut req_id);
                             pending_login_qr_key = Some(id);
-                            let _ = tx_netease_hi.send(NeteaseCommand::LoginQrKey { req_id: id }).await;
+                            if let Err(e) =
+                                tx_netease_hi.send(NeteaseCommand::LoginQrKey { req_id: id }).await
+                            {
+                                tracing::warn!(err = %e, "NeteaseActor 通道已关闭：LoginQrKey 发送失败");
+                            }
                         }
                         AppCommand::SearchSubmit => {
                             let q = app.search_input.trim().to_owned();
@@ -120,7 +131,17 @@ pub fn spawn_app_actor(
                             push_state(&tx_evt, &app).await;
                             let id = next_id(&mut req_id);
                             pending_search = Some(id);
-                            let _ = tx_netease_hi.send(NeteaseCommand::CloudSearchSongs { req_id: id, keywords: q, limit: 30, offset: 0 }).await;
+                            if let Err(e) = tx_netease_hi
+                                .send(NeteaseCommand::CloudSearchSongs {
+                                    req_id: id,
+                                    keywords: q,
+                                    limit: 30,
+                                    offset: 0,
+                                })
+                                .await
+                            {
+                                tracing::warn!(err = %e, "NeteaseActor 通道已关闭：CloudSearchSongs 发送失败");
+                            }
                         }
                         AppCommand::SearchInputBackspace => {
                             app.search_input.pop();
@@ -294,15 +315,21 @@ pub fn spawn_app_actor(
                             if matches!(app.view, View::Lyrics) {
                                 app.lyrics_offset_ms = app.lyrics_offset_ms.saturating_add(ms);
                                 sync_settings_from_app(&mut settings, &app);
-                                let _ = settings::save_settings(&data_dir, &settings);
+                                if let Err(e) = settings::save_settings(&data_dir, &settings) {
+                                    tracing::warn!(err = %e, "保存设置失败");
+                                }
                                 push_state(&tx_evt, &app).await;
                             }
                         }
                         AppCommand::PlayerTogglePause => {
-                            let _ = tx_audio.send(AudioCommand::TogglePause);
+                            if tx_audio.send(AudioCommand::TogglePause).is_err() {
+                                tracing::warn!("AudioWorker 通道已关闭：TogglePause 发送失败");
+                            }
                         }
                         AppCommand::PlayerStop => {
-                            let _ = tx_audio.send(AudioCommand::Stop);
+                            if tx_audio.send(AudioCommand::Stop).is_err() {
+                                tracing::warn!("AudioWorker 通道已关闭：Stop 发送失败");
+                            }
                         }
                         AppCommand::PlayerPrev => {
                             playback::play_prev(
@@ -334,16 +361,24 @@ pub fn spawn_app_actor(
                         }
                         AppCommand::PlayerVolumeDown => {
                             app.volume = (app.volume - 0.1).clamp(0.0, 2.0);
-                            let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+                            if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
+                                tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
+                            }
                             sync_settings_from_app(&mut settings, &app);
-                            let _ = settings::save_settings(&data_dir, &settings);
+                            if let Err(e) = settings::save_settings(&data_dir, &settings) {
+                                tracing::warn!(err = %e, "保存设置失败");
+                            }
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::PlayerVolumeUp => {
                             app.volume = (app.volume + 0.1).clamp(0.0, 2.0);
-                            let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+                            if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
+                                tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
+                            }
                             sync_settings_from_app(&mut settings, &app);
-                            let _ = settings::save_settings(&data_dir, &settings);
+                            if let Err(e) = settings::save_settings(&data_dir, &settings) {
+                                tracing::warn!(err = %e, "保存设置失败");
+                            }
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::PlayerCycleMode => {
@@ -351,7 +386,9 @@ pub fn spawn_app_actor(
                             app.play_status =
                                 format!("播放模式: {}", playback::play_mode_label(app.play_mode));
                             sync_settings_from_app(&mut settings, &app);
-                            let _ = settings::save_settings(&data_dir, &settings);
+                            if let Err(e) = settings::save_settings(&data_dir, &settings) {
+                                tracing::warn!(err = %e, "保存设置失败");
+                            }
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::SettingsMoveUp => {
@@ -370,8 +407,12 @@ pub fn spawn_app_actor(
                             if matches!(app.view, View::Settings) {
                                 apply_settings_adjust(&mut app, -1);
                                 sync_settings_from_app(&mut settings, &app);
-                                let _ = settings::save_settings(&data_dir, &settings);
-                                let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+                                if let Err(e) = settings::save_settings(&data_dir, &settings) {
+                                    tracing::warn!(err = %e, "保存设置失败");
+                                }
+                                if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
+                                    tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
+                                }
                                 push_state(&tx_evt, &app).await;
                             }
                         }
@@ -379,8 +420,12 @@ pub fn spawn_app_actor(
                             if matches!(app.view, View::Settings) {
                                 apply_settings_adjust(&mut app, 1);
                                 sync_settings_from_app(&mut settings, &app);
-                                let _ = settings::save_settings(&data_dir, &settings);
-                                let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+                                if let Err(e) = settings::save_settings(&data_dir, &settings) {
+                                    tracing::warn!(err = %e, "保存设置失败");
+                                }
+                                if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
+                                    tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
+                                }
                                 push_state(&tx_evt, &app).await;
                             }
                         }
@@ -389,7 +434,9 @@ pub fn spawn_app_actor(
                                 if is_clear_cache_selected(&app) {
                                     app.settings_status = "正在清除音频缓存...".to_owned();
                                     tracing::info!("用户触发：清除音频缓存");
-                                    let _ = tx_audio.send(AudioCommand::ClearCache);
+                                    if tx_audio.send(AudioCommand::ClearCache).is_err() {
+                                        tracing::warn!("AudioWorker 通道已关闭：ClearCache 发送失败");
+                                    }
                                     push_state(&tx_evt, &app).await;
                                 } else if is_logout_selected(&app) {
                                     if !app.logged_in {
@@ -399,11 +446,16 @@ pub fn spawn_app_actor(
                                     }
 
                                     tracing::info!("用户触发：退出登录");
-                                    let _ = tx_audio.send(AudioCommand::Stop);
+                                    if tx_audio.send(AudioCommand::Stop).is_err() {
+                                        tracing::warn!("AudioWorker 通道已关闭：Stop 发送失败");
+                                    }
                                     let id = next_id(&mut req_id);
-                                    let _ = tx_netease_hi
+                                    if let Err(e) = tx_netease_hi
                                         .send(NeteaseCommand::LogoutLocal { req_id: id })
-                                        .await;
+                                        .await
+                                    {
+                                        tracing::warn!(err = %e, "NeteaseActor 通道已关闭：LogoutLocal 发送失败");
+                                    }
 
                                     pending_search = None;
                                     pending_song_url = None;
@@ -439,7 +491,12 @@ pub fn spawn_app_actor(
                                 push_state(&tx_evt, &app).await;
                                 let id = next_id(&mut req_id);
                                 pending_account = Some(id);
-                                let _ = tx_netease_hi.send(NeteaseCommand::UserAccount { req_id: id }).await;
+                                if let Err(e) = tx_netease_hi
+                                    .send(NeteaseCommand::UserAccount { req_id: id })
+                                    .await
+                                {
+                                    tracing::warn!(err = %e, "NeteaseActor 通道已关闭：UserAccount 发送失败");
+                                }
                             } else {
                                 app.login_status = "按 l 生成二维码；q 退出；Tab 切换页面".to_owned();
                                 push_state(&tx_evt, &app).await;
@@ -470,7 +527,12 @@ pub fn spawn_app_actor(
                                 push_state(&tx_evt, &app).await;
                                 let id = next_id(&mut req_id);
                                 pending_account = Some(id);
-                                let _ = tx_netease_hi.send(NeteaseCommand::UserAccount { req_id: id }).await;
+                                if let Err(e) = tx_netease_hi
+                                    .send(NeteaseCommand::UserAccount { req_id: id })
+                                    .await
+                                {
+                                    tracing::warn!(err = %e, "NeteaseActor 通道已关闭：UserAccount 发送失败");
+                                }
                             } else {
                                 app.login_status = format!("扫码状态 code={} {}", status.code, status.message);
                                 push_state(&tx_evt, &app).await;
@@ -486,7 +548,15 @@ pub fn spawn_app_actor(
                             push_state(&tx_evt, &app).await;
                             let id = next_id(&mut req_id);
                             pending_playlists = Some(id);
-                            let _ = tx_netease_hi.send(NeteaseCommand::UserPlaylists { req_id: id, uid: app.account_uid.unwrap_or_default() }).await;
+                            if let Err(e) = tx_netease_hi
+                                .send(NeteaseCommand::UserPlaylists {
+                                    req_id: id,
+                                    uid: app.account_uid.unwrap_or_default(),
+                                })
+                                .await
+                            {
+                                tracing::warn!(err = %e, "NeteaseActor 通道已关闭：UserPlaylists 发送失败");
+                            }
                         }
                         NeteaseEvent::Playlists { req_id: id, playlists } => {
                             if pending_playlists != Some(id) {
@@ -631,12 +701,17 @@ pub fn spawn_app_actor(
                                 app.play_status = "开始播放...".to_owned();
                                 app.play_song_id = Some(song_url.id);
                                 push_state(&tx_evt, &app).await;
-                                let _ = tx_audio.send(AudioCommand::PlayTrack {
-                                    id: song_url.id,
-                                    br: app.play_br,
-                                    url: song_url.url,
-                                    title,
-                                });
+                                if tx_audio
+                                    .send(AudioCommand::PlayTrack {
+                                        id: song_url.id,
+                                        br: app.play_br,
+                                        url: song_url.url,
+                                        title,
+                                    })
+                                    .is_err()
+                                {
+                                    tracing::warn!("AudioWorker 通道已关闭：PlayTrack 发送失败");
+                                }
                             }
                         }
                         NeteaseEvent::Lyric {
@@ -743,19 +818,24 @@ async fn handle_audio_event(
             app.play_id = Some(play_id);
             app.play_song_id = Some(song_id);
             app.play_error_count = 0;
-            let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+            if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
+                tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
+            }
 
             app.lyrics_song_id = None;
             app.lyrics.clear();
             app.lyrics_status = "加载歌词...".to_owned();
             let id = next_id(req_id);
             *pending_lyric = Some((id, song_id));
-            let _ = tx_netease
+            if let Err(e) = tx_netease
                 .send(NeteaseCommand::Lyric {
                     req_id: id,
                     song_id,
                 })
-                .await;
+                .await
+            {
+                tracing::warn!(err = %e, "NeteaseActor 通道已关闭：Lyric 发送失败");
+            }
         }
         AudioEvent::Paused(p) => {
             app.paused = p;

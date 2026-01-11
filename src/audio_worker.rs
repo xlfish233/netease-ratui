@@ -60,6 +60,7 @@ pub fn spawn_audio_worker(
         let http = match Client::builder().timeout(Duration::from_secs(30)).build() {
             Ok(c) => c,
             Err(e) => {
+                tracing::error!(err = %e, "初始化 HTTP 客户端失败");
                 let _ = tx_evt.send(AudioEvent::Error(format!("初始化 HTTP 客户端失败: {e}")));
                 return;
             }
@@ -67,6 +68,7 @@ pub fn spawn_audio_worker(
         let (stream, handle) = match OutputStream::try_default() {
             Ok(v) => v,
             Err(e) => {
+                tracing::error!(err = %e, "初始化音频输出失败");
                 let _ = tx_evt.send(AudioEvent::Error(format!("初始化音频输出失败: {e}")));
                 return;
             }
@@ -80,6 +82,7 @@ pub fn spawn_audio_worker(
         while let Ok(cmd) = rx_cmd.recv() {
             match cmd {
                 AudioCommand::PlayTrack { id, br, url, title } => {
+                    tracing::info!(song_id = id, br, title = %title, "开始播放请求");
                     match play_track(&http, &tx_evt, &mut state, id, br, &url, &title) {
                         Ok((play_id, duration_ms)) => {
                             let _ = tx_evt.send(AudioEvent::NowPlaying {
@@ -90,6 +93,7 @@ pub fn spawn_audio_worker(
                             });
                         }
                         Err(e) => {
+                            tracing::error!(song_id = id, br, title = %title, err = %e, "播放失败");
                             let _ = tx_evt.send(AudioEvent::Error(e));
                         }
                     }
@@ -113,6 +117,7 @@ pub fn spawn_audio_worker(
                 }
                 AudioCommand::SeekToMs(ms) => {
                     if let Err(e) = seek_to_ms(&tx_evt, &mut state, ms) {
+                        tracing::warn!(ms, err = %e, "Seek 失败");
                         let _ = tx_evt.send(AudioEvent::Error(e));
                     }
                 }
@@ -124,6 +129,7 @@ pub fn spawn_audio_worker(
                 }
                 AudioCommand::ClearCache => {
                     let (files, bytes) = state.cache.clear_all(state.path.as_deref());
+                    tracing::info!(files, bytes, "音频缓存清理完成");
                     let _ = tx_evt.send(AudioEvent::CacheCleared { files, bytes });
                 }
             }
@@ -357,7 +363,8 @@ impl AudioCache {
             .saturating_mul(1024);
 
         let dir = data_dir.join("audio_cache");
-        if fs::create_dir_all(&dir).is_err() {
+        if let Err(e) = fs::create_dir_all(&dir) {
+            tracing::warn!(dir = %dir.display(), err = %e, "创建音频缓存目录失败，将禁用缓存");
             return Self {
                 dir: None,
                 index_path: None,
@@ -380,7 +387,9 @@ impl AudioCache {
                 entries: HashMap::new(),
             };
             let bytes = serde_json::to_vec_pretty(&index).unwrap_or_default();
-            let _ = fs::write(&index_path, bytes);
+            if let Err(e) = fs::write(&index_path, bytes) {
+                tracing::warn!(path = %index_path.display(), err = %e, "写入音频缓存索引失败");
+            }
         }
 
         Self {
