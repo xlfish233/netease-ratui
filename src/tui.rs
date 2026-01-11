@@ -218,6 +218,13 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
 fn draw_ui(f: &mut ratatui::Frame, app: &App) {
     let size = f.area();
 
+    let (elapsed_ms, total_ms) = playback_time_ms(app);
+    let time_text = format!(
+        "{}/{}",
+        fmt_mmss(elapsed_ms),
+        total_ms.map(fmt_mmss).unwrap_or_else(|| "--:--".to_owned())
+    );
+
     let (titles, selected) = if app.logged_in {
         (
             ["歌单", "搜索", "歌词"]
@@ -250,7 +257,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("netease-ratui"),
+                .title(format!("netease-ratui | {time_text}")),
         )
         .style(Style::default().fg(Color::Gray))
         .highlight_style(Style::default().fg(Color::Yellow));
