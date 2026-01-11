@@ -2,6 +2,26 @@
 
 ## Unreleased（自 v0.0.2 起，更新于 2026-01-11）
 
+- **AppActor 大规模模块化重构**：`src/usecases/actor.rs`（1072 行）拆分为 12 个子模块
+  - `login.rs`：登录流程处理（QR 码、Cookie 输入、轮询）
+  - `search.rs`：搜索功能处理
+  - `playlists.rs`：歌单列表和歌曲管理
+  - `lyrics.rs`：歌词显示和偏移调整
+  - `player_control.rs`：播放器控制命令处理
+  - `settings_handler.rs`：设置管理和持久化
+  - `audio_handler.rs`：音频 worker 事件处理
+  - `playback.rs`：播放控制逻辑（next/prev/seek）
+  - `preload.rs`：歌单预加载管理器
+  - `playlist_tracks.rs`：歌单歌曲加载器
+  - `logout.rs`：退出登录后状态重置
+  - `utils.rs`：共享工具函数（next_id、push_state）
+  - 主文件从 1072 行减少到 510 行（-52%），每个子模块职责单一、易于维护
+- **代码质量优化**：
+  - 移除冗余 clone 和死代码
+  - 简化 Option 处理（使用链式方法）
+  - 优化模式匹配（使用 `cmd @ (A | B | C)` 或模式语法）
+  - 改进函数签名（引用传递替代值传递）
+
 - **新增 Cookie 登录功能**：支持手动输入 `MUSIC_U` Cookie 值快速登录
   - 登录页按 `c` 键切换到 Cookie 登录模式
   - 支持输入验证和错误提示

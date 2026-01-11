@@ -4,6 +4,8 @@ use crate::netease::actor::NeteaseCommand;
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
 
+use super::utils;
+
 pub(super) const PRELOAD_COUNT: usize = 5;
 
 #[derive(Debug, Clone, Copy)]
@@ -70,7 +72,7 @@ impl PreloadManager {
 
         for playlist_id in selected {
             self.active_playlists.insert(playlist_id);
-            let rid = super::next_id(req_id);
+            let rid = utils::next_id(req_id);
             self.pending.insert(
                 rid,
                 (
@@ -152,7 +154,7 @@ impl PreloadManager {
         let total = ids.len();
         let mut loader = PlaylistTracksLoad::new(playlist_id, ids.to_vec());
 
-        let rid = super::next_id(req_id);
+        let rid = utils::next_id(req_id);
         let chunk = loader.next_chunk();
         loader.inflight_req_id = Some(rid);
         self.loaders.insert(playlist_id, loader);
@@ -230,7 +232,7 @@ impl PreloadManager {
             return true;
         }
 
-        let rid = super::next_id(req_id);
+        let rid = utils::next_id(req_id);
         let chunk = loader.next_chunk();
         loader.inflight_req_id = Some(rid);
         self.pending.insert(
@@ -249,7 +251,7 @@ impl PreloadManager {
         true
     }
 
-    pub(super) fn on_error(&mut self, app: &mut App, req_id_evt: u64, message: String) -> bool {
+    pub(super) fn on_error(&mut self, app: &mut App, req_id_evt: u64, message: &str) -> bool {
         let Some((generation, kind)) = self.pending.remove(&req_id_evt) else {
             return false;
         };
@@ -263,7 +265,7 @@ impl PreloadManager {
         };
 
         if let Some(p) = app.playlist_preloads.get_mut(&playlist_id) {
-            p.status = PreloadStatus::Failed(message);
+            p.status = PreloadStatus::Failed(message.to_owned());
             p.songs.clear();
         }
         self.loaders.remove(&playlist_id);
