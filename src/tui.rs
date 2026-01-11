@@ -218,13 +218,6 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
 fn draw_ui(f: &mut ratatui::Frame, app: &App) {
     let size = f.area();
 
-    let (elapsed_ms, total_ms) = playback_time_ms(app);
-    let time_text = format!(
-        "{}/{}",
-        fmt_mmss(elapsed_ms),
-        total_ms.map(fmt_mmss).unwrap_or_else(|| "--:--".to_owned())
-    );
-
     let (titles, selected) = if app.logged_in {
         (
             ["歌单", "搜索", "歌词"]
@@ -257,7 +250,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(format!("netease-ratui | {time_text}")),
+                .title("netease-ratui"),
         )
         .style(Style::default().fg(Color::Gray))
         .highlight_style(Style::default().fg(Color::Yellow));
@@ -514,7 +507,7 @@ fn draw_player_status(
     );
 
     let status = Paragraph::new(format!(
-        "{}: {}\n播放: {} | Now: {}\n时间: {}\n操作: 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | q 退出",
+        "{}: {}\n播放: {} | Now: {} | 时间: {}\n操作: 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | q 退出",
         context_label, context_value, app.play_status, now, time_text
     ))
     .block(Block::default().borders(Borders::ALL).title(title));
