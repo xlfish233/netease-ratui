@@ -10,6 +10,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 const DEFAULT_BR: i64 = 999_000;
+const PLAYLIST_TRACKS_PAGE_SIZE: usize = 200;
 
 pub fn spawn_app_actor(
     cfg: NeteaseClientConfig,
@@ -37,7 +38,7 @@ pub fn spawn_app_actor(
         let mut pending_search: Option<u64> = None;
         let mut pending_song_url: Option<(u64, String)> = None;
         let mut pending_playlists: Option<u64> = None;
-        let mut pending_playlist_tracks: Option<(u64, i64)> = None; // (songs_req_id, playlist_id)
+        let mut pending_playlist_tracks: Option<PlaylistTracksLoad> = None;
         let mut pending_account: Option<u64> = None;
         let mut pending_login_qr_key: Option<u64> = None;
         let mut pending_login_poll: Option<u64> = None;
@@ -325,23 +326,60 @@ pub fn spawn_app_actor(
                                 push_state(&tx_evt, &app).await;
                                 continue;
                             }
-                            let ids = ids.into_iter().take(200).collect::<Vec<_>>();
+
+                            app.playlists_status = format!("加载歌单歌曲中... 0/{}", ids.len());
+                            push_state(&tx_evt, &app).await;
+
+                            let mut loader = PlaylistTracksLoad::new(playlist_id, ids);
                             let id = next_id(&mut req_id);
-                            pending_playlist_tracks = Some((id, playlist_id));
-                            let _ = tx_netease.send(NeteaseCommand::SongDetailByIds { req_id: id, ids }).await;
+                            let chunk = loader.next_chunk();
+                            loader.inflight_req_id = Some(id);
+                            pending_playlist_tracks = Some(loader);
+                            let _ = tx_netease
+                                .send(NeteaseCommand::SongDetailByIds {
+                                    req_id: id,
+                                    ids: chunk,
+                                })
+                                .await;
                         }
                         NeteaseEvent::Songs { req_id: id, songs } => {
-                            let Some((pending_id, _playlist_id)) = pending_playlist_tracks else { continue; };
-                            if pending_id != id {
+                            let Some(loader) = pending_playlist_tracks.as_mut() else {
+                                continue;
+                            };
+                            if loader.inflight_req_id != Some(id) {
                                 continue;
                             }
-                            app.playlist_tracks = songs;
-                            app.playlist_tracks_selected = 0;
-                            app.playlist_mode = PlaylistMode::Tracks;
-                            app.queue = app.playlist_tracks.clone();
-                            app.queue_pos = Some(0);
-                            app.playlists_status = format!("歌曲: {} 首（p 播放）", app.playlist_tracks.len());
+                            loader.inflight_req_id = None;
+                            loader.songs.extend(songs);
+
+                            app.playlists_status = format!(
+                                "加载歌单歌曲中... {}/{}",
+                                loader.songs.len(),
+                                loader.total
+                            );
                             push_state(&tx_evt, &app).await;
+
+                            if loader.is_done() {
+                                let loader = pending_playlist_tracks.take().expect("loader");
+                                app.playlist_tracks = loader.songs;
+                                app.playlist_tracks_selected = 0;
+                                app.playlist_mode = PlaylistMode::Tracks;
+                                app.queue = app.playlist_tracks.clone();
+                                app.queue_pos = Some(0);
+                                app.playlists_status =
+                                    format!("歌曲: {} 首（p 播放）", app.playlist_tracks.len());
+                                push_state(&tx_evt, &app).await;
+                            } else {
+                                let id = next_id(&mut req_id);
+                                let chunk = loader.next_chunk();
+                                loader.inflight_req_id = Some(id);
+                                let _ = tx_netease
+                                    .send(NeteaseCommand::SongDetailByIds {
+                                        req_id: id,
+                                        ids: chunk,
+                                    })
+                                    .await;
+                            }
                         }
                         NeteaseEvent::SearchSongs { req_id: id, songs } => {
                             if pending_search != Some(id) {
@@ -402,6 +440,40 @@ fn next_id(id: &mut u64) -> u64 {
     let out = *id;
     *id = id.wrapping_add(1);
     out
+}
+
+struct PlaylistTracksLoad {
+    playlist_id: i64,
+    total: usize,
+    ids: Vec<i64>,
+    cursor: usize,
+    songs: Vec<crate::app::Song>,
+    inflight_req_id: Option<u64>,
+}
+
+impl PlaylistTracksLoad {
+    fn new(playlist_id: i64, ids: Vec<i64>) -> Self {
+        let total = ids.len();
+        Self {
+            playlist_id,
+            total,
+            ids,
+            cursor: 0,
+            songs: Vec::new(),
+            inflight_req_id: None,
+        }
+    }
+
+    fn is_done(&self) -> bool {
+        self.cursor >= self.ids.len()
+    }
+
+    fn next_chunk(&mut self) -> Vec<i64> {
+        let start = self.cursor;
+        let end = (start + PLAYLIST_TRACKS_PAGE_SIZE).min(self.ids.len());
+        self.cursor = end;
+        self.ids[start..end].to_vec()
+    }
 }
 
 fn render_qr_ascii(url: &str) -> String {
