@@ -75,6 +75,31 @@ pub(super) fn seek_relative(
     let _ = tx_audio.send(crate::audio_worker::AudioCommand::SeekToMs(next));
 }
 
+/// 计算下一首的索引（仅计算，不触发播放）
+/// 返回 Some(idx) 表示有下一首，None 表示无下一首（如 Sequential 到末尾）
+pub(super) fn calculate_next_index(app: &App) -> Option<usize> {
+    use crate::app::PlayMode;
+
+    let pos = app.queue_pos?;
+    if app.queue.is_empty() {
+        return None;
+    }
+
+    match app.play_mode {
+        PlayMode::SingleLoop => Some(pos), // 下一首是当前
+        PlayMode::Shuffle => None,         // 随机模式不预测
+        PlayMode::Sequential => {
+            let n = pos + 1;
+            if n >= app.queue.len() {
+                None // 到末尾，无下一首
+            } else {
+                Some(n)
+            }
+        }
+        PlayMode::ListLoop => Some((pos + 1) % app.queue.len()),
+    }
+}
+
 pub(super) async fn request_play_at_index(
     app: &mut App,
     tx_netease: &mpsc::Sender<NeteaseCommand>,

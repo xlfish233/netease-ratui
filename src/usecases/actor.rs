@@ -13,6 +13,7 @@ mod audio_handler;
 mod login;
 mod logout;
 mod lyrics;
+mod next_song_cache;
 mod playback;
 mod player_control;
 mod playlist_tracks;
@@ -45,6 +46,7 @@ pub fn spawn_app_actor(
         let mut app = App::default();
         let mut req_id: u64 = 1;
         let mut preload_mgr = preload::PreloadManager::default();
+        let mut next_song_cache = next_song_cache::NextSongCacheManager::default();
 
         let mut settings = settings::load_settings(&data_dir);
         settings_handler::apply_settings_to_app(&mut app, &settings);
@@ -163,6 +165,7 @@ pub fn spawn_app_actor(
                                 &tx_netease_hi,
                                 &tx_audio,
                                 &tx_evt,
+                                &mut next_song_cache,
                             )
                             .await
                             {
@@ -223,6 +226,7 @@ pub fn spawn_app_actor(
                                 &data_dir,
                                 &tx_audio,
                                 &tx_evt,
+                                &mut next_song_cache,
                             )
                             .await;
                         }
@@ -237,6 +241,7 @@ pub fn spawn_app_actor(
                                 &data_dir,
                                 &tx_audio,
                                 &tx_evt,
+                                &mut next_song_cache,
                             )
                             .await;
                         }
@@ -283,6 +288,7 @@ pub fn spawn_app_actor(
                             pending_lyric = None;
 
                             preload_mgr.reset(&mut app);
+                            next_song_cache.reset();
                             logout::reset_app_after_logout(&mut app);
                             app.login_status =
                                 "已退出登录（已清理本地 cookie），按 l 重新登录".to_owned();
@@ -426,6 +432,12 @@ pub fn spawn_app_actor(
                             }
                         }
                         NeteaseEvent::SongUrl { req_id: id, song_url } => {
+                            // 检查是否为预缓存请求
+                            if next_song_cache.owns_req(id) {
+                                next_song_cache.on_song_url(id, &song_url, &tx_audio, &app);
+                                continue;
+                            }
+
                             if let Some((pending_id, title)) = pending_song_url.take() {
                                 if pending_id != id {
                                     continue;
@@ -468,6 +480,12 @@ pub fn spawn_app_actor(
                             tracing::debug!(req_id, "NeteaseActor: LoggedOut");
                         }
                         NeteaseEvent::Error { req_id, message } => {
+                            // 检查是否为预缓存请求
+                            if next_song_cache.on_error(req_id) {
+                                tracing::warn!(req_id, "预缓存失败: {}", message);
+                                continue;
+                            }
+
                             if preload_mgr.on_error(&mut app, req_id, &message) {
                                 playlists::refresh_playlist_list_status(&mut app);
                                 utils::push_state(&tx_evt, &app).await;
@@ -490,6 +508,10 @@ pub fn spawn_app_actor(
                     }
                 }
                 Some(evt) = rx_audio_evt.recv() => {
+                    // 在移动 evt 之前检查事件类型，用于触发预缓存
+                    let is_now_playing = matches!(evt, AudioEvent::NowPlaying { .. });
+                    let is_stopped = matches!(evt, AudioEvent::Stopped);
+
                     audio_handler::handle_audio_event(
                         &mut app,
                         evt,
@@ -500,6 +522,17 @@ pub fn spawn_app_actor(
                         &mut req_id,
                     )
                     .await;
+
+                    // 播放开始后触发下一首预缓存
+                    if is_now_playing {
+                        next_song_cache.prefetch_next(&app, &tx_netease_lo, &mut req_id).await;
+                    }
+
+                    // 播放停止时失效预缓存
+                    if is_stopped {
+                        next_song_cache.reset();
+                    }
+
                     utils::push_state(&tx_evt, &app).await;
                 }
             }

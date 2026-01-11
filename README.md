@@ -22,7 +22,7 @@
   - Seek（快进/快退）、音量调节
   - 播放模式：顺序/列表循环/单曲循环/随机
   - 播放错误恢复：URL 失效自动重取并重试（有限次）
-- 音频本地缓存（仅音乐）：按 `(song_id, br)` 落盘缓存 + LRU 自动清理（默认上限 2GB）
+- 音频本地缓存（仅音乐）：按 `(song_id, br)` 落盘缓存 + LRU 自动清理（默认上限 2GB）+ 自动预缓存下一首歌（支持顺序/列表循环模式）
 
 ## 快速开始
 
@@ -130,7 +130,7 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
   - utils.rs: 格式化和辅助函数
 - `src/messages/`：UI<->AppActor 的消息协议（`AppCommand/AppEvent`）。
 - `src/usecases/actor.rs`：`AppActor`（业务编排 + 单一状态源，主循环与路由）。
-- `src/usecases/actor/`：`AppActor` 的内聚子模块（12 个：login, search, playlists, lyrics, player_control, settings_handler, audio_handler, playback, preload, playlist_tracks, logout, utils）
+- `src/usecases/actor/`：`AppActor` 的内聚子模块（13 个：login, search, playlists, lyrics, player_control, settings_handler, audio_handler, playback, preload, playlist_tracks, logout, utils, next_song_cache）
 - `src/domain/`：领域模型（供业务/状态使用）。
 - `src/audio_worker.rs`：音频工作线程入口。
 - `src/audio_worker/`：音频工作线程子模块（6 个：messages, worker, player, cache, download）

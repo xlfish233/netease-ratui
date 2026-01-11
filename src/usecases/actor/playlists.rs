@@ -2,6 +2,7 @@ use crate::app::{App, PlaylistMode, PlaylistPreload, PreloadStatus};
 use crate::audio_worker::AudioCommand;
 use crate::messages::app::{AppCommand, AppEvent};
 use crate::netease::actor::NeteaseCommand;
+use crate::usecases::actor::next_song_cache;
 use crate::usecases::actor::playlist_tracks;
 use crate::usecases::actor::preload::PreloadManager;
 
@@ -22,6 +23,7 @@ pub(super) async fn handle_playlists_command(
     tx_netease_hi: &mpsc::Sender<NeteaseCommand>,
     _tx_audio: &std::sync::mpsc::Sender<AudioCommand>,
     tx_evt: &mpsc::Sender<AppEvent>,
+    next_song_cache: &mut next_song_cache::NextSongCacheManager,
 ) -> bool {
     match cmd {
         AppCommand::PlaylistsMoveUp => {
@@ -53,6 +55,7 @@ pub(super) async fn handle_playlists_command(
                     app.playlist_mode = PlaylistMode::Tracks;
                     app.queue = app.playlist_tracks.clone();
                     app.queue_pos = Some(0);
+                    next_song_cache.reset(); // 失效预缓存
                     app.playlists_status =
                         format!("歌曲: {} 首（已缓存，p 播放）", app.playlist_tracks.len());
                     utils::push_state(tx_evt, app).await;
@@ -96,6 +99,7 @@ pub(super) async fn handle_playlists_command(
                 app.play_status = "获取播放链接...".to_owned();
                 app.queue = app.playlist_tracks.clone();
                 app.queue_pos = Some(app.playlist_tracks_selected);
+                next_song_cache.reset(); // 失效预缓存
                 let title = format!("{} - {}", s.name, s.artists);
                 utils::push_state(tx_evt, app).await;
                 let id = utils::next_id(req_id);

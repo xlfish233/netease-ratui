@@ -2,6 +2,7 @@ use crate::app::App;
 use crate::audio_worker::AudioCommand;
 use crate::messages::app::{AppCommand, AppEvent};
 use crate::settings;
+use crate::usecases::actor::next_song_cache;
 use crate::usecases::actor::playback;
 
 use super::utils;
@@ -18,6 +19,7 @@ pub(super) async fn handle_settings_command(
     data_dir: &std::path::Path,
     tx_audio: &std::sync::mpsc::Sender<AudioCommand>,
     tx_evt: &mpsc::Sender<AppEvent>,
+    next_song_cache: &mut next_song_cache::NextSongCacheManager,
 ) -> bool {
     match cmd {
         AppCommand::SettingsMoveUp => {
@@ -34,7 +36,7 @@ pub(super) async fn handle_settings_command(
         }
         AppCommand::SettingsDecrease => {
             if matches!(app.view, crate::app::View::Settings) {
-                apply_settings_adjust(app, -1);
+                apply_settings_adjust(app, -1, next_song_cache);
                 sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
                     tracing::warn!(err = %e, "保存设置失败");
@@ -47,7 +49,7 @@ pub(super) async fn handle_settings_command(
         }
         AppCommand::SettingsIncrease => {
             if matches!(app.view, crate::app::View::Settings) {
-                apply_settings_adjust(app, 1);
+                apply_settings_adjust(app, 1, next_song_cache);
                 sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
                     tracing::warn!(err = %e, "保存设置失败");
@@ -104,6 +106,7 @@ pub(super) async fn handle_player_settings_command(
     data_dir: &std::path::Path,
     tx_audio: &std::sync::mpsc::Sender<AudioCommand>,
     tx_evt: &mpsc::Sender<AppEvent>,
+    next_song_cache: &mut next_song_cache::NextSongCacheManager,
 ) -> bool {
     match cmd {
         AppCommand::PlayerVolumeDown => {
@@ -131,6 +134,7 @@ pub(super) async fn handle_player_settings_command(
         AppCommand::PlayerCycleMode => {
             app.play_mode = playback::next_play_mode(app.play_mode);
             app.play_status = format!("播放模式: {}", playback::play_mode_label(app.play_mode));
+            next_song_cache.reset(); // 失效预缓存
             sync_settings_from_app(settings, app);
             if let Err(e) = settings::save_settings(data_dir, settings) {
                 tracing::warn!(err = %e, "保存设置失败");
@@ -166,7 +170,11 @@ fn is_clear_cache_selected(app: &App) -> bool {
     app.settings_selected == SETTINGS_ITEMS_COUNT - 2
 }
 
-fn apply_settings_adjust(app: &mut App, dir: i32) {
+fn apply_settings_adjust(
+    app: &mut App,
+    dir: i32,
+    next_song_cache: &mut next_song_cache::NextSongCacheManager,
+) {
     match app.settings_selected {
         0 => {
             let options = [128_000, 192_000, 320_000, 999_000];
@@ -193,6 +201,7 @@ fn apply_settings_adjust(app: &mut App, dir: i32) {
                 playback::prev_play_mode(app.play_mode)
             };
             app.settings_status = format!("播放模式: {}", playback::play_mode_label(app.play_mode));
+            next_song_cache.reset(); // 失效预缓存
         }
         3 => {
             app.lyrics_offset_ms =

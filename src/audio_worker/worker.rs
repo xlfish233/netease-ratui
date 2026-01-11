@@ -90,6 +90,17 @@ pub fn spawn_audio_worker(
                     tracing::info!(files, bytes, "音频缓存清理完成");
                     let _ = tx_evt.send(AudioEvent::CacheCleared { files, bytes });
                 }
+                AudioCommand::PrefetchAudio { id, br, url, title } => {
+                    tracing::info!(song_id = id, br, title = %title, "开始预缓存");
+                    match state.cache.resolve_audio_file(&http, id, br, &url, &title) {
+                        Ok(_) => {
+                            tracing::info!(song_id = id, "预缓存成功");
+                        }
+                        Err(e) => {
+                            tracing::warn!(song_id = id, err = %e, "预缓存失败（非致命）");
+                        }
+                    }
+                }
             }
         }
     });

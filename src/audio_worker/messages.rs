@@ -11,6 +11,13 @@ pub enum AudioCommand {
     SeekToMs(u64),
     SetVolume(f32),
     ClearCache,
+    /// 预缓存音频文件（仅缓存，不播放）
+    PrefetchAudio {
+        id: i64,
+        br: i64,
+        url: String,
+        title: String,
+    },
 }
 
 #[derive(Debug)]
