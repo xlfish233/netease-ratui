@@ -13,6 +13,7 @@ mod logout;
 mod playback;
 mod playlist_tracks;
 mod preload;
+mod login;
 
 pub fn spawn_app_actor(
     cfg: NeteaseClientConfig,
@@ -101,54 +102,23 @@ pub fn spawn_app_actor(
                                 push_state(&tx_evt, &app).await;
                             }
                         }
-                        AppCommand::LoginGenerateQr => {
-                            if app.logged_in {
-                                continue;
-                            }
-                            app.login_status = "正在生成二维码...".to_owned();
-                            push_state(&tx_evt, &app).await;
-                            let id = next_id(&mut req_id);
-                            pending_login_qr_key = Some(id);
-                            if let Err(e) =
-                                tx_netease_hi.send(NeteaseCommand::LoginQrKey { req_id: id }).await
+                        cmd @ AppCommand::LoginGenerateQr
+                        | cmd @ AppCommand::LoginToggleCookieInput
+                        | cmd @ AppCommand::LoginCookieInputChar { .. }
+                        | cmd @ AppCommand::LoginCookieInputBackspace
+                        | cmd @ AppCommand::LoginCookieSubmit => {
+                            if login::handle_login_command(
+                                cmd,
+                                &mut app,
+                                &mut req_id,
+                                &mut pending_login_qr_key,
+                                &mut pending_login_set_cookie,
+                                &tx_netease_hi,
+                                &tx_evt,
+                            )
+                            .await
                             {
-                                tracing::warn!(err = %e, "NeteaseActor 通道已关闭：LoginQrKey 发送失败");
-                            }
-                        }
-                        AppCommand::LoginToggleCookieInput => {
-                            app.login_cookie_input_visible = !app.login_cookie_input_visible;
-                            app.login_cookie_input.clear();
-                            app.login_status = if app.login_cookie_input_visible {
-                                "Cookie 输入模式：输入 MUSIC_U 值".to_owned()
-                            } else {
-                                "按 l 生成二维码；按 c 切换到 Cookie 登录".to_owned()
-                            };
-                            push_state(&tx_evt, &app).await;
-                        }
-                        AppCommand::LoginCookieInputChar { c } => {
-                            app.login_cookie_input.push(c);
-                            push_state(&tx_evt, &app).await;
-                        }
-                        AppCommand::LoginCookieInputBackspace => {
-                            app.login_cookie_input.pop();
-                            push_state(&tx_evt, &app).await;
-                        }
-                        AppCommand::LoginCookieSubmit => {
-                            let music_u = app.login_cookie_input.trim().to_owned();
-                            if music_u.is_empty() {
-                                app.login_status = "请输入 MUSIC_U 值".to_owned();
-                                push_state(&tx_evt, &app).await;
                                 continue;
-                            }
-                            app.login_status = "正在验证 Cookie...".to_owned();
-                            push_state(&tx_evt, &app).await;
-                            let id = next_id(&mut req_id);
-                            pending_login_set_cookie = Some(id);
-                            if let Err(e) = tx_netease_hi
-                                .send(NeteaseCommand::LoginSetCookie { req_id: id, music_u })
-                                .await
-                            {
-                                tracing::warn!(err = %e, "NeteaseActor 通道已关闭：LoginSetCookie 发送失败");
                             }
                         }
                         AppCommand::SearchSubmit => {
@@ -512,65 +482,30 @@ pub fn spawn_app_actor(
                     }
                 }
                 Some(evt) = rx_netease.recv() => {
+                    // 处理登录相关事件
+                    if login::handle_login_event(
+                        &evt,
+                        &mut app,
+                        &mut req_id,
+                        &mut pending_login_qr_key,
+                        &mut pending_login_poll,
+                        &mut pending_login_set_cookie,
+                        &mut pending_account,
+                        &tx_netease_hi,
+                        &tx_evt,
+                    )
+                    .await
+                    {
+                        continue;
+                    }
+
                     match evt {
-                        NeteaseEvent::ClientReady {
-                            req_id: evt_req_id,
-                            logged_in,
-                        } => {
-                            tracing::debug!(req_id = evt_req_id, logged_in, "NeteaseActor: ClientReady");
-                            app.logged_in = logged_in;
-                            if app.logged_in {
-                                app.view = View::Playlists;
-                                app.playlists_status = "已登录（已从本地状态恢复），正在加载账号信息...".to_owned();
-                                push_state(&tx_evt, &app).await;
-                                let id = next_id(&mut req_id);
-                                pending_account = Some(id);
-                                if let Err(e) = tx_netease_hi
-                                    .send(NeteaseCommand::UserAccount { req_id: id })
-                                    .await
-                                {
-                                    tracing::warn!(err = %e, "NeteaseActor 通道已关闭：UserAccount 发送失败");
-                                }
-                            } else {
-                                app.login_status = "按 l 生成二维码；q 退出；Tab 切换页面".to_owned();
-                                push_state(&tx_evt, &app).await;
-                            }
-                        }
-                        NeteaseEvent::LoginQrKey { req_id: id, unikey } => {
-                            if pending_login_qr_key != Some(id) {
-                                continue;
-                            }
-                            app.login_unikey = Some(unikey.clone());
-                            app.login_qr_url =
-                                Some(format!("https://music.163.com/login?codekey={unikey}"));
-                            // Build QR ASCII locally; keep previous helper style for now.
-                            app.login_qr_ascii = Some(render_qr_ascii(app.login_qr_url.as_deref().unwrap_or("")));
-                            app.login_status = "请用网易云 APP 扫码；扫码后会自动轮询状态".to_owned();
-                            app.logged_in = false;
-                            push_state(&tx_evt, &app).await;
-                        }
-                        NeteaseEvent::LoginQrStatus { req_id: id, status } => {
-                            if pending_login_poll != Some(id) {
-                                continue;
-                            }
-                            if status.logged_in {
-                                app.logged_in = true;
-                                app.login_status = "登录成功".to_owned();
-                                app.view = View::Playlists;
-                                app.playlists_status = "登录成功，正在加载账号信息...".to_owned();
-                                push_state(&tx_evt, &app).await;
-                                let id = next_id(&mut req_id);
-                                pending_account = Some(id);
-                                if let Err(e) = tx_netease_hi
-                                    .send(NeteaseCommand::UserAccount { req_id: id })
-                                    .await
-                                {
-                                    tracing::warn!(err = %e, "NeteaseActor 通道已关闭：UserAccount 发送失败");
-                                }
-                            } else {
-                                app.login_status = format!("扫码状态 code={} {}", status.code, status.message);
-                                push_state(&tx_evt, &app).await;
-                            }
+                        NeteaseEvent::ClientReady { .. }
+                        | NeteaseEvent::LoginQrKey { .. }
+                        | NeteaseEvent::LoginQrStatus { .. }
+                        | NeteaseEvent::LoginCookieSet { .. } => {
+                            // 已由 login::handle_login_event 处理
+                            continue;
                         }
                         NeteaseEvent::Account { req_id: id, account } => {
                             if pending_account != Some(id) {
@@ -775,36 +710,6 @@ pub fn spawn_app_actor(
                         NeteaseEvent::LoggedOut { req_id } => {
                             tracing::debug!(req_id, "NeteaseActor: LoggedOut");
                         }
-                        NeteaseEvent::LoginCookieSet {
-                            req_id: id,
-                            success,
-                            message,
-                        } => {
-                            if pending_login_set_cookie != Some(id) {
-                                continue;
-                            }
-                            pending_login_set_cookie = None;
-                            if success {
-                                app.login_cookie_input.clear();
-                                app.login_cookie_input_visible = false;
-                                app.logged_in = true;
-                                app.login_status = message;
-                                app.view = View::Playlists;
-                                app.playlists_status = "登录成功，正在加载账号信息...".to_owned();
-                                push_state(&tx_evt, &app).await;
-                                let id = next_id(&mut req_id);
-                                pending_account = Some(id);
-                                if let Err(e) = tx_netease_hi
-                                    .send(NeteaseCommand::UserAccount { req_id: id })
-                                    .await
-                                {
-                                    tracing::warn!(err = %e, "NeteaseActor 通道已关闭：UserAccount 发送失败");
-                                }
-                            } else {
-                                app.login_status = format!("验证失败: {message}");
-                                push_state(&tx_evt, &app).await;
-                            }
-                        }
                         NeteaseEvent::Error { req_id, message } => {
                             if preload_mgr.on_error(&mut app, req_id, message.clone()) {
                                 refresh_playlist_list_status(&mut app);
@@ -850,15 +755,6 @@ fn next_id(id: &mut u64) -> u64 {
     let out = *id;
     *id = id.wrapping_add(1);
     out
-}
-
-fn render_qr_ascii(url: &str) -> String {
-    let Ok(code) = qrcode::QrCode::new(url.as_bytes()) else {
-        return "二维码生成失败".to_owned();
-    };
-    code.render::<qrcode::render::unicode::Dense1x2>()
-        .quiet_zone(true)
-        .build()
 }
 
 async fn handle_audio_event(
