@@ -30,7 +30,10 @@
 cargo run
 
 # 无交互快速自测（匿名搜索）
-NETEASE_SKIP_LOGIN=1 cargo run
+cargo run -- skip-login
+
+# 打印二维码登录相关信息（便于排查接口返回）
+cargo run -- qr-key
 ```
 
 ## 日志（tracing）
@@ -39,6 +42,7 @@ NETEASE_SKIP_LOGIN=1 cargo run
 - 通过 `RUST_LOG` 控制级别（例如 `RUST_LOG=debug`）
 - 可选环境变量：
   - `NETEASE_LOG_DIR=/path/to/logs`：覆盖日志目录
+  - `NETEASE_DATA_DIR=/path/to/data`：覆盖数据目录（settings/cookie/cache/logs 都在此目录下）
 
 ## 安装（预编译包）
 

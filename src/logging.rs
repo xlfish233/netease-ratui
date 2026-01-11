@@ -7,11 +7,14 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 pub struct LogGuard(#[allow(dead_code)] Option<WorkerGuard>);
 
-pub fn init(data_dir: &Path) -> LogGuard {
-    let log_dir = match std::env::var_os("NETEASE_LOG_DIR") {
-        Some(v) if !v.is_empty() => PathBuf::from(v),
-        _ => data_dir.join("logs"),
-    };
+#[derive(Debug, Clone, Default)]
+pub struct LogConfig {
+    pub dir: Option<PathBuf>,
+    pub filter: Option<String>,
+}
+
+pub fn init(data_dir: &Path, cfg: LogConfig) -> LogGuard {
+    let log_dir = cfg.dir.unwrap_or_else(|| data_dir.join("logs"));
 
     let log_dir = match fs::create_dir_all(&log_dir) {
         Ok(()) => log_dir,
@@ -22,8 +25,11 @@ pub fn init(data_dir: &Path) -> LogGuard {
     let file_appender = tracing_appender::rolling::daily(&log_dir, "netease-ratui.log");
     let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,reqwest=warn,hyper=warn"));
+    let filter = match cfg.filter {
+        Some(s) if !s.trim().is_empty() => EnvFilter::new(s),
+        _ => EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("info,reqwest=warn,hyper=warn")),
+    };
 
     let file_layer = fmt::layer()
         .with_ansi(false)

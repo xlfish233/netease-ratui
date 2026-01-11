@@ -1,6 +1,8 @@
 mod app;
 mod audio_worker;
+mod cli;
 mod domain;
+mod error;
 mod logging;
 mod messages;
 mod netease;
@@ -9,17 +11,38 @@ mod tui;
 mod usecases;
 
 use app::App;
+use clap::Parser;
+use cli::{Cli, Command};
+use error::AppError;
 use netease::{NeteaseClient, NeteaseClientConfig};
 use std::env;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = NeteaseClientConfig::default();
-    let _log_guard = logging::init(&cfg.data_dir);
+async fn main() -> Result<(), AppError> {
+    let cli = Cli::parse();
+
+    let mut cfg = NeteaseClientConfig::default();
+    if let Some(v) = cli.data_dir.clone() {
+        cfg.data_dir = v;
+    }
+    if let Some(v) = cli.domain.clone() {
+        cfg.domain = v;
+    }
+    if let Some(v) = cli.api_domain.clone() {
+        cfg.api_domain = v;
+    }
+
+    let _log_guard = logging::init(
+        &cfg.data_dir,
+        logging::LogConfig {
+            dir: cli.log_dir.clone(),
+            filter: cli.log_filter.clone(),
+        },
+    );
     tracing::info!(data_dir = %cfg.data_dir.display(), "netease-ratui 启动");
 
-    // 便于无交互环境快速验证 service layer
-    if env::var("NETEASE_SKIP_LOGIN").ok().as_deref() == Some("1") {
+    // 兼容旧环境变量（后续可考虑 deprecate）
+    if cli.command.is_none() && env::var("NETEASE_SKIP_LOGIN").ok().as_deref() == Some("1") {
         tracing::info!("启动模式: NETEASE_SKIP_LOGIN=1");
         let mut client = NeteaseClient::new(cfg)?;
         client.ensure_anonymous().await?;
@@ -27,9 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("搜索结果(前5首): {}", search);
         return Ok(());
     }
-
-    // 便于排查二维码登录接口返回结构
-    if env::var("NETEASE_QR_KEY").ok().as_deref() == Some("1") {
+    if cli.command.is_none() && env::var("NETEASE_QR_KEY").ok().as_deref() == Some("1") {
         tracing::info!("启动模式: NETEASE_QR_KEY=1");
         let mut client = NeteaseClient::new(cfg)?;
         let v = client.login_qr_key().await?;
@@ -38,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .pointer("/unikey")
             .and_then(|x| x.as_str())
             .or_else(|| v.pointer("/data/unikey").and_then(|x| x.as_str()))
-            .ok_or("未找到 unikey")?;
+            .ok_or_else(|| AppError::Other("未找到 unikey".to_owned()))?;
         println!("unikey: {unikey}");
         println!(
             "qrurl: {}",
@@ -47,7 +68,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let (tx, rx) = usecases::actor::spawn_app_actor(cfg);
-    tui::run_tui(App::default(), tx, rx).await?;
-    Ok(())
+    match cli.command.unwrap_or(Command::Tui) {
+        Command::Tui => {
+            let (tx, rx) = usecases::actor::spawn_app_actor(cfg);
+            tui::run_tui(App::default(), tx, rx).await?;
+            Ok(())
+        }
+        Command::SkipLogin { keywords, limit } => {
+            tracing::info!("启动模式: SkipLogin");
+            let mut client = NeteaseClient::new(cfg)?;
+            client.ensure_anonymous().await?;
+            let search = client.cloudsearch(&keywords, 1, limit, 0).await?;
+            println!("搜索结果(前{limit}首): {search}");
+            Ok(())
+        }
+        Command::QrKey => {
+            tracing::info!("启动模式: QrKey");
+            let mut client = NeteaseClient::new(cfg)?;
+            let v = client.login_qr_key().await?;
+            println!("login_qr_key 响应: {v}");
+            let unikey = v
+                .pointer("/unikey")
+                .and_then(|x| x.as_str())
+                .or_else(|| v.pointer("/data/unikey").and_then(|x| x.as_str()))
+                .ok_or_else(|| AppError::Other("未找到 unikey".to_owned()))?;
+            println!("unikey: {unikey}");
+            println!(
+                "qrurl: {}",
+                client.login_qr_url(unikey, netease::QrPlatform::Pc)
+            );
+            Ok(())
+        }
+    }
 }
