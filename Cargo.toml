@@ -10,26 +10,26 @@ block-padding = "0.3.3"
 cbc = "0.1.2"
 cipher = "0.4.4"
 cookie = "0.18.1"
-directories = "5.0.1"
+directories = "6.0"
 ecb = "0.1.2"
 hex = "0.4.3"
 md-5 = "0.10.6"
-once_cell = "1.19.0"
+once_cell = "1.21.3"
 rand = "0.8.5"
-ratatui = "0.29.0"
-reqwest = { version = "0.12.12", default-features = false, features = ["json", "rustls-tls", "gzip", "brotli", "deflate", "blocking"] }
+ratatui = "0.30"
+reqwest = { version = "0.13.1", default-features = false, features = ["json", "rustls", "gzip", "brotli", "deflate", "blocking", "form"] }
 rsa = { version = "0.9.6", features = ["pem"] }
 qrcode = "0.14.1"
-serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.120"
-thiserror = "2.0.11"
-tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread", "time"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.17"
+tokio = { version = "1.49", features = ["macros", "rt-multi-thread", "time"] }
 urlencoding = "2.1.3"
-crossterm = "0.28.1"
-rodio = { version = "0.20.1", default-features = false, features = ["symphonia-all"] }
-tempfile = "3.10.1"
+crossterm = "0.29"
+rodio = { version = "0.21", default-features = false, features = ["symphonia-all", "playback"] }
+tempfile = "3.24"
 tracing = "0.1.44"
-tracing-appender = "0.2.3"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
-clap = { version = "4.5.27", features = ["derive", "env"] }
-unicode-width = "0.1"
+tracing-appender = "0.2.4"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+clap = { version = "4.5.54", features = ["derive", "env"] }
+unicode-width = "0.2"

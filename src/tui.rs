@@ -301,9 +301,9 @@ async fn handle_mouse(app: &App, mouse: MouseEvent, tx: &tokio_mpsc::Sender<AppC
 fn calculate_tab_index(app: &App, column: u16) -> Option<usize> {
     let configs = tab_configs(app.logged_in);
 
-    // 分隔符 "│" 在中文字体终端中通常被渲染成 2 个单元格宽
-    const DIVIDER_WIDTH: u16 = 2;
-    const PADDING_WIDTH: u16 = 1;
+    const DIVIDER_WIDTH: u16 = 1;
+    const PADDING_LEFT_WIDTH: u16 = 1;
+    const PADDING_RIGHT_WIDTH: u16 = 1;
 
     let mut x = 1u16;
 
@@ -315,18 +315,17 @@ fn calculate_tab_index(app: &App, column: u16) -> Option<usize> {
             0
         };
 
-        let tab_start = x + PADDING_WIDTH;
-        let tab_end = if i < configs.len() - 1 {
-            tab_start + title_width + divider_width
-        } else {
-            tab_start + title_width
-        };
+        let tab_start = x;
+        let tab_end = x
+            .saturating_add(PADDING_LEFT_WIDTH)
+            .saturating_add(title_width)
+            .saturating_add(PADDING_RIGHT_WIDTH);
 
         if column >= tab_start && column < tab_end {
             return Some(i);
         }
 
-        x = tab_start + title_width + divider_width;
+        x = tab_end.saturating_add(divider_width);
     }
 
     None
@@ -341,6 +340,8 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
 
     let tabs = Tabs::new(titles)
         .select(selected)
+        .divider("|")
+        .padding(" ", " ")
         .block(
             Block::default()
                 .borders(Borders::ALL)

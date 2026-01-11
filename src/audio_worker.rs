@@ -1,5 +1,6 @@
 use reqwest::blocking::Client;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::mixer::Mixer;
+use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -65,7 +66,7 @@ pub fn spawn_audio_worker(
                 return;
             }
         };
-        let (stream, handle) = match OutputStream::try_default() {
+        let stream = match OutputStreamBuilder::open_default_stream() {
             Ok(v) => v,
             Err(e) => {
                 tracing::error!(err = %e, "初始化音频输出失败");
@@ -73,11 +74,10 @@ pub fn spawn_audio_worker(
                 return;
             }
         };
-
-        let _stream_guard = stream;
+        let mixer = stream.mixer().clone();
         let cache = AudioCache::new(&data_dir);
         tracing::info!(data_dir = %data_dir.display(), "AudioWorker 已启动");
-        let mut state = PlayerState::new(handle, cache);
+        let mut state = PlayerState::new(mixer, stream, cache);
 
         while let Ok(cmd) = rx_cmd.recv() {
             match cmd {
@@ -140,7 +140,9 @@ pub fn spawn_audio_worker(
 }
 
 struct PlayerState {
-    handle: OutputStreamHandle,
+    mixer: Mixer,
+    #[allow(dead_code)]
+    stream: OutputStream,
     sink: Option<Arc<Sink>>,
     temp: Option<NamedTempFile>,
     path: Option<PathBuf>,
@@ -152,9 +154,10 @@ struct PlayerState {
 }
 
 impl PlayerState {
-    fn new(handle: OutputStreamHandle, cache: AudioCache) -> Self {
+    fn new(mixer: Mixer, stream: OutputStream, cache: AudioCache) -> Self {
         Self {
-            handle,
+            mixer,
+            stream,
             sink: None,
             temp: None,
             path: None,
@@ -216,7 +219,7 @@ fn play_track(
     };
     state.path = Some(path.clone());
 
-    let (sink, duration_ms) = match build_sink_from_path(&state.handle, &path, None, title) {
+    let (sink, duration_ms) = match build_sink_from_path(&state.mixer, &path, None, title) {
         Ok(v) => v,
         Err(e) => {
             // 如果是缓存文件损坏/解码失败，清掉缓存并重试一次下载
@@ -237,7 +240,7 @@ fn play_track(
                     }
                 };
                 state.path = Some(path.clone());
-                build_sink_from_path(&state.handle, &path, None, title)?
+                build_sink_from_path(&state.mixer, &path, None, title)?
             } else {
                 return Err(e);
             }
@@ -279,7 +282,7 @@ fn seek_to_ms(
     state.restart_keep_play_id();
 
     let seek = Duration::from_millis(position_ms);
-    let (sink, _duration_ms) = build_sink_from_path(&state.handle, &path, Some(seek), "seek")?;
+    let (sink, _duration_ms) = build_sink_from_path(&state.mixer, &path, Some(seek), "seek")?;
     sink.set_volume(state.volume);
     if state.paused {
         sink.pause();
@@ -305,7 +308,7 @@ fn seek_to_ms(
 }
 
 fn build_sink_from_path(
-    handle: &OutputStreamHandle,
+    mixer: &Mixer,
     path: &Path,
     seek: Option<Duration>,
     title: &str,
@@ -314,13 +317,13 @@ fn build_sink_from_path(
     let decoder =
         Decoder::new(BufReader::new(file)).map_err(|e| format!("解码失败({title}): {e}"))?;
     let duration_ms = decoder.total_duration().map(|d| d.as_millis() as u64);
-    let source: Box<dyn Source<Item = i16> + Send> = if let Some(seek) = seek {
+    let source: Box<dyn Source + Send> = if let Some(seek) = seek {
         Box::new(decoder.skip_duration(seek))
     } else {
         Box::new(decoder)
     };
 
-    let sink = Sink::try_new(handle).map_err(|e| format!("创建 Sink 失败: {e}"))?;
+    let sink = Sink::connect_new(mixer);
     sink.append(source);
     Ok((sink, duration_ms))
 }
