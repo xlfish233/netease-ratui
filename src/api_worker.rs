@@ -1,0 +1,120 @@
+use crate::netease::{NeteaseClient, NeteaseClientConfig, QrPlatform};
+use serde_json::Value;
+use tokio::sync::mpsc;
+
+#[derive(Debug)]
+pub enum ApiRequest {
+    EnsureAnonymous,
+    LoginQrKey,
+    LoginQrCheck { key: String },
+    Search { keywords: String },
+}
+
+#[derive(Debug)]
+pub enum ApiEvent {
+    Info(String),
+    Error(String),
+    LoginQrReady { unikey: String, url: String, ascii: String },
+    LoginQrStatus { code: i64, message: String, logged_in: bool },
+    SearchResult(Value),
+}
+
+pub fn spawn_api_worker(
+    cfg: NeteaseClientConfig,
+) -> (mpsc::Sender<ApiRequest>, mpsc::Receiver<ApiEvent>) {
+    let (tx_req, mut rx_req) = mpsc::channel::<ApiRequest>(64);
+    let (tx_evt, rx_evt) = mpsc::channel::<ApiEvent>(64);
+
+    tokio::spawn(async move {
+        let mut client = match NeteaseClient::new(cfg) {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx_evt.send(ApiEvent::Error(format!("初始化失败: {e}"))).await;
+                return;
+            }
+        };
+
+        while let Some(req) = rx_req.recv().await {
+            match req {
+                ApiRequest::EnsureAnonymous => {
+                    if let Err(e) = client.ensure_anonymous().await {
+                        let _ = tx_evt.send(ApiEvent::Error(format!("{e}"))).await;
+                    }
+                }
+                ApiRequest::LoginQrKey => match client.login_qr_key().await {
+                    Ok(v) => {
+                        let Some(unikey) = extract_unikey(&v) else {
+                            let _ = tx_evt
+                                .send(ApiEvent::Error(format!("未找到 unikey，响应={v}")))
+                                .await;
+                            continue;
+                        };
+                        let url = client.login_qr_url(unikey, QrPlatform::Pc);
+                        let ascii = render_qr_ascii(&url);
+                        let _ = tx_evt
+                            .send(ApiEvent::LoginQrReady {
+                                unikey: unikey.to_owned(),
+                                url,
+                                ascii,
+                            })
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = tx_evt.send(ApiEvent::Error(format!("{e}"))).await;
+                    }
+                },
+                ApiRequest::LoginQrCheck { key } => match client.login_qr_check(&key).await {
+                    Ok(v) => {
+                        let code = v.get("code").and_then(|x| x.as_i64()).unwrap_or_default();
+                        let msg = v
+                            .get("message")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_owned();
+                        let logged_in = code == 803;
+                        let _ = tx_evt
+                            .send(ApiEvent::LoginQrStatus {
+                                code,
+                                message: msg,
+                                logged_in,
+                            })
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = tx_evt.send(ApiEvent::Error(format!("{e}"))).await;
+                    }
+                },
+                ApiRequest::Search { keywords } => match client.cloudsearch(&keywords, 1, 30, 0).await {
+                    Ok(v) => {
+                        let _ = tx_evt.send(ApiEvent::SearchResult(v)).await;
+                    }
+                    Err(e) => {
+                        let _ = tx_evt.send(ApiEvent::Error(format!("{e}"))).await;
+                    }
+                },
+            };
+        }
+    });
+
+    (tx_req, rx_evt)
+}
+
+fn render_qr_ascii(url: &str) -> String {
+    let Ok(code) = qrcode::QrCode::new(url.as_bytes()) else {
+        return "二维码生成失败".to_owned();
+    };
+    code.render::<qrcode::render::unicode::Dense1x2>()
+        .quiet_zone(true)
+        .build()
+}
+
+fn extract_unikey(v: &Value) -> Option<&str> {
+    // 直接调用接口时，常见返回形态为：
+    // - {"code":200,"unikey":"..."}
+    // - {"code":200,"data":{"unikey":"..."}}
+    // 兼容旧路径：/data/unikey
+    v.pointer("/unikey")
+        .and_then(|x| x.as_str())
+        .or_else(|| v.pointer("/data/unikey").and_then(|x| x.as_str()))
+        .or_else(|| v.pointer("/data/data/unikey").and_then(|x| x.as_str()))
+}
