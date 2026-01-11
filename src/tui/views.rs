@@ -16,10 +16,7 @@ pub(super) fn draw_ui(f: &mut Frame, app: &App) {
     let size = f.area();
 
     let configs = tab_configs(app.logged_in);
-    let titles: Vec<Line> = configs
-        .iter()
-        .map(|c| Line::from(c.title))
-        .collect();
+    let titles: Vec<Line> = configs.iter().map(|c| Line::from(c.title)).collect();
     let selected = tab_index_for_view(app.view, app.logged_in).unwrap_or(0);
 
     let tabs = Tabs::new(titles)

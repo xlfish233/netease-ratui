@@ -65,9 +65,7 @@ pub fn process_cookie_object(
         .entry("_ntes_nnid".to_owned())
         .or_insert_with(|| format!("{nuid},{now_ms}"));
 
-    cookie
-        .entry("WNMCID".to_owned())
-        .or_insert_with(wnmcid);
+    cookie.entry("WNMCID".to_owned()).or_insert_with(wnmcid);
     cookie
         .entry("WEVNSM".to_owned())
         .or_insert_with(|| "1.0.0".to_owned());
