@@ -55,6 +55,10 @@ sudo apt-get update
 sudo apt-get install -y libasound2-dev
 ```
 
+## 开发与测试
+
+- 运行测试：`cargo test`（integration tests 按模块放在 `tests/` 目录下）
+
 ## 快捷键
 
 - 全局：`Tab` 切换页，`q` 退出
