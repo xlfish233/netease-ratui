@@ -2,6 +2,7 @@ use reqwest::blocking::Client;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
+use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
 use tempfile::NamedTempFile;
@@ -72,7 +73,7 @@ pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<Audio
 
 struct PlayerState {
     handle: OutputStreamHandle,
-    sink: Option<Sink>,
+    sink: Option<Arc<Sink>>,
     _temp: Option<NamedTempFile>,
 }
 
@@ -134,6 +135,7 @@ fn play_url(
     let sink = Sink::try_new(&state.handle).map_err(|e| format!("创建 Sink 失败: {e}"))?;
     sink.append(source);
     sink.play();
+    let sink = Arc::new(sink);
 
     state.sink = Some(sink);
     state._temp = Some(tmp);

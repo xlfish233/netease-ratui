@@ -4,6 +4,7 @@ use std::time::Instant;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Login,
+    Playlists,
     Search,
 }
 
@@ -12,6 +13,20 @@ pub struct Song {
     pub id: i64,
     pub name: String,
     pub artists: String,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Playlist {
+    pub id: i64,
+    pub name: String,
+    pub track_count: i64,
+    pub special_type: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaylistMode {
+    List,
+    Tracks,
 }
 
 #[derive(Debug)]
@@ -36,6 +51,15 @@ pub struct App {
     pub play_total_ms: Option<u64>,
     pub play_paused_at: Option<Instant>,
     pub play_paused_accum_ms: u64,
+
+    pub account_uid: Option<i64>,
+    pub account_nickname: Option<String>,
+    pub playlists: Vec<Playlist>,
+    pub playlists_selected: usize,
+    pub playlist_mode: PlaylistMode,
+    pub playlist_tracks: Vec<Song>,
+    pub playlist_tracks_selected: usize,
+    pub playlists_status: String,
 }
 
 impl Default for App {
@@ -58,6 +82,14 @@ impl Default for App {
             play_total_ms: None,
             play_paused_at: None,
             play_paused_accum_ms: 0,
+            account_uid: None,
+            account_nickname: None,
+            playlists: Vec::new(),
+            playlists_selected: 0,
+            playlist_mode: PlaylistMode::List,
+            playlist_tracks: Vec::new(),
+            playlist_tracks_selected: 0,
+            playlists_status: "等待登录后加载歌单".to_owned(),
         }
     }
 }
@@ -83,6 +115,26 @@ pub fn parse_search_songs(v: &Value) -> Vec<Song> {
                 })
                 .unwrap_or_default();
             Some(Song { id, name, artists })
+        })
+        .collect()
+}
+
+pub fn parse_user_playlists(v: &Value) -> Vec<Playlist> {
+    let Some(arr) = v.get("playlist").and_then(|x| x.as_array()) else {
+        return vec![];
+    };
+    arr.iter()
+        .filter_map(|p| {
+            let id = p.get("id")?.as_i64()?;
+            let name = p.get("name")?.as_str()?.to_owned();
+            let track_count = p.get("trackCount").and_then(|x| x.as_i64()).unwrap_or(0);
+            let special_type = p.get("specialType").and_then(|x| x.as_i64()).unwrap_or(0);
+            Some(Playlist {
+                id,
+                name,
+                track_count,
+                special_type,
+            })
         })
         .collect()
 }

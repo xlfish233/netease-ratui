@@ -185,6 +185,53 @@ impl NeteaseClient {
         .await
     }
 
+    pub async fn user_account(&mut self) -> Result<Value, NeteaseError> {
+        self.ensure_anonymous().await?;
+        self.request("/api/nuser/account/get", json!({}), CryptoMode::Weapi)
+            .await
+    }
+
+    pub async fn user_playlist(
+        &mut self,
+        uid: i64,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Value, NeteaseError> {
+        self.ensure_anonymous().await?;
+        self.request(
+            "/api/user/playlist",
+            json!({
+              "uid": uid,
+              "limit": limit,
+              "offset": offset,
+              "includeVideo": true,
+            }),
+            CryptoMode::Weapi,
+        )
+        .await
+    }
+
+    pub async fn playlist_detail(&mut self, id: i64) -> Result<Value, NeteaseError> {
+        self.ensure_anonymous().await?;
+        self.request(
+            "/api/v6/playlist/detail",
+            json!({
+              "id": id,
+              "n": 100000,
+              "s": 8,
+            }),
+            CryptoMode::Weapi,
+        )
+        .await
+    }
+
+    pub async fn song_detail_by_ids(&mut self, ids: &[i64]) -> Result<Value, NeteaseError> {
+        self.ensure_anonymous().await?;
+        let c = ids.iter().map(|id| json!({"id": id})).collect::<Vec<_>>();
+        self.request("/api/v3/song/detail", json!({ "c": c }), CryptoMode::Weapi)
+            .await
+    }
+
     async fn request(&mut self, uri: &str, mut data: Value, crypto: CryptoMode) -> Result<Value, NeteaseError> {
         if !data.is_object() {
             return Err(NeteaseError::BadInput("data 必须是 JSON object"));

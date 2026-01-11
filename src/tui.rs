@@ -1,6 +1,6 @@
 use crate::api_worker::{ApiEvent, ApiRequest};
 use crate::audio_worker::{AudioCommand, AudioEvent};
-use crate::app::{parse_search_songs, App, View};
+use crate::app::{parse_search_songs, parse_user_playlists, App, PlaylistMode, View};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
@@ -38,20 +38,20 @@ pub async fn run_tui(
 
     loop {
         while let Ok(evt) = rx.try_recv() {
-            handle_api_event(&mut app, evt, &tx_audio);
+            handle_api_event(&mut app, evt, &tx, &tx_audio).await;
         }
         while let Ok(evt) = rx_audio.try_recv() {
             handle_audio_event(&mut app, evt);
         }
 
-        if app.login_unikey.is_some() && !app.logged_in && last_qr_poll.elapsed() >= Duration::from_secs(2) {
-            if let Some(key) = app.login_unikey.clone() {
-                let _ = tx.send(ApiRequest::LoginQrCheck { key }).await;
-                last_qr_poll = Instant::now();
-            }
+    if app.login_unikey.is_some() && !app.logged_in && last_qr_poll.elapsed() >= Duration::from_secs(2) {
+        if let Some(key) = app.login_unikey.clone() {
+            let _ = tx.send(ApiRequest::LoginQrCheck { key }).await;
+            last_qr_poll = Instant::now();
         }
+    }
 
-        terminal.draw(|f| draw_ui(f, &app))?;
+    terminal.draw(|f| draw_ui(f, &app))?;
 
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
@@ -73,21 +73,29 @@ pub async fn run_tui(
     Ok(())
 }
 
-fn handle_api_event(app: &mut App, evt: ApiEvent, tx_audio: &mpsc::Sender<AudioCommand>) {
+async fn handle_api_event(
+    app: &mut App,
+    evt: ApiEvent,
+    tx: &tokio_mpsc::Sender<ApiRequest>,
+    tx_audio: &mpsc::Sender<AudioCommand>,
+) {
     match evt {
         ApiEvent::Info(s) => match app.view {
             View::Login => app.login_status = s,
+            View::Playlists => app.playlists_status = s,
             View::Search => app.search_status = s,
         },
         ApiEvent::Error(e) => match app.view {
             View::Login => app.login_status = format!("错误: {e}"),
+            View::Playlists => app.playlists_status = format!("错误: {e}"),
             View::Search => app.search_status = format!("错误: {e}"),
         },
         ApiEvent::ClientReady { logged_in } => {
             app.logged_in = logged_in;
             if app.logged_in {
-                app.view = View::Search;
-                app.search_status = "已登录（已从本地状态恢复）".to_owned();
+                app.view = View::Playlists;
+                app.playlists_status = "已登录（已从本地状态恢复），正在加载账号信息...".to_owned();
+                let _ = tx.send(ApiRequest::Account).await;
             }
         }
         ApiEvent::LoginQrReady { unikey, url, ascii } => {
@@ -101,8 +109,9 @@ fn handle_api_event(app: &mut App, evt: ApiEvent, tx_audio: &mpsc::Sender<AudioC
             if logged_in {
                 app.logged_in = true;
                 app.login_status = "登录成功".to_owned();
-                app.view = View::Search;
-                app.search_status = "已登录，可直接搜索".to_owned();
+                app.view = View::Playlists;
+                app.playlists_status = "登录成功，正在加载账号信息...".to_owned();
+                let _ = tx.send(ApiRequest::Account).await;
             } else {
                 app.login_status = format!("扫码状态 code={code} {message}");
             }
@@ -112,10 +121,33 @@ fn handle_api_event(app: &mut App, evt: ApiEvent, tx_audio: &mpsc::Sender<AudioC
             app.search_selected = 0;
             app.search_status = format!("结果: {} 首", app.search_results.len());
         }
-        ApiEvent::SongUrlReady { id: _, url } => {
-            let title = selected_song_title(app);
+        ApiEvent::SongUrlReady { id: _, url, title } => {
             app.play_status = "开始播放...".to_owned();
             let _ = tx_audio.send(AudioCommand::PlayUrl { url, title });
+        }
+        ApiEvent::AccountReady { uid, nickname } => {
+            app.account_uid = Some(uid);
+            app.account_nickname = Some(nickname);
+            app.playlists_status = "正在加载用户歌单...".to_owned();
+            let _ = tx.send(ApiRequest::UserPlaylists { uid }).await;
+        }
+        ApiEvent::UserPlaylistsReady(v) => {
+            app.playlists = parse_user_playlists(&v);
+            app.playlists_selected = app
+                .playlists
+                .iter()
+                .position(|p| p.special_type == 5 || p.name.contains("我喜欢"))
+                .unwrap_or(0);
+            app.playlists_status = format!("歌单: {} 个，正在打开我喜欢的音乐...", app.playlists.len());
+            if let Some(p) = app.playlists.get(app.playlists_selected) {
+                let _ = tx.send(ApiRequest::PlaylistTracks { playlist_id: p.id }).await;
+            }
+        }
+        ApiEvent::PlaylistTracksReady { playlist_id: _, songs } => {
+            app.playlist_tracks = parse_search_songs(&songs);
+            app.playlist_tracks_selected = 0;
+            app.playlist_mode = PlaylistMode::Tracks;
+            app.playlists_status = format!("歌曲: {} 首（p 播放）", app.playlist_tracks.len());
         }
     }
 }
@@ -170,12 +202,18 @@ async fn handle_key(
             code: KeyCode::Tab, ..
         } => {
             if app.logged_in {
-                return false;
+                app.view = match app.view {
+                    View::Playlists => View::Search,
+                    View::Search => View::Playlists,
+                    View::Login => View::Playlists,
+                };
+            } else {
+                app.view = match app.view {
+                    View::Login => View::Search,
+                    View::Search => View::Login,
+                    View::Playlists => View::Login,
+                };
             }
-            app.view = match app.view {
-                View::Login => View::Search,
-                View::Search => View::Login,
-            };
         }
         _ => {}
     }
@@ -191,11 +229,66 @@ async fn handle_key(
             }
             _ => {}
         },
+        View::Playlists => match key.code {
+            KeyCode::Char('b') => {
+                app.playlist_mode = PlaylistMode::List;
+                app.playlists_status = "返回歌单列表".to_owned();
+            }
+            KeyCode::Enter => {
+                if matches!(app.playlist_mode, PlaylistMode::List) {
+                    if let Some(p) = app.playlists.get(app.playlists_selected) {
+                        app.playlists_status = "加载歌单歌曲中...".to_owned();
+                        let _ = tx.send(ApiRequest::PlaylistTracks { playlist_id: p.id }).await;
+                    }
+                }
+            }
+            KeyCode::Char('p') => {
+                if matches!(app.playlist_mode, PlaylistMode::Tracks) {
+                    if let Some(s) = app.playlist_tracks.get(app.playlist_tracks_selected) {
+                        app.play_status = "获取播放链接...".to_owned();
+                        let title = format!("{} - {}", s.name, s.artists);
+                        let _ = tx.send(ApiRequest::SongUrl { id: s.id, title }).await;
+                    }
+                }
+            }
+            KeyCode::Up => match app.playlist_mode {
+                PlaylistMode::List => {
+                    if app.playlists_selected > 0 {
+                        app.playlists_selected -= 1;
+                    }
+                }
+                PlaylistMode::Tracks => {
+                    if app.playlist_tracks_selected > 0 {
+                        app.playlist_tracks_selected -= 1;
+                    }
+                }
+            },
+            KeyCode::Down => match app.playlist_mode {
+                PlaylistMode::List => {
+                    if !app.playlists.is_empty() && app.playlists_selected + 1 < app.playlists.len() {
+                        app.playlists_selected += 1;
+                    }
+                }
+                PlaylistMode::Tracks => {
+                    if !app.playlist_tracks.is_empty() && app.playlist_tracks_selected + 1 < app.playlist_tracks.len() {
+                        app.playlist_tracks_selected += 1;
+                    }
+                }
+            },
+            KeyCode::Char(' ') => {
+                let _ = tx_audio.send(AudioCommand::TogglePause);
+            }
+            KeyCode::Char('s') => {
+                let _ = tx_audio.send(AudioCommand::Stop);
+            }
+            _ => {}
+        },
         View::Search => match key.code {
             KeyCode::Char('p') => {
                 if let Some(s) = app.search_results.get(app.search_selected) {
                     app.play_status = "获取播放链接...".to_owned();
-                    let _ = tx.send(ApiRequest::SongUrl { id: s.id }).await;
+                    let title = selected_song_title(app);
+                    let _ = tx.send(ApiRequest::SongUrl { id: s.id, title }).await;
                 }
             }
             KeyCode::Char(' ') => {
@@ -243,8 +336,12 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
 
     let (titles, selected) = if app.logged_in {
         (
-            ["搜索"].into_iter().map(Line::from).collect::<Vec<_>>(),
-            0,
+            ["歌单", "搜索"].into_iter().map(Line::from).collect::<Vec<_>>(),
+            match app.view {
+                View::Playlists => 0,
+                View::Search => 1,
+                View::Login => 0,
+            },
         )
     } else {
         (
@@ -255,6 +352,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
             match app.view {
                 View::Login => 0,
                 View::Search => 1,
+                View::Playlists => 1,
             },
         )
     };
@@ -272,8 +370,69 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
 
     match app.view {
         View::Login => draw_login(f, chunks[1], app),
+        View::Playlists => draw_playlists(f, chunks[1], app),
         View::Search => draw_search(f, chunks[1], app),
     }
+}
+
+fn draw_playlists(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(8), Constraint::Length(7)])
+        .split(area);
+
+    let title = match app.playlist_mode {
+        PlaylistMode::List => "歌单(↑↓选择 回车打开)",
+        PlaylistMode::Tracks => "歌曲(↑↓选择 p 播放 b 返回)",
+    };
+    let items: Vec<ListItem> = match app.playlist_mode {
+        PlaylistMode::List => app
+            .playlists
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let mark = if p.special_type == 5 || p.name.contains("我喜欢") {
+                    " ♥"
+                } else {
+                    ""
+                };
+                ListItem::new(Line::from(format!(
+                    "{}  {} ({}首){}",
+                    i + 1,
+                    p.name,
+                    p.track_count,
+                    mark
+                )))
+            })
+            .collect(),
+        PlaylistMode::Tracks => app
+            .playlist_tracks
+            .iter()
+            .enumerate()
+            .map(|(i, s)| ListItem::new(Line::from(format!("{}  {} - {}", i + 1, s.name, s.artists))))
+            .collect(),
+    };
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .highlight_style(Style::default().fg(Color::Yellow));
+
+    let mut st = ratatui::widgets::ListState::default();
+    let sel = match app.playlist_mode {
+        PlaylistMode::List => app.playlists_selected,
+        PlaylistMode::Tracks => app.playlist_tracks_selected,
+    };
+    st.select(Some(sel));
+    f.render_stateful_widget(list, chunks[0], &mut st);
+
+    draw_player_status(
+        f,
+        chunks[1],
+        app,
+        "状态",
+        "歌单",
+        app.playlists_status.as_str(),
+    );
 }
 
 fn draw_login(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) {
@@ -330,37 +489,7 @@ fn draw_search(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
         .highlight_style(Style::default().fg(Color::Yellow));
     f.render_stateful_widget(list, chunks[1], &mut list_state(app.search_selected));
 
-    let status_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(4), Constraint::Length(3)])
-        .split(chunks[2]);
-
-    let now = app.now_playing.as_deref().unwrap_or("-");
-    let (elapsed_ms, total_ms) = playback_time_ms(app);
-    let time_text = format!(
-        "{} / {}{}",
-        fmt_mmss(elapsed_ms),
-        total_ms.map(fmt_mmss).unwrap_or_else(|| "--:--".to_owned()),
-        if app.paused { " (暂停)" } else { "" }
-    );
-
-    let status = Paragraph::new(format!(
-        "搜索: {}\n播放: {} | Now: {}\n时间: {}\n操作: p 播放 | 空格 暂停/继续 | s 停止 | q 退出",
-        app.search_status, app.play_status, now, time_text
-    ))
-    .block(Block::default().borders(Borders::ALL).title("状态"));
-    f.render_widget(status, status_chunks[0]);
-
-    let ratio = if let Some(total) = total_ms {
-        if total == 0 { 0.0 } else { (elapsed_ms.min(total) as f64) / (total as f64) }
-    } else {
-        0.0
-    };
-    let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::ALL).title("进度"))
-        .gauge_style(Style::default().fg(Color::Green))
-        .ratio(ratio);
-    f.render_widget(gauge, status_chunks[1]);
+    draw_player_status(f, chunks[2], app, "状态", "搜索", app.search_status.as_str());
 }
 
 fn list_state(selected: usize) -> ratatui::widgets::ListState {
@@ -399,4 +528,45 @@ fn fmt_mmss(ms: u64) -> String {
     let m = total_sec / 60;
     let s = total_sec % 60;
     format!("{m:02}:{s:02}")
+}
+
+fn draw_player_status(
+    f: &mut ratatui::Frame,
+    area: ratatui::prelude::Rect,
+    app: &App,
+    title: &str,
+    context_label: &str,
+    context_value: &str,
+) {
+    let status_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(4), Constraint::Length(3)])
+        .split(area);
+
+    let now = app.now_playing.as_deref().unwrap_or("-");
+    let (elapsed_ms, total_ms) = playback_time_ms(app);
+    let time_text = format!(
+        "{} / {}{}",
+        fmt_mmss(elapsed_ms),
+        total_ms.map(fmt_mmss).unwrap_or_else(|| "--:--".to_owned()),
+        if app.paused { " (暂停)" } else { "" }
+    );
+
+    let status = Paragraph::new(format!(
+        "{}: {}\n播放: {} | Now: {}\n时间: {}\n操作: p 播放 | 空格 暂停/继续 | s 停止 | q 退出",
+        context_label, context_value, app.play_status, now, time_text
+    ))
+    .block(Block::default().borders(Borders::ALL).title(title));
+    f.render_widget(status, status_chunks[0]);
+
+    let ratio = if let Some(total) = total_ms {
+        if total == 0 { 0.0 } else { (elapsed_ms.min(total) as f64) / (total as f64) }
+    } else {
+        0.0
+    };
+    let gauge = Gauge::default()
+        .block(Block::default().borders(Borders::ALL).title("进度"))
+        .gauge_style(Style::default().fg(Color::Green))
+        .ratio(ratio);
+    f.render_widget(gauge, status_chunks[1]);
 }
