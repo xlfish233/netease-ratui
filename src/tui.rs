@@ -41,7 +41,9 @@ pub async fn run_tui(
             handle_api_event(&mut app, evt, &tx, &tx_audio).await;
         }
         while let Ok(evt) = rx_audio.try_recv() {
-            handle_audio_event(&mut app, evt);
+            if let Some(req) = handle_audio_event(&mut app, evt) {
+                let _ = tx.send(req).await;
+            }
         }
 
     if app.login_unikey.is_some() && !app.logged_in && last_qr_poll.elapsed() >= Duration::from_secs(2) {
@@ -147,14 +149,16 @@ async fn handle_api_event(
             app.playlist_tracks = parse_search_songs(&songs);
             app.playlist_tracks_selected = 0;
             app.playlist_mode = PlaylistMode::Tracks;
+            app.queue = app.playlist_tracks.clone();
+            app.queue_pos = Some(0);
             app.playlists_status = format!("歌曲: {} 首（p 播放）", app.playlist_tracks.len());
         }
     }
 }
 
-fn handle_audio_event(app: &mut App, evt: AudioEvent) {
+fn handle_audio_event(app: &mut App, evt: AudioEvent) -> Option<ApiRequest> {
     match evt {
-        AudioEvent::NowPlaying { title, duration_ms } => {
+        AudioEvent::NowPlaying { play_id, title, duration_ms } => {
             app.now_playing = Some(title);
             app.paused = false;
             app.play_status = "播放中".to_owned();
@@ -162,6 +166,7 @@ fn handle_audio_event(app: &mut App, evt: AudioEvent) {
             app.play_total_ms = duration_ms;
             app.play_paused_at = None;
             app.play_paused_accum_ms = 0;
+            app.play_id = Some(play_id);
         }
         AudioEvent::Paused(p) => {
             app.paused = p;
@@ -180,11 +185,35 @@ fn handle_audio_event(app: &mut App, evt: AudioEvent) {
             app.play_total_ms = None;
             app.play_paused_at = None;
             app.play_paused_accum_ms = 0;
+            app.play_id = None;
+        }
+        AudioEvent::Ended { play_id } => {
+            if app.play_id != Some(play_id) {
+                return None;
+            }
+            let Some(pos) = app.queue_pos else {
+                return None;
+            };
+            let next = pos + 1;
+            if next >= app.queue.len() {
+                app.play_status = "播放结束".to_owned();
+                app.queue_pos = None;
+                return None;
+            }
+            app.queue_pos = Some(next);
+            if matches!(app.view, View::Playlists) && matches!(app.playlist_mode, PlaylistMode::Tracks) {
+                app.playlist_tracks_selected = next.min(app.playlist_tracks.len().saturating_sub(1));
+            }
+            let s = &app.queue[next];
+            app.play_status = "自动下一首...".to_owned();
+            let title = format!("{} - {}", s.name, s.artists);
+            return Some(ApiRequest::SongUrl { id: s.id, title });
         }
         AudioEvent::Error(e) => {
             app.play_status = format!("播放错误: {e}");
         }
     }
+    None
 }
 
 async fn handle_key(
@@ -246,6 +275,8 @@ async fn handle_key(
                 if matches!(app.playlist_mode, PlaylistMode::Tracks) {
                     if let Some(s) = app.playlist_tracks.get(app.playlist_tracks_selected) {
                         app.play_status = "获取播放链接...".to_owned();
+                        app.queue = app.playlist_tracks.clone();
+                        app.queue_pos = Some(app.playlist_tracks_selected);
                         let title = format!("{} - {}", s.name, s.artists);
                         let _ = tx.send(ApiRequest::SongUrl { id: s.id, title }).await;
                     }
@@ -287,6 +318,8 @@ async fn handle_key(
             KeyCode::Char('p') => {
                 if let Some(s) = app.search_results.get(app.search_selected) {
                     app.play_status = "获取播放链接...".to_owned();
+                    app.queue.clear();
+                    app.queue_pos = None;
                     let title = selected_song_title(app);
                     let _ = tx.send(ApiRequest::SongUrl { id: s.id, title }).await;
                 }

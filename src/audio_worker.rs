@@ -16,9 +16,10 @@ pub enum AudioCommand {
 
 #[derive(Debug)]
 pub enum AudioEvent {
-    NowPlaying { title: String, duration_ms: Option<u64> },
+    NowPlaying { play_id: u64, title: String, duration_ms: Option<u64> },
     Paused(bool),
     Stopped,
+    Ended { play_id: u64 },
     Error(String),
 }
 
@@ -41,9 +42,9 @@ pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<Audio
 
         while let Ok(cmd) = rx_cmd.recv() {
             match cmd {
-                AudioCommand::PlayUrl { url, title } => match play_url(&http, &mut state, &url, &title) {
-                    Ok(duration_ms) => {
-                        let _ = tx_evt.send(AudioEvent::NowPlaying { title, duration_ms });
+                AudioCommand::PlayUrl { url, title } => match play_url(&http, &tx_evt, &mut state, &url, &title) {
+                    Ok((play_id, duration_ms)) => {
+                        let _ = tx_evt.send(AudioEvent::NowPlaying { play_id, title, duration_ms });
                     }
                     Err(e) => {
                         let _ = tx_evt.send(AudioEvent::Error(e));
@@ -75,6 +76,7 @@ struct PlayerState {
     handle: OutputStreamHandle,
     sink: Option<Arc<Sink>>,
     _temp: Option<NamedTempFile>,
+    play_id: u64,
 }
 
 impl PlayerState {
@@ -83,10 +85,12 @@ impl PlayerState {
             handle,
             sink: None,
             _temp: None,
+            play_id: 0,
         }
     }
 
     fn stop(&mut self) {
+        self.play_id = self.play_id.wrapping_add(1);
         if let Some(s) = self.sink.take() {
             s.stop();
         }
@@ -96,10 +100,11 @@ impl PlayerState {
 
 fn play_url(
     http: &Client,
+    tx_evt: &mpsc::Sender<AudioEvent>,
     state: &mut PlayerState,
     url: &str,
     title: &str,
-) -> Result<Option<u64>, String> {
+) -> Result<(u64, Option<u64>), String> {
     state.stop();
 
     let mut tmp = NamedTempFile::new().map_err(|e| format!("创建临时文件失败: {e}"))?;
@@ -137,7 +142,15 @@ fn play_url(
     sink.play();
     let sink = Arc::new(sink);
 
+    let play_id = state.play_id;
+    let tx_end = tx_evt.clone();
+    let sink_end = Arc::clone(&sink);
+    thread::spawn(move || {
+        sink_end.sleep_until_end();
+        let _ = tx_end.send(AudioEvent::Ended { play_id });
+    });
+
     state.sink = Some(sink);
     state._temp = Some(tmp);
-    Ok(duration_ms)
+    Ok((play_id, duration_ms))
 }
