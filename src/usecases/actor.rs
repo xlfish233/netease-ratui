@@ -38,6 +38,7 @@ pub fn spawn_app_actor(
         let mut pending_search: Option<u64> = None;
         let mut pending_song_url: Option<(u64, String)> = None;
         let mut pending_playlists: Option<u64> = None;
+        let mut pending_playlist_detail: Option<u64> = None;
         let mut pending_playlist_tracks: Option<PlaylistTracksLoad> = None;
         let mut pending_account: Option<u64> = None;
         let mut pending_login_qr_key: Option<u64> = None;
@@ -160,10 +161,16 @@ pub fn spawn_app_actor(
                             if matches!(app.playlist_mode, PlaylistMode::List) {
                                 if let Some(p) = app.playlists.get(app.playlists_selected) {
                                     app.playlists_status = "加载歌单歌曲中...".to_owned();
+                                    pending_playlist_tracks = None;
                                     push_state(&tx_evt, &app).await;
                                     let id = next_id(&mut req_id);
-                                    let _ = tx_netease.send(NeteaseCommand::PlaylistDetail { req_id: id, playlist_id: p.id }).await;
-                                    // playlist track ids is an intermediate; we'll store pending when the songs request is sent.
+                                    pending_playlist_detail = Some(id);
+                                    let _ = tx_netease
+                                        .send(NeteaseCommand::PlaylistDetail {
+                                            req_id: id,
+                                            playlist_id: p.id,
+                                        })
+                                        .await;
                                 }
                             }
                         }
@@ -202,6 +209,8 @@ pub fn spawn_app_actor(
                         AppCommand::Back => {
                             if matches!(app.view, View::Playlists) {
                                 app.playlist_mode = PlaylistMode::List;
+                                pending_playlist_tracks = None;
+                                pending_playlist_detail = None;
                                 app.playlists_status = "返回歌单列表".to_owned();
                                 push_state(&tx_evt, &app).await;
                             }
@@ -320,7 +329,11 @@ pub fn spawn_app_actor(
                             app.playlists_status = format!("歌单: {} 个（已选中我喜欢的音乐，回车打开）", app.playlists.len());
                             push_state(&tx_evt, &app).await;
                         }
-                        NeteaseEvent::PlaylistTrackIds { req_id: _, playlist_id, ids } => {
+                        NeteaseEvent::PlaylistTrackIds { req_id: id, playlist_id, ids } => {
+                            if pending_playlist_detail != Some(id) {
+                                continue;
+                            }
+                            pending_playlist_detail = None;
                             if ids.is_empty() {
                                 app.playlists_status = "歌单为空或无法解析".to_owned();
                                 push_state(&tx_evt, &app).await;

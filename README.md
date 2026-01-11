@@ -5,12 +5,20 @@
 
 一个基于 **Rust + ratatui** 的网易云音乐 TUI 客户端（进行中）。
 
-## 当前功能（MVP）
+## 当前功能
 
 - 匿名态初始化（`/api/register/anonimous`）与本地 cookie 持久化
 - 二维码登录：生成 `qrurl` + TUI 内显示二维码（ASCII）
 - 登录态轮询（扫码状态、成功 code=803）
-- 搜索（`/api/cloudsearch/pc`）并在 TUI 列表展示
+- 获取账号信息与用户歌单列表；进入歌单后可加载歌曲列表
+- 歌单歌曲全量加载：先取 `trackIds`，再按 200 首分批拉取歌曲详情并展示进度
+- 搜索（`/api/cloudsearch/pc`）并在 TUI 列表展示；可直接播放选中歌曲
+- 播放器能力（P0 已落地）：
+  - 上一首/下一首、暂停/继续、停止
+  - Seek（快进/快退）、音量调节
+  - 播放模式：顺序/列表循环/单曲循环/随机
+  - 播放错误恢复：URL 失效自动重取并重试（有限次）
+- 音频本地缓存（仅音乐）：按 `(song_id, br)` 落盘缓存 + LRU 自动清理（默认上限 2GB）
 
 ## 快速开始
 
@@ -77,7 +85,6 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
 - `src/netease/actor.rs`：`NeteaseActor`（网关层：命令/事件 + 强类型解析）。
 - `src/netease/models/`：DTO/Domain 转换与容错（响应结构变动的集中处理点）。
 - `src/app.rs`：当前整体状态结构（临时命名为 `App`，长期会演进为 `AppState` 分层模块）。
-- `src/api_worker.rs`：旧的 worker（已不在主流程使用，后续会删除）。
 - `src/netease/`：协议与客户端实现：
   - `src/netease/crypto.rs`：weapi / eapi / linuxapi 加密与表单生成（AES + RSA + MD5）。
   - `src/netease/client.rs`：`NeteaseClient`（cookie、UA、header cookie、请求拼装与发送）。
@@ -131,10 +138,12 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
 
 ### P0：播放器完成度（像一个真正的播放器）
 
+（已完成）
+
 - 播放控制：上一首/下一首、音量调节、Seek（快进/快退）
 - 播放模式：顺序/列表循环/单曲循环/随机
 - 播放错误恢复：URL 失效自动重取、连续失败重试上限、错误提示不阻塞 UI
-- 音频本地缓存：按 `(song_id, br)` 缓存音频文件 + LRU 清理（优先）
+- 音频本地缓存：按 `(song_id, br)` 缓存音频文件 + LRU 清理（默认上限 2GB，可通过 `NETEASE_AUDIO_CACHE_MAX_MB` 调整）
 
 ### P1：歌词与信息展示（体验分水岭）
 

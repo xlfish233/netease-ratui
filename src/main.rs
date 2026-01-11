@@ -1,4 +1,3 @@
-mod api_worker;
 mod app;
 mod audio_worker;
 mod domain;
