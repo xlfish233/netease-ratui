@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -31,6 +32,10 @@ pub struct App {
     pub now_playing: Option<String>,
     pub play_status: String,
     pub paused: bool,
+    pub play_started_at: Option<Instant>,
+    pub play_total_ms: Option<u64>,
+    pub play_paused_at: Option<Instant>,
+    pub play_paused_accum_ms: u64,
 }
 
 impl Default for App {
@@ -49,6 +54,10 @@ impl Default for App {
             now_playing: None,
             play_status: "未播放".to_owned(),
             paused: false,
+            play_started_at: None,
+            play_total_ms: None,
+            play_paused_at: None,
+            play_paused_accum_ms: 0,
         }
     }
 }

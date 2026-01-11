@@ -1,5 +1,5 @@
 use reqwest::blocking::Client;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::sync::mpsc;
@@ -15,7 +15,7 @@ pub enum AudioCommand {
 
 #[derive(Debug)]
 pub enum AudioEvent {
-    NowPlaying { title: String },
+    NowPlaying { title: String, duration_ms: Option<u64> },
     Paused(bool),
     Stopped,
     Error(String),
@@ -41,8 +41,8 @@ pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<Audio
         while let Ok(cmd) = rx_cmd.recv() {
             match cmd {
                 AudioCommand::PlayUrl { url, title } => match play_url(&http, &mut state, &url, &title) {
-                    Ok(()) => {
-                        let _ = tx_evt.send(AudioEvent::NowPlaying { title });
+                    Ok(duration_ms) => {
+                        let _ = tx_evt.send(AudioEvent::NowPlaying { title, duration_ms });
                     }
                     Err(e) => {
                         let _ = tx_evt.send(AudioEvent::Error(e));
@@ -93,7 +93,12 @@ impl PlayerState {
     }
 }
 
-fn play_url(http: &Client, state: &mut PlayerState, url: &str, title: &str) -> Result<(), String> {
+fn play_url(
+    http: &Client,
+    state: &mut PlayerState,
+    url: &str,
+    title: &str,
+) -> Result<Option<u64>, String> {
     state.stop();
 
     let mut tmp = NamedTempFile::new().map_err(|e| format!("创建临时文件失败: {e}"))?;
@@ -120,7 +125,11 @@ fn play_url(http: &Client, state: &mut PlayerState, url: &str, title: &str) -> R
     }
 
     let file = File::open(&path).map_err(|e| format!("打开临时文件失败({title}): {e}"))?;
-    let source = Decoder::new(BufReader::new(file)).map_err(|e| format!("解码失败({title}): {e}"))?;
+    let source =
+        Decoder::new(BufReader::new(file)).map_err(|e| format!("解码失败({title}): {e}"))?;
+    let duration_ms = source
+        .total_duration()
+        .map(|d: std::time::Duration| d.as_millis() as u64);
 
     let sink = Sink::try_new(&state.handle).map_err(|e| format!("创建 Sink 失败: {e}"))?;
     sink.append(source);
@@ -128,6 +137,5 @@ fn play_url(http: &Client, state: &mut PlayerState, url: &str, title: &str) -> R
 
     state.sink = Some(sink);
     state._temp = Some(tmp);
-    Ok(())
+    Ok(duration_ms)
 }
-

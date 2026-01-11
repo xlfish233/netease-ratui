@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::{Line, Text},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs, Wrap},
+    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Tabs, Wrap},
     Terminal,
 };
 use std::io;
@@ -122,18 +122,32 @@ fn handle_api_event(app: &mut App, evt: ApiEvent, tx_audio: &mpsc::Sender<AudioC
 
 fn handle_audio_event(app: &mut App, evt: AudioEvent) {
     match evt {
-        AudioEvent::NowPlaying { title } => {
+        AudioEvent::NowPlaying { title, duration_ms } => {
             app.now_playing = Some(title);
             app.paused = false;
             app.play_status = "播放中".to_owned();
+            app.play_started_at = Some(Instant::now());
+            app.play_total_ms = duration_ms;
+            app.play_paused_at = None;
+            app.play_paused_accum_ms = 0;
         }
         AudioEvent::Paused(p) => {
             app.paused = p;
             app.play_status = if p { "已暂停" } else { "播放中" }.to_owned();
+            if p {
+                app.play_paused_at = Some(Instant::now());
+            } else if let Some(t) = app.play_paused_at.take() {
+                app.play_paused_accum_ms =
+                    app.play_paused_accum_ms.saturating_add(t.elapsed().as_millis() as u64);
+            }
         }
         AudioEvent::Stopped => {
             app.paused = false;
             app.play_status = "已停止".to_owned();
+            app.play_started_at = None;
+            app.play_total_ms = None;
+            app.play_paused_at = None;
+            app.play_paused_accum_ms = 0;
         }
         AudioEvent::Error(e) => {
             app.play_status = format!("播放错误: {e}");
@@ -293,7 +307,7 @@ fn draw_search(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
         .constraints([
             Constraint::Length(3),
             Constraint::Min(8),
-            Constraint::Length(5),
+            Constraint::Length(7),
         ])
         .split(area);
 
@@ -316,13 +330,37 @@ fn draw_search(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
         .highlight_style(Style::default().fg(Color::Yellow));
     f.render_stateful_widget(list, chunks[1], &mut list_state(app.search_selected));
 
+    let status_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(4), Constraint::Length(3)])
+        .split(chunks[2]);
+
     let now = app.now_playing.as_deref().unwrap_or("-");
+    let (elapsed_ms, total_ms) = playback_time_ms(app);
+    let time_text = format!(
+        "{} / {}{}",
+        fmt_mmss(elapsed_ms),
+        total_ms.map(fmt_mmss).unwrap_or_else(|| "--:--".to_owned()),
+        if app.paused { " (暂停)" } else { "" }
+    );
+
     let status = Paragraph::new(format!(
-        "搜索: {}\n播放: {} | Now: {}\n操作: 输入/回车搜索/↑↓选择 | p 播放 | 空格 暂停/继续 | s 停止 | q 退出",
-        app.search_status, app.play_status, now
+        "搜索: {}\n播放: {} | Now: {}\n时间: {}\n操作: p 播放 | 空格 暂停/继续 | s 停止 | q 退出",
+        app.search_status, app.play_status, now, time_text
     ))
     .block(Block::default().borders(Borders::ALL).title("状态"));
-    f.render_widget(status, chunks[2]);
+    f.render_widget(status, status_chunks[0]);
+
+    let ratio = if let Some(total) = total_ms {
+        if total == 0 { 0.0 } else { (elapsed_ms.min(total) as f64) / (total as f64) }
+    } else {
+        0.0
+    };
+    let gauge = Gauge::default()
+        .block(Block::default().borders(Borders::ALL).title("进度"))
+        .gauge_style(Style::default().fg(Color::Green))
+        .ratio(ratio);
+    f.render_widget(gauge, status_chunks[1]);
 }
 
 fn list_state(selected: usize) -> ratatui::widgets::ListState {
@@ -336,4 +374,29 @@ fn selected_song_title(app: &App) -> String {
         .get(app.search_selected)
         .map(|s| format!("{} - {}", s.name, s.artists))
         .unwrap_or_else(|| "未知歌曲".to_owned())
+}
+
+fn playback_time_ms(app: &App) -> (u64, Option<u64>) {
+    let Some(started) = app.play_started_at else {
+        return (0, None);
+    };
+
+    let now = if app.paused {
+        app.play_paused_at.unwrap_or_else(Instant::now)
+    } else {
+        Instant::now()
+    };
+
+    let elapsed = now
+        .duration_since(started)
+        .as_millis()
+        .saturating_sub(app.play_paused_accum_ms as u128) as u64;
+    (elapsed, app.play_total_ms)
+}
+
+fn fmt_mmss(ms: u64) -> String {
+    let total_sec = ms / 1000;
+    let m = total_sec / 60;
+    let s = total_sec % 60;
+    format!("{m:02}:{s:02}")
 }
