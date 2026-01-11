@@ -650,7 +650,12 @@ pub fn spawn_app_actor(
                             push_state(&tx_evt, &app).await;
 
                             if loader.is_done() {
-                                let loader = pending_playlist_tracks.take().expect("loader");
+                                let Some(loader) = pending_playlist_tracks.take() else {
+                                    tracing::warn!(
+                                        "pending_playlist_tracks 丢失（已完成但无法 take）"
+                                    );
+                                    continue;
+                                };
                                 let playlist_id = loader.playlist_id;
                                 let songs = loader.songs;
 

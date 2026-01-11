@@ -218,7 +218,10 @@ impl PreloadManager {
         update_preload_summary(app);
 
         if loader.is_done() {
-            let loader = self.loaders.remove(&playlist_id).expect("loader");
+            let Some(loader) = self.loaders.remove(&playlist_id) else {
+                tracing::warn!(playlist_id, "预加载 loader 丢失（已完成但无法取出）");
+                return true;
+            };
             if let Some(p) = app.playlist_preloads.get_mut(&playlist_id) {
                 p.status = PreloadStatus::Completed;
                 p.songs = loader.songs;

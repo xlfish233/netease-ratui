@@ -43,7 +43,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --target ${{ matrix.target }} --all-targets
+        run: cargo clippy --target ${{ matrix.target }} --all-targets -- -D warnings
 
       - name: Test
         run: cargo test --target ${{ matrix.target }}
