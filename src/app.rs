@@ -9,6 +9,7 @@ pub enum View {
     Playlists,
     Search,
     Lyrics,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +55,7 @@ pub struct App {
     pub volume: f32,
     pub play_song_id: Option<i64>,
     pub play_error_count: u32,
+    pub play_br: i64,
 
     pub account_uid: Option<i64>,
     pub account_nickname: Option<String>,
@@ -70,6 +72,9 @@ pub struct App {
     pub lyrics_follow: bool,
     pub lyrics_selected: usize,
     pub lyrics_offset_ms: i64,
+
+    pub settings_selected: usize,
+    pub settings_status: String,
 }
 
 impl Default for App {
@@ -99,6 +104,7 @@ impl Default for App {
             volume: 1.0,
             play_song_id: None,
             play_error_count: 0,
+            play_br: 999_000,
             account_uid: None,
             account_nickname: None,
             playlists: Vec::new(),
@@ -114,6 +120,9 @@ impl Default for App {
             lyrics_follow: true,
             lyrics_selected: 0,
             lyrics_offset_ms: 0,
+
+            settings_selected: 0,
+            settings_status: "←→ 调整 | Enter 操作 | Tab 切换".to_owned(),
         }
     }
 }

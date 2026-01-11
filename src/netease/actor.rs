@@ -50,6 +50,9 @@ pub enum NeteaseCommand {
         req_id: u64,
         song_id: i64,
     },
+    LogoutLocal {
+        req_id: u64,
+    },
 }
 
 #[derive(Debug)]
@@ -98,6 +101,9 @@ pub enum NeteaseEvent {
         req_id: u64,
         song_id: i64,
         lyrics: Vec<LyricLine>,
+    },
+    LoggedOut {
+        req_id: u64,
     },
     Error {
         req_id: u64,
@@ -396,6 +402,19 @@ pub fn spawn_netease_actor(
                                 .await;
                         }
                     },
+                    Err(e) => {
+                        let _ = tx_evt
+                            .send(NeteaseEvent::Error {
+                                req_id,
+                                message: format!("{e}"),
+                            })
+                            .await;
+                    }
+                },
+                NeteaseCommand::LogoutLocal { req_id } => match client.logout_local() {
+                    Ok(()) => {
+                        let _ = tx_evt.send(NeteaseEvent::LoggedOut { req_id }).await;
+                    }
                     Err(e) => {
                         let _ = tx_evt
                             .send(NeteaseEvent::Error {

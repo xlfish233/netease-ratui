@@ -63,12 +63,14 @@ pub async fn run_tui(
                     View::Playlists => app.playlists_status = s,
                     View::Search => app.search_status = s,
                     View::Lyrics => app.lyrics_status = s,
+                    View::Settings => app.settings_status = s,
                 },
                 AppEvent::Error(e) => match app.view {
                     View::Login => app.login_status = format!("错误: {e}"),
                     View::Playlists => app.playlists_status = format!("错误: {e}"),
                     View::Search => app.search_status = format!("错误: {e}"),
                     View::Lyrics => app.lyrics_status = format!("错误: {e}"),
+                    View::Settings => app.settings_status = format!("错误: {e}"),
                 },
             }
         }
@@ -234,6 +236,24 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
             }
             _ => {}
         },
+        View::Settings => match key.code {
+            KeyCode::Up => {
+                let _ = tx.send(AppCommand::SettingsMoveUp).await;
+            }
+            KeyCode::Down => {
+                let _ = tx.send(AppCommand::SettingsMoveDown).await;
+            }
+            KeyCode::Left => {
+                let _ = tx.send(AppCommand::SettingsDecrease).await;
+            }
+            KeyCode::Right => {
+                let _ = tx.send(AppCommand::SettingsIncrease).await;
+            }
+            KeyCode::Enter => {
+                let _ = tx.send(AppCommand::SettingsActivate).await;
+            }
+            _ => {}
+        },
     }
 
     false
@@ -244,7 +264,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
 
     let (titles, selected) = if app.logged_in {
         (
-            ["歌单", "搜索", "歌词"]
+            ["歌单", "搜索", "歌词", "设置"]
                 .into_iter()
                 .map(Line::from)
                 .collect::<Vec<_>>(),
@@ -252,12 +272,13 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
                 View::Playlists => 0,
                 View::Search => 1,
                 View::Lyrics => 2,
+                View::Settings => 3,
                 View::Login => 0,
             },
         )
     } else {
         (
-            ["登录", "搜索", "歌词"]
+            ["登录", "搜索", "歌词", "设置"]
                 .into_iter()
                 .map(Line::from)
                 .collect::<Vec<_>>(),
@@ -265,6 +286,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
                 View::Login => 0,
                 View::Search => 1,
                 View::Lyrics => 2,
+                View::Settings => 3,
                 View::Playlists => 1,
             },
         )
@@ -290,6 +312,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
         View::Playlists => draw_playlists(f, chunks[1], app),
         View::Search => draw_search(f, chunks[1], app),
         View::Lyrics => draw_lyrics(f, chunks[1], app),
+        View::Settings => draw_settings(f, chunks[1], app),
     }
 }
 
@@ -467,6 +490,44 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
     draw_player_status(f, chunks[1], app, "状态", "歌词", status_text.as_str());
 }
 
+fn draw_settings(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(8), Constraint::Length(7)])
+        .split(area);
+
+    let items = vec![
+        ListItem::new(Line::from(format!("音质: {}", br_label(app.play_br)))),
+        ListItem::new(Line::from(format!("音量: {:.0}%", app.volume * 100.0))),
+        ListItem::new(Line::from(format!("播放模式: {}", play_mode_label(app.play_mode)))),
+        ListItem::new(Line::from(format!("歌词 offset: {}", fmt_offset(app.lyrics_offset_ms)))),
+        ListItem::new(Line::from(if app.logged_in {
+            "退出登录".to_owned()
+        } else {
+            "退出登录（未登录）".to_owned()
+        })),
+    ];
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("设置（↑↓选择，←→调整，Enter 操作）"),
+        )
+        .highlight_style(Style::default().fg(Color::Yellow));
+
+    f.render_stateful_widget(list, chunks[0], &mut list_state(app.settings_selected));
+
+    draw_player_status(
+        f,
+        chunks[1],
+        app,
+        "状态",
+        "设置",
+        app.settings_status.as_str(),
+    );
+}
+
 fn list_state(selected: usize) -> ratatui::widgets::ListState {
     let mut st = ratatui::widgets::ListState::default();
     st.select(Some(selected));
@@ -525,6 +586,25 @@ fn fmt_offset(offset_ms: i64) -> String {
     format!("{sign}{s:.2}s")
 }
 
+fn br_label(br: i64) -> &'static str {
+    match br {
+        128_000 => "128k",
+        192_000 => "192k",
+        320_000 => "320k",
+        999_000 => "最高",
+        _ => "自定义",
+    }
+}
+
+fn play_mode_label(m: crate::app::PlayMode) -> &'static str {
+    match m {
+        crate::app::PlayMode::Sequential => "顺序",
+        crate::app::PlayMode::ListLoop => "列表循环",
+        crate::app::PlayMode::SingleLoop => "单曲循环",
+        crate::app::PlayMode::Shuffle => "随机",
+    }
+}
+
 fn fmt_mmss(ms: u64) -> String {
     let total_sec = ms / 1000;
     let m = total_sec / 60;
@@ -562,14 +642,15 @@ fn draw_player_status(
     };
 
     let status = Paragraph::new(format!(
-        "{}: {}\n播放: {} | Now: {}\n时间: {} | 模式: {} | 音量: {:.0}%\n{}",
+        "{}: {}\n播放: {} | Now: {}\n时间: {} | 模式: {} | 音量: {:.0}% | 音质: {}\n{}",
         context_label,
         context_value,
         app.play_status,
         now,
         time_text,
         mode_text,
-        (app.volume.clamp(0.0, 1.0) * 100.0),
+        (app.volume.clamp(0.0, 2.0) * 100.0),
+        br_label(app.play_br),
         progress
     ))
     .block(Block::default().borders(Borders::ALL).title(title));
@@ -577,7 +658,7 @@ fn draw_player_status(
 
     // 底栏帮助提示
     let help = Paragraph::new(
-        "帮助: Tab 切换页 | ↑↓ 选择/滚动 | Enter 打开歌单 | p 播放选中 | 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | 歌词页: o 跟随/锁定 | g 回到当前行 | Alt+←/→ offset(±200ms) | Shift+Alt+←/→ offset(±50ms) | q 退出",
+        "帮助: Tab 切换页 | ↑↓ 选择/滚动 | Enter 打开歌单 | p 播放选中 | 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | 歌词页: o 跟随/锁定 | g 回到当前行 | Alt+←/→ offset(±200ms) | Shift+Alt+←/→ offset(±50ms) | 设置页: ↑↓选择 ←→调整 Enter操作(含退出登录) | q 退出",
     )
     .block(Block::default().borders(Borders::ALL).title("帮助"));
     f.render_widget(help, status_chunks[1]);

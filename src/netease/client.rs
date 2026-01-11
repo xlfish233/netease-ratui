@@ -559,6 +559,12 @@ impl NeteaseClient {
     fn save_state(&self) -> Result<(), NeteaseError> {
         save_state(&self.cfg.data_dir, &self.state)
     }
+
+    pub fn logout_local(&mut self) -> Result<(), NeteaseError> {
+        self.state.cookies.clear();
+        self.save_state()?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

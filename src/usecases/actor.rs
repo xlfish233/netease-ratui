@@ -3,13 +3,13 @@ use crate::audio_worker::{AudioCommand, AudioEvent};
 use crate::messages::app::{AppCommand, AppEvent};
 use crate::netease::NeteaseClientConfig;
 use crate::netease::actor::{NeteaseCommand, NeteaseEvent};
+use crate::settings::{self, AppSettings};
 
 use rand::Rng;
 use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-const DEFAULT_BR: i64 = 999_000;
 const PLAYLIST_TRACKS_PAGE_SIZE: usize = 200;
 
 pub fn spawn_app_actor(
@@ -22,7 +22,7 @@ pub fn spawn_app_actor(
     let (tx_netease, mut rx_netease) = crate::netease::actor::spawn_netease_actor(cfg);
 
     // Audio worker is blocking thread + std mpsc. Bridge it to tokio mpsc.
-    let (tx_audio, rx_audio) = crate::audio_worker::spawn_audio_worker(data_dir);
+    let (tx_audio, rx_audio) = crate::audio_worker::spawn_audio_worker(data_dir.clone());
     let (tx_audio_evt, mut rx_audio_evt) = mpsc::channel::<AudioEvent>(64);
     thread::spawn(move || {
         while let Ok(evt) = rx_audio.recv() {
@@ -33,6 +33,9 @@ pub fn spawn_app_actor(
     tokio::spawn(async move {
         let mut app = App::default();
         let mut req_id: u64 = 1;
+
+        let mut settings = settings::load_settings(&data_dir);
+        apply_settings_to_app(&mut app, &settings);
 
         // pending req ids to drop stale responses
         let mut pending_search: Option<u64> = None;
@@ -72,14 +75,16 @@ pub fn spawn_app_actor(
                                 app.view = match app.view {
                                     View::Playlists => View::Search,
                                     View::Search => View::Lyrics,
-                                    View::Lyrics => View::Playlists,
+                                    View::Lyrics => View::Settings,
+                                    View::Settings => View::Playlists,
                                     View::Login => View::Playlists,
                                 };
                             } else {
                                 app.view = match app.view {
                                     View::Login => View::Search,
                                     View::Search => View::Lyrics,
-                                    View::Lyrics => View::Login,
+                                    View::Lyrics => View::Settings,
+                                    View::Settings => View::Login,
                                     View::Playlists => View::Login,
                                 };
                             }
@@ -143,7 +148,7 @@ pub fn spawn_app_actor(
                                     .send(NeteaseCommand::SongUrl {
                                         req_id: id,
                                         id: s.id,
-                                        br: DEFAULT_BR,
+                                        br: app.play_br,
                                     })
                                     .await;
                             }
@@ -203,7 +208,7 @@ pub fn spawn_app_actor(
                                         .send(NeteaseCommand::SongUrl {
                                             req_id: id,
                                             id: s.id,
-                                            br: DEFAULT_BR,
+                                            br: app.play_br,
                                         })
                                         .await;
                                 }
@@ -257,6 +262,8 @@ pub fn spawn_app_actor(
                         AppCommand::LyricsOffsetAddMs { ms } => {
                             if matches!(app.view, View::Lyrics) {
                                 app.lyrics_offset_ms = app.lyrics_offset_ms.saturating_add(ms);
+                                sync_settings_from_app(&mut settings, &app);
+                                let _ = settings::save_settings(&data_dir, &settings);
                                 push_state(&tx_evt, &app).await;
                             }
                         }
@@ -285,17 +292,74 @@ pub fn spawn_app_actor(
                         AppCommand::PlayerVolumeDown => {
                             app.volume = (app.volume - 0.1).clamp(0.0, 2.0);
                             let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+                            sync_settings_from_app(&mut settings, &app);
+                            let _ = settings::save_settings(&data_dir, &settings);
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::PlayerVolumeUp => {
                             app.volume = (app.volume + 0.1).clamp(0.0, 2.0);
                             let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+                            sync_settings_from_app(&mut settings, &app);
+                            let _ = settings::save_settings(&data_dir, &settings);
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::PlayerCycleMode => {
                             app.play_mode = next_play_mode(app.play_mode);
                             app.play_status = format!("播放模式: {}", play_mode_label(app.play_mode));
+                            sync_settings_from_app(&mut settings, &app);
+                            let _ = settings::save_settings(&data_dir, &settings);
                             push_state(&tx_evt, &app).await;
+                        }
+                        AppCommand::SettingsMoveUp => {
+                            if matches!(app.view, View::Settings) && app.settings_selected > 0 {
+                                app.settings_selected -= 1;
+                                push_state(&tx_evt, &app).await;
+                            }
+                        }
+                        AppCommand::SettingsMoveDown => {
+                            if matches!(app.view, View::Settings) {
+                                app.settings_selected = (app.settings_selected + 1).min(SETTINGS_ITEMS_COUNT - 1);
+                                push_state(&tx_evt, &app).await;
+                            }
+                        }
+                        AppCommand::SettingsDecrease => {
+                            if matches!(app.view, View::Settings) {
+                                apply_settings_adjust(&mut app, -1);
+                                sync_settings_from_app(&mut settings, &app);
+                                let _ = settings::save_settings(&data_dir, &settings);
+                                let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+                                push_state(&tx_evt, &app).await;
+                            }
+                        }
+                        AppCommand::SettingsIncrease => {
+                            if matches!(app.view, View::Settings) {
+                                apply_settings_adjust(&mut app, 1);
+                                sync_settings_from_app(&mut settings, &app);
+                                let _ = settings::save_settings(&data_dir, &settings);
+                                let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+                                push_state(&tx_evt, &app).await;
+                            }
+                        }
+                        AppCommand::SettingsActivate => {
+                            if matches!(app.view, View::Settings) && is_logout_selected(&app) {
+                                let _ = tx_audio.send(AudioCommand::Stop);
+                                let id = next_id(&mut req_id);
+                                let _ = tx_netease.send(NeteaseCommand::LogoutLocal { req_id: id }).await;
+
+                                pending_search = None;
+                                pending_song_url = None;
+                                pending_playlists = None;
+                                pending_playlist_detail = None;
+                                pending_playlist_tracks = None;
+                                pending_account = None;
+                                pending_login_qr_key = None;
+                                pending_login_poll = None;
+                                pending_lyric = None;
+
+                                reset_app_after_logout(&mut app);
+                                app.login_status = "已退出登录（已清理本地 cookie），按 l 重新登录".to_owned();
+                                push_state(&tx_evt, &app).await;
+                            }
                         }
                     }
                 }
@@ -458,7 +522,7 @@ pub fn spawn_app_actor(
                                 push_state(&tx_evt, &app).await;
                                 let _ = tx_audio.send(AudioCommand::PlayTrack {
                                     id: song_url.id,
-                                    br: DEFAULT_BR,
+                                    br: app.play_br,
                                     url: song_url.url,
                                     title,
                                 });
@@ -483,12 +547,14 @@ pub fn spawn_app_actor(
                             };
                             push_state(&tx_evt, &app).await;
                         }
+                        NeteaseEvent::LoggedOut { .. } => {}
                         NeteaseEvent::Error { req_id: _, message } => {
                             match app.view {
                                 View::Login => app.login_status = format!("错误: {message}"),
                                 View::Playlists => app.playlists_status = format!("错误: {message}"),
                                 View::Search => app.search_status = format!("错误: {message}"),
                                 View::Lyrics => app.lyrics_status = format!("错误: {message}"),
+                                View::Settings => app.settings_status = format!("错误: {message}"),
                             }
                             push_state(&tx_evt, &app).await;
                         }
@@ -662,7 +728,7 @@ async fn handle_audio_event(
                             .send(NeteaseCommand::SongUrl {
                                 req_id: id,
                                 id: song_id,
-                                br: DEFAULT_BR,
+                                br: app.play_br,
                             })
                             .await;
                     }
@@ -753,9 +819,127 @@ async fn request_play_at_index(
         .send(NeteaseCommand::SongUrl {
             req_id: id,
             id: s.id,
-            br: DEFAULT_BR,
+            br: app.play_br,
         })
         .await;
+}
+
+const SETTINGS_ITEMS_COUNT: usize = 5;
+
+fn apply_settings_to_app(app: &mut App, s: &AppSettings) {
+    app.volume = s.volume.clamp(0.0, 2.0);
+    app.play_br = s.br;
+    app.play_mode = settings::play_mode_from_string(&s.play_mode);
+    app.lyrics_offset_ms = s.lyrics_offset_ms;
+}
+
+fn sync_settings_from_app(s: &mut AppSettings, app: &App) {
+    s.volume = app.volume;
+    s.br = app.play_br;
+    s.play_mode = settings::play_mode_to_string(app.play_mode);
+    s.lyrics_offset_ms = app.lyrics_offset_ms;
+}
+
+fn is_logout_selected(app: &App) -> bool {
+    app.settings_selected == SETTINGS_ITEMS_COUNT - 1
+}
+
+fn reset_app_after_logout(app: &mut App) {
+    app.logged_in = false;
+    app.view = View::Login;
+
+    app.login_qr_url = None;
+    app.login_qr_ascii = None;
+    app.login_unikey = None;
+    app.login_status = "按 l 生成二维码；q 退出；Tab 切换页面".to_owned();
+
+    app.account_uid = None;
+    app.account_nickname = None;
+    app.playlists.clear();
+    app.playlists_selected = 0;
+    app.playlist_mode = PlaylistMode::List;
+    app.playlist_tracks.clear();
+    app.playlist_tracks_selected = 0;
+    app.playlists_status = "等待登录后加载歌单".to_owned();
+
+    app.search_results.clear();
+    app.search_selected = 0;
+    app.search_status = "输入关键词，回车搜索".to_owned();
+
+    app.queue.clear();
+    app.queue_pos = None;
+    app.now_playing = None;
+    app.play_status = "未播放".to_owned();
+    app.paused = false;
+    app.play_started_at = None;
+    app.play_total_ms = None;
+    app.play_paused_at = None;
+    app.play_paused_accum_ms = 0;
+    app.play_id = None;
+    app.play_song_id = None;
+    app.play_error_count = 0;
+
+    app.lyrics_song_id = None;
+    app.lyrics.clear();
+    app.lyrics_status = "暂无歌词".to_owned();
+    app.lyrics_follow = true;
+    app.lyrics_selected = 0;
+}
+
+fn apply_settings_adjust(app: &mut App, dir: i32) {
+    match app.settings_selected {
+        0 => {
+            let options = [128_000, 192_000, 320_000, 999_000];
+            let pos = options
+                .iter()
+                .position(|v| *v == app.play_br)
+                .unwrap_or(options.len() - 1);
+            let next = if dir > 0 {
+                (pos + 1).min(options.len() - 1)
+            } else {
+                pos.saturating_sub(1)
+            };
+            app.play_br = options[next];
+            app.settings_status = format!("音质已设置为 {}", br_label(app.play_br));
+        }
+        1 => {
+            app.volume = (app.volume + if dir > 0 { 0.05 } else { -0.05 }).clamp(0.0, 2.0);
+            app.settings_status = format!("音量已设置为 {:.0}%", app.volume * 100.0);
+        }
+        2 => {
+            app.play_mode = if dir > 0 {
+                next_play_mode(app.play_mode)
+            } else {
+                prev_play_mode(app.play_mode)
+            };
+            app.settings_status = format!("播放模式: {}", play_mode_label(app.play_mode));
+        }
+        3 => {
+            app.lyrics_offset_ms = app.lyrics_offset_ms.saturating_add(if dir > 0 { 200 } else { -200 });
+            app.settings_status = format!("歌词 offset: {}ms", app.lyrics_offset_ms);
+        }
+        _ => {}
+    }
+}
+
+fn prev_play_mode(m: crate::app::PlayMode) -> crate::app::PlayMode {
+    use crate::app::PlayMode;
+    match m {
+        PlayMode::Sequential => PlayMode::Shuffle,
+        PlayMode::ListLoop => PlayMode::Sequential,
+        PlayMode::SingleLoop => PlayMode::ListLoop,
+        PlayMode::Shuffle => PlayMode::SingleLoop,
+    }
+}
+
+fn br_label(br: i64) -> &'static str {
+    match br {
+        128_000 => "128k",
+        192_000 => "192k",
+        320_000 => "320k",
+        999_000 => "最高",
+        _ => "自定义",
+    }
 }
 
 async fn play_next(

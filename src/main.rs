@@ -3,6 +3,7 @@ mod audio_worker;
 mod domain;
 mod messages;
 mod netease;
+mod settings;
 mod tui;
 mod usecases;
 
