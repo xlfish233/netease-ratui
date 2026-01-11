@@ -71,6 +71,7 @@ impl NeteaseClient {
         self.state.cookies.contains_key("MUSIC_U")
     }
 
+    #[allow(dead_code)]
     pub fn cookie_string(&self) -> String {
         self.state
             .cookies
@@ -350,6 +351,7 @@ impl NeteaseClient {
             Err(e) => {
                 // 某些环境下 `interface.music.163.com` 可能 DNS 失败，降级到 `music.163.com`
                 if url.contains("https://interface.music.163.com/") {
+                    tracing::warn!(url = %url, err = %e, "请求失败，降级到 music.163.com");
                     let fallback =
                         url.replace("https://interface.music.163.com/", "https://music.163.com/");
                     self.http
@@ -570,6 +572,7 @@ impl NeteaseClient {
 #[derive(Debug, Clone, Copy)]
 pub enum QrPlatform {
     Pc,
+    #[allow(dead_code)]
     Web,
 }
 

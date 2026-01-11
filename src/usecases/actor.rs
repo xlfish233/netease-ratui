@@ -388,6 +388,7 @@ pub fn spawn_app_actor(
                             if matches!(app.view, View::Settings) {
                                 if is_clear_cache_selected(&app) {
                                     app.settings_status = "正在清除音频缓存...".to_owned();
+                                    tracing::info!("用户触发：清除音频缓存");
                                     let _ = tx_audio.send(AudioCommand::ClearCache);
                                     push_state(&tx_evt, &app).await;
                                 } else if is_logout_selected(&app) {
@@ -397,6 +398,7 @@ pub fn spawn_app_actor(
                                         continue;
                                     }
 
+                                    tracing::info!("用户触发：退出登录");
                                     let _ = tx_audio.send(AudioCommand::Stop);
                                     let id = next_id(&mut req_id);
                                     let _ = tx_netease_hi
@@ -425,7 +427,11 @@ pub fn spawn_app_actor(
                 }
                 Some(evt) = rx_netease.recv() => {
                     match evt {
-                        NeteaseEvent::ClientReady { req_id: _, logged_in } => {
+                        NeteaseEvent::ClientReady {
+                            req_id: evt_req_id,
+                            logged_in,
+                        } => {
+                            tracing::debug!(req_id = evt_req_id, logged_in, "NeteaseActor: ClientReady");
                             app.logged_in = logged_in;
                             if app.logged_in {
                                 app.view = View::Playlists;
@@ -652,7 +658,9 @@ pub fn spawn_app_actor(
                             };
                             push_state(&tx_evt, &app).await;
                         }
-                        NeteaseEvent::LoggedOut { .. } => {}
+                        NeteaseEvent::LoggedOut { req_id } => {
+                            tracing::debug!(req_id, "NeteaseActor: LoggedOut");
+                        }
                         NeteaseEvent::Error { req_id, message } => {
                             if preload_mgr.on_error(&mut app, req_id, message.clone()) {
                                 refresh_playlist_list_status(&mut app);
@@ -669,7 +677,9 @@ pub fn spawn_app_actor(
                             }
                             push_state(&tx_evt, &app).await;
                         }
-                        NeteaseEvent::AnonymousReady { .. } => {}
+                        NeteaseEvent::AnonymousReady { req_id } => {
+                            tracing::debug!(req_id, "NeteaseActor: AnonymousReady");
+                        }
                     }
                 }
                 Some(evt) = rx_audio_evt.recv() => {
@@ -775,6 +785,7 @@ async fn handle_audio_event(
                 files,
                 bytes / 1024 / 1024
             );
+            tracing::info!(files, bytes, "音频缓存已清除");
         }
         AudioEvent::Ended { play_id } => {
             if app.play_id != Some(play_id) {

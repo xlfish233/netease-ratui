@@ -10,6 +10,7 @@ pub enum NeteaseCommand {
     Init {
         req_id: u64,
     },
+    #[allow(dead_code)]
     EnsureAnonymous {
         req_id: u64,
     },

@@ -27,8 +27,12 @@ pub struct PlaylistPreload {
 
 #[derive(Debug, Clone)]
 pub enum PreloadStatus {
+    #[allow(dead_code)]
     NotStarted,
-    Loading { loaded: usize, total: usize },
+    Loading {
+        loaded: usize,
+        total: usize,
+    },
     Completed,
     Failed(String),
     Cancelled,
@@ -149,6 +153,7 @@ impl Default for App {
     }
 }
 
+#[allow(dead_code)]
 pub fn parse_search_songs(v: &Value) -> Vec<Song> {
     // 兼容两种常见返回：
     // - cloudsearch: {"result":{"songs":[...]}}
@@ -182,6 +187,7 @@ pub fn parse_search_songs(v: &Value) -> Vec<Song> {
         .collect()
 }
 
+#[allow(dead_code)]
 pub fn parse_user_playlists(v: &Value) -> Vec<Playlist> {
     let Some(arr) = v.get("playlist").and_then(|x| x.as_array()) else {
         return vec![];

@@ -1,6 +1,7 @@
 mod app;
 mod audio_worker;
 mod domain;
+mod logging;
 mod messages;
 mod netease;
 mod settings;
@@ -14,9 +15,12 @@ use std::env;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = NeteaseClientConfig::default();
+    let _log_guard = logging::init(&cfg.data_dir);
+    tracing::info!(data_dir = %cfg.data_dir.display(), "netease-ratui 启动");
 
     // 便于无交互环境快速验证 service layer
     if env::var("NETEASE_SKIP_LOGIN").ok().as_deref() == Some("1") {
+        tracing::info!("启动模式: NETEASE_SKIP_LOGIN=1");
         let mut client = NeteaseClient::new(cfg)?;
         client.ensure_anonymous().await?;
         let search = client.cloudsearch("周杰伦", 1, 5, 0).await?;
@@ -26,6 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 便于排查二维码登录接口返回结构
     if env::var("NETEASE_QR_KEY").ok().as_deref() == Some("1") {
+        tracing::info!("启动模式: NETEASE_QR_KEY=1");
         let mut client = NeteaseClient::new(cfg)?;
         let v = client.login_qr_key().await?;
         println!("login_qr_key 响应: {v}");

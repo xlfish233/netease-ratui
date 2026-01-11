@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use aes::Aes128;
 use base64::Engine;
 use block_padding::Pkcs7;

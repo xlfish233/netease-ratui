@@ -74,6 +74,7 @@ pub fn spawn_audio_worker(
 
         let _stream_guard = stream;
         let cache = AudioCache::new(&data_dir);
+        tracing::info!(data_dir = %data_dir.display(), "AudioWorker 已启动");
         let mut state = PlayerState::new(handle, cache);
 
         while let Ok(cmd) = rx_cmd.recv() {

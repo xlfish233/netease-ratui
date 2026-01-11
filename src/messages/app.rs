@@ -43,6 +43,8 @@ pub enum AppCommand {
 #[derive(Debug)]
 pub enum AppEvent {
     State(Box<App>),
+    #[allow(dead_code)]
     Toast(String),
+    #[allow(dead_code)]
     Error(String),
 }

@@ -33,6 +33,13 @@ cargo run
 NETEASE_SKIP_LOGIN=1 cargo run
 ```
 
+## 日志（tracing）
+
+- 默认写入文件日志（避免污染 TUI）：`{data_dir}/logs/netease-ratui.log.YYYY-MM-DD`
+- 通过 `RUST_LOG` 控制级别（例如 `RUST_LOG=debug`）
+- 可选环境变量：
+  - `NETEASE_LOG_DIR=/path/to/logs`：覆盖日志目录
+
 ## 安装（预编译包）
 
 在 GitHub Release 下载与你系统匹配的压缩包，解压后运行可执行文件即可。

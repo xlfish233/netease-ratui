@@ -564,13 +564,6 @@ fn list_state(selected: usize) -> ratatui::widgets::ListState {
     st
 }
 
-fn selected_song_title(app: &App) -> String {
-    app.search_results
-        .get(app.search_selected)
-        .map(|s| format!("{} - {}", s.name, s.artists))
-        .unwrap_or_else(|| "未知歌曲".to_owned())
-}
-
 fn playback_time_ms(app: &App) -> (u64, Option<u64>) {
     let Some(started) = app.play_started_at else {
         return (0, None);
