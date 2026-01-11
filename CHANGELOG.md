@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 歌词页面支持水平和垂直居中显示
 - 歌单后台预加载（低优先级，不阻塞搜索/点歌/打开歌单）
 - NeteaseActor 支持高/低优先级命令通道（优先处理用户交互请求）
 - AppActor 代码拆分：`src/usecases/actor.rs` 拆出 `src/usecases/actor/` 子模块

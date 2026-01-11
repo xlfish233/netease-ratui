@@ -496,9 +496,12 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
                 {
                     lines.push(Line::from(format!("  {t}")));
                 }
-                ListItem::new(Text::from(lines))
+                ListItem::new(Text::from(lines).centered())
             })
             .collect::<Vec<_>>();
+
+        // 计算合适的 scroll_padding：让高亮行前后各显示约 5 行
+        let scroll_padding = 5.min(chunks[0].height.saturating_sub(2) as usize / 2);
 
         let list = List::new(items)
             .block(
@@ -506,6 +509,7 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
                     .borders(Borders::ALL)
                     .title("歌词（自动滚动）"),
             )
+            .scroll_padding(scroll_padding)
             .highlight_style(Style::default().fg(Color::Yellow));
         f.render_stateful_widget(list, chunks[0], &mut list_state(selected));
     }
