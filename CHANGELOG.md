@@ -1,15 +1,16 @@
 # Changelog
 
-## Unreleased
+## Unreleased（自 v0.0.1 起，更新于 2026-01-11）
 
 - 支持鼠标左键点击标签页切换
+- TUI 底部“帮助”提示改为多行显示
 - 重构标签页配置管理（TabConfig/TabConfigs/TabIndex）消除重复代码
 - 歌词页面支持水平和垂直居中显示
 - 歌单后台预加载（低优先级，不阻塞搜索/点歌/打开歌单）
 - NeteaseActor 支持高/低优先级命令通道（优先处理用户交互请求）
 - AppActor 代码拆分：`src/usecases/actor.rs` 拆出 `src/usecases/actor/` 子模块
 
-## v0.0.1
+## v0.0.1（2026-01-11）
 
 - P0 播放器：上一首/下一首、暂停/继续、停止、Seek、音量、播放模式、错误重试
 - 音频缓存：按 `(song_id, br)` 缓存 + LRU 清理；缓存索引版本化；设置页支持“一键清除缓存”

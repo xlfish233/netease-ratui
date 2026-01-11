@@ -23,6 +23,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc as tokio_mpsc;
 use unicode_width::UnicodeWidthStr;
 
+const PLAYER_PANEL_HEIGHT: u16 = 12;
+
 struct TuiGuard;
 
 impl TuiGuard {
@@ -368,7 +370,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
 fn draw_playlists(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(8), Constraint::Length(7)])
+        .constraints([Constraint::Min(8), Constraint::Length(PLAYER_PANEL_HEIGHT)])
         .split(area);
 
     let title = match app.playlist_mode {
@@ -456,7 +458,7 @@ fn draw_search(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
         .constraints([
             Constraint::Length(3),
             Constraint::Min(8),
-            Constraint::Length(7),
+            Constraint::Length(PLAYER_PANEL_HEIGHT),
         ])
         .split(area);
 
@@ -495,7 +497,7 @@ fn draw_search(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
 fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(8), Constraint::Length(7)])
+        .constraints([Constraint::Min(8), Constraint::Length(PLAYER_PANEL_HEIGHT)])
         .split(area);
 
     let offset_text = fmt_offset(app.lyrics_offset_ms);
@@ -560,7 +562,7 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
 fn draw_settings(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(8), Constraint::Length(7)])
+        .constraints([Constraint::Min(8), Constraint::Length(PLAYER_PANEL_HEIGHT)])
         .split(area);
 
     let items = vec![
@@ -690,9 +692,14 @@ fn draw_player_status(
     context_label: &str,
     context_value: &str,
 ) {
+    let status_height = if area.height > 3 {
+        6.min(area.height.saturating_sub(3))
+    } else {
+        area.height
+    };
     let status_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(4), Constraint::Length(3)])
+        .constraints([Constraint::Length(status_height), Constraint::Min(0)])
         .split(area);
 
     let now = app.now_playing.as_deref().unwrap_or("-");
@@ -711,26 +718,36 @@ fn draw_player_status(
         crate::app::PlayMode::Shuffle => "随机",
     };
 
-    let status = Paragraph::new(format!(
-        "{}: {}\n播放: {} | Now: {}\n时间: {} | 模式: {} | 音量: {:.0}% | 音质: {}\n{}",
-        context_label,
-        context_value,
-        app.play_status,
-        now,
-        time_text,
-        mode_text,
-        (app.volume.clamp(0.0, 2.0) * 100.0),
-        br_label(app.play_br),
-        progress
-    ))
-    .block(Block::default().borders(Borders::ALL).title(title));
+    let status_lines = vec![
+        Line::from(format!("{context_label}: {context_value}")),
+        Line::from(format!("播放: {} | Now: {}", app.play_status, now)),
+        Line::from(format!(
+            "时间: {} | 模式: {} | 音量: {:.0}% | 音质: {}",
+            time_text,
+            mode_text,
+            (app.volume.clamp(0.0, 2.0) * 100.0),
+            br_label(app.play_br),
+        )),
+        Line::from(progress),
+    ];
+    let status = Paragraph::new(Text::from(status_lines))
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .wrap(Wrap { trim: false });
     f.render_widget(status, status_chunks[0]);
 
     // 底栏帮助提示
-    let help = Paragraph::new(
-        "帮助: Tab 切换页 | ↑↓ 选择/滚动 | Enter 打开歌单 | p 播放选中 | 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | 歌词页: o 跟随/锁定 | g 回到当前行 | Alt+←/→ offset(±200ms) | Shift+Alt+←/→ offset(±50ms) | 设置页: ↑↓选择 ←→调整 Enter操作(含退出登录) | q 退出",
-    )
-    .block(Block::default().borders(Borders::ALL).title("帮助"));
+    let help_lines = vec![
+        Line::from("Tab 切换页 | q 退出"),
+        Line::from("↑↓ 选择/滚动 | Enter 打开/确认"),
+        Line::from("空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首"),
+        Line::from("Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式"),
+        Line::from("歌词: o 跟随/锁定 | g 当前行"),
+        Line::from("歌词 offset: Alt+←/→ ±200ms | Shift+Alt+←/→ ±50ms"),
+        Line::from("设置: ↑↓选择 | ←→调整 | Enter 操作（含退出登录）"),
+    ];
+    let help = Paragraph::new(Text::from(help_lines))
+        .block(Block::default().borders(Borders::ALL).title("帮助"))
+        .wrap(Wrap { trim: false });
     f.render_widget(help, status_chunks[1]);
 }
 
