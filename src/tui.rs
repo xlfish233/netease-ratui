@@ -57,7 +57,7 @@ pub async fn run_tui(
     loop {
         while let Ok(evt) = rx.try_recv() {
             match evt {
-                AppEvent::State(s) => app = s,
+                AppEvent::State(s) => app = *s,
                 AppEvent::Toast(s) => match app.view {
                     View::Login => app.login_status = s,
                     View::Playlists => app.playlists_status = s,
@@ -78,12 +78,11 @@ pub async fn run_tui(
         terminal.draw(|f| draw_ui(f, &app))?;
 
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if handle_key(&app, key, &tx).await {
-                    break;
-                }
-            }
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+            && handle_key(&app, key, &tx).await
+        {
+            break;
         }
 
         if last_tick.elapsed() >= tick_rate {
@@ -492,10 +491,10 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
             .iter()
             .map(|l| {
                 let mut lines = vec![Line::from(l.text.as_str())];
-                if let Some(t) = l.translation.as_deref() {
-                    if !t.trim().is_empty() {
-                        lines.push(Line::from(format!("  {t}")));
-                    }
+                if let Some(t) = l.translation.as_deref()
+                    && !t.trim().is_empty()
+                {
+                    lines.push(Line::from(format!("  {t}")));
                 }
                 ListItem::new(Text::from(lines))
             })

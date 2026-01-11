@@ -79,7 +79,6 @@ pub(super) async fn request_play_at_index(
     pending_song_url: &mut Option<(u64, String)>,
     req_id: &mut u64,
     idx: usize,
-    next_id: fn(&mut u64) -> u64,
 ) {
     let Some(s) = app.queue.get(idx) else {
         return;
@@ -90,7 +89,7 @@ pub(super) async fn request_play_at_index(
     }
     app.play_status = "获取播放链接...".to_owned();
     let title = format!("{} - {}", s.name, s.artists);
-    let id = next_id(req_id);
+    let id = super::next_id(req_id);
     *pending_song_url = Some((id, title));
     let _ = tx_netease
         .send(NeteaseCommand::SongUrl {
@@ -106,7 +105,6 @@ pub(super) async fn play_next(
     tx_netease: &mpsc::Sender<NeteaseCommand>,
     pending_song_url: &mut Option<(u64, String)>,
     req_id: &mut u64,
-    next_id: fn(&mut u64) -> u64,
 ) {
     use crate::app::PlayMode;
 
@@ -144,15 +142,7 @@ pub(super) async fn play_next(
         PlayMode::ListLoop => (pos + 1) % app.queue.len(),
     };
 
-    request_play_at_index(
-        app,
-        tx_netease,
-        pending_song_url,
-        req_id,
-        next_idx,
-        next_id,
-    )
-    .await;
+    request_play_at_index(app, tx_netease, pending_song_url, req_id, next_idx).await;
 }
 
 pub(super) async fn play_prev(
@@ -160,7 +150,6 @@ pub(super) async fn play_prev(
     tx_netease: &mpsc::Sender<NeteaseCommand>,
     pending_song_url: &mut Option<(u64, String)>,
     req_id: &mut u64,
-    next_id: fn(&mut u64) -> u64,
 ) {
     use crate::app::PlayMode;
 
@@ -196,13 +185,5 @@ pub(super) async fn play_prev(
         }
     };
 
-    request_play_at_index(
-        app,
-        tx_netease,
-        pending_song_url,
-        req_id,
-        prev_idx,
-        next_id,
-    )
-    .await;
+    request_play_at_index(app, tx_netease, pending_song_url, req_id, prev_idx).await;
 }

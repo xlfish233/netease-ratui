@@ -42,7 +42,7 @@ pub enum AppCommand {
 
 #[derive(Debug)]
 pub enum AppEvent {
-    State(App),
+    State(Box<App>),
     Toast(String),
     Error(String),
 }

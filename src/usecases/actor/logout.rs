@@ -44,4 +44,3 @@ pub(super) fn reset_app_after_logout(app: &mut App) {
     app.lyrics_follow = true;
     app.lyrics_selected = 0;
 }
-

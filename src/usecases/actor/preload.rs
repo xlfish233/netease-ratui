@@ -41,7 +41,6 @@ impl PreloadManager {
         app: &mut App,
         tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
         req_id: &mut u64,
-        next_id: fn(&mut u64) -> u64,
     ) {
         self.generation = self.generation.wrapping_add(1);
         self.pending.clear();
@@ -59,7 +58,10 @@ impl PreloadManager {
             app.playlist_preloads.insert(
                 *playlist_id,
                 PlaylistPreload {
-                    status: PreloadStatus::Loading { loaded: 0, total: 0 },
+                    status: PreloadStatus::Loading {
+                        loaded: 0,
+                        total: 0,
+                    },
                     songs: Vec::new(),
                 },
             );
@@ -68,10 +70,13 @@ impl PreloadManager {
 
         for playlist_id in selected {
             self.active_playlists.insert(playlist_id);
-            let rid = next_id(req_id);
+            let rid = super::next_id(req_id);
             self.pending.insert(
                 rid,
-                (self.generation, PreloadPendingKind::PlaylistDetail { playlist_id }),
+                (
+                    self.generation,
+                    PreloadPendingKind::PlaylistDetail { playlist_id },
+                ),
             );
             let _ = tx_netease_lo
                 .send(NeteaseCommand::PlaylistDetail {
@@ -91,7 +96,11 @@ impl PreloadManager {
             .filter_map(|(rid, (_, kind))| match kind {
                 PreloadPendingKind::PlaylistDetail { playlist_id: p }
                 | PreloadPendingKind::SongsChunk { playlist_id: p } => {
-                    if *p == playlist_id { Some(*rid) } else { None }
+                    if *p == playlist_id {
+                        Some(*rid)
+                    } else {
+                        None
+                    }
                 }
             })
             .collect();
@@ -111,7 +120,6 @@ impl PreloadManager {
         app: &mut App,
         tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
         req_id: &mut u64,
-        next_id: fn(&mut u64) -> u64,
         req_id_evt: u64,
         playlist_id_evt: i64,
         ids: &[i64],
@@ -144,13 +152,16 @@ impl PreloadManager {
         let total = ids.len();
         let mut loader = PlaylistTracksLoad::new(playlist_id, ids.to_vec());
 
-        let rid = next_id(req_id);
+        let rid = super::next_id(req_id);
         let chunk = loader.next_chunk();
         loader.inflight_req_id = Some(rid);
         self.loaders.insert(playlist_id, loader);
         self.pending.insert(
             rid,
-            (self.generation, PreloadPendingKind::SongsChunk { playlist_id }),
+            (
+                self.generation,
+                PreloadPendingKind::SongsChunk { playlist_id },
+            ),
         );
 
         if let Some(p) = app.playlist_preloads.get_mut(&playlist_id) {
@@ -172,7 +183,6 @@ impl PreloadManager {
         app: &mut App,
         tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
         req_id: &mut u64,
-        next_id: fn(&mut u64) -> u64,
         req_id_evt: u64,
         songs: &[crate::app::Song],
     ) -> bool {
@@ -217,12 +227,15 @@ impl PreloadManager {
             return true;
         }
 
-        let rid = next_id(req_id);
+        let rid = super::next_id(req_id);
         let chunk = loader.next_chunk();
         loader.inflight_req_id = Some(rid);
         self.pending.insert(
             rid,
-            (self.generation, PreloadPendingKind::SongsChunk { playlist_id }),
+            (
+                self.generation,
+                PreloadPendingKind::SongsChunk { playlist_id },
+            ),
         );
         let _ = tx_netease_lo
             .send(NeteaseCommand::SongDetailByIds {
@@ -296,7 +309,10 @@ pub(super) fn update_preload_summary(app: &mut App) {
             completed, total, loading, loaded_sum, total_sum
         )
     } else if cancelled > 0 {
-        format!("预加载: {}/{} 完成 | {} 已取消", completed, total, cancelled)
+        format!(
+            "预加载: {}/{} 完成 | {} 已取消",
+            completed, total, cancelled
+        )
     } else {
         format!("预加载: {}/{} 完成", completed, total)
     };

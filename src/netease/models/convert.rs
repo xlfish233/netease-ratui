@@ -187,10 +187,7 @@ fn parse_lrc_timestamp_ms(tag: &str) -> Option<u64> {
     // mm:ss.xx or mm:ss.xxx
     let (mm, rest) = tag.split_once(':')?;
     let mm: u64 = mm.parse().ok()?;
-    let (ss, frac) = rest
-        .split_once('.')
-        .map(|(a, b)| (a, b))
-        .unwrap_or((rest, ""));
+    let (ss, frac) = rest.split_once('.').unwrap_or((rest, ""));
     let ss: u64 = ss.parse().ok()?;
     let frac_digits = frac
         .chars()
