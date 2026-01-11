@@ -141,3 +141,8 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
   - `netease`（网关）只做“请求/解析/持久化 cookie”，不做业务拼装。
   - 业务拼装与策略统一放 `usecases`（AppActor）。
 - 变更方式：按功能切分、逐步提交（commit），便于回滚与 code review。
+
+## 致谢
+
+- https://github.com/feng-yifan/Netease-Cloud-Music-Web-Player
+- https://github.com/NeteaseCloudMusicApiEnhanced
