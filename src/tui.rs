@@ -501,6 +501,7 @@ fn draw_settings(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App
         ListItem::new(Line::from(format!("音量: {:.0}%", app.volume * 100.0))),
         ListItem::new(Line::from(format!("播放模式: {}", play_mode_label(app.play_mode)))),
         ListItem::new(Line::from(format!("歌词 offset: {}", fmt_offset(app.lyrics_offset_ms)))),
+        ListItem::new(Line::from("清除音频缓存".to_owned())),
         ListItem::new(Line::from(if app.logged_in {
             "退出登录".to_owned()
         } else {

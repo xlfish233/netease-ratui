@@ -27,6 +27,7 @@ pub enum AudioCommand {
     Stop,
     SeekToMs(u64),
     SetVolume(f32),
+    ClearCache,
 }
 
 #[derive(Debug)]
@@ -41,6 +42,10 @@ pub enum AudioEvent {
     Stopped,
     Ended {
         play_id: u64,
+    },
+    CacheCleared {
+        files: usize,
+        bytes: u64,
     },
     Error(String),
 }
@@ -115,6 +120,10 @@ pub fn spawn_audio_worker(
                     if let Some(sink) = state.sink.as_ref() {
                         sink.set_volume(state.volume);
                     }
+                }
+                AudioCommand::ClearCache => {
+                    let (files, bytes) = state.cache.clear_all(state.path.as_deref());
+                    let _ = tx_evt.send(AudioEvent::CacheCleared { files, bytes });
                 }
             }
         }
@@ -311,6 +320,8 @@ fn build_sink_from_path(
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct CacheIndex {
+    #[serde(default)]
+    version: u32,
     entries: HashMap<String, CacheEntry>,
 }
 
@@ -335,6 +346,8 @@ struct AudioCache {
 
 impl AudioCache {
     fn new(data_dir: &Path) -> Self {
+        const INDEX_VERSION: u32 = 2;
+
         let max_bytes = env::var("NETEASE_AUDIO_CACHE_MAX_MB")
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
@@ -353,10 +366,21 @@ impl AudioCache {
         }
 
         let index_path = dir.join("index.json");
-        let index = fs::read(&index_path)
+        let mut index = fs::read(&index_path)
             .ok()
             .and_then(|b| serde_json::from_slice::<CacheIndex>(&b).ok())
             .unwrap_or_default();
+
+        if index.version != INDEX_VERSION {
+            // 废弃旧索引/旧命名规则：直接清空缓存目录
+            let _ = clear_dir_files(&dir, None);
+            index = CacheIndex {
+                version: INDEX_VERSION,
+                entries: HashMap::new(),
+            };
+            let bytes = serde_json::to_vec_pretty(&index).unwrap_or_default();
+            let _ = fs::write(&index_path, bytes);
+        }
 
         Self {
             dir: Some(dir),
@@ -495,6 +519,49 @@ impl AudioCache {
         }
         self.persist_index();
     }
+
+    fn clear_all(&mut self, keep: Option<&Path>) -> (usize, u64) {
+        let Some(dir) = self.dir.as_ref() else {
+            return (0, 0);
+        };
+
+        let (files, bytes) = clear_dir_files(dir, keep);
+        self.index.entries.clear();
+        self.persist_index();
+        (files, bytes)
+    }
+}
+
+fn clear_dir_files(dir: &Path, keep: Option<&Path>) -> (usize, u64) {
+    let mut removed_files = 0usize;
+    let mut removed_bytes = 0u64;
+
+    let keep = keep.and_then(|p| p.file_name().map(|n| dir.join(n)));
+
+    let Ok(rd) = fs::read_dir(dir) else {
+        return (0, 0);
+    };
+    for ent in rd.flatten() {
+        let p = ent.path();
+        if p.is_dir() {
+            continue;
+        }
+        if p.file_name().is_some_and(|n| n == "index.json") {
+            continue;
+        }
+        if keep.as_ref().is_some_and(|kp| kp == &p) {
+            continue;
+        }
+
+        if let Ok(md) = ent.metadata() {
+            removed_bytes = removed_bytes.saturating_add(md.len());
+        }
+        if fs::remove_file(&p).is_ok() {
+            removed_files += 1;
+        }
+    }
+
+    (removed_files, removed_bytes)
 }
 
 fn download_to_file(

@@ -341,24 +341,39 @@ pub fn spawn_app_actor(
                             }
                         }
                         AppCommand::SettingsActivate => {
-                            if matches!(app.view, View::Settings) && is_logout_selected(&app) {
-                                let _ = tx_audio.send(AudioCommand::Stop);
-                                let id = next_id(&mut req_id);
-                                let _ = tx_netease.send(NeteaseCommand::LogoutLocal { req_id: id }).await;
+                            if matches!(app.view, View::Settings) {
+                                if is_clear_cache_selected(&app) {
+                                    app.settings_status = "正在清除音频缓存...".to_owned();
+                                    let _ = tx_audio.send(AudioCommand::ClearCache);
+                                    push_state(&tx_evt, &app).await;
+                                } else if is_logout_selected(&app) {
+                                    if !app.logged_in {
+                                        app.settings_status = "未登录，无需退出".to_owned();
+                                        push_state(&tx_evt, &app).await;
+                                        continue;
+                                    }
 
-                                pending_search = None;
-                                pending_song_url = None;
-                                pending_playlists = None;
-                                pending_playlist_detail = None;
-                                pending_playlist_tracks = None;
-                                pending_account = None;
-                                pending_login_qr_key = None;
-                                pending_login_poll = None;
-                                pending_lyric = None;
+                                    let _ = tx_audio.send(AudioCommand::Stop);
+                                    let id = next_id(&mut req_id);
+                                    let _ = tx_netease
+                                        .send(NeteaseCommand::LogoutLocal { req_id: id })
+                                        .await;
 
-                                reset_app_after_logout(&mut app);
-                                app.login_status = "已退出登录（已清理本地 cookie），按 l 重新登录".to_owned();
-                                push_state(&tx_evt, &app).await;
+                                    pending_search = None;
+                                    pending_song_url = None;
+                                    pending_playlists = None;
+                                    pending_playlist_detail = None;
+                                    pending_playlist_tracks = None;
+                                    pending_account = None;
+                                    pending_login_qr_key = None;
+                                    pending_login_poll = None;
+                                    pending_lyric = None;
+
+                                    reset_app_after_logout(&mut app);
+                                    app.login_status =
+                                        "已退出登录（已清理本地 cookie），按 l 重新登录".to_owned();
+                                    push_state(&tx_evt, &app).await;
+                                }
                             }
                         }
                     }
@@ -692,6 +707,10 @@ async fn handle_audio_event(
             app.play_song_id = None;
             app.play_error_count = 0;
         }
+        AudioEvent::CacheCleared { files, bytes } => {
+            app.settings_status =
+                format!("已清除音频缓存：{} 个文件，释放 {} MB", files, bytes / 1024 / 1024);
+        }
         AudioEvent::Ended { play_id } => {
             if app.play_id != Some(play_id) {
                 return;
@@ -824,7 +843,7 @@ async fn request_play_at_index(
         .await;
 }
 
-const SETTINGS_ITEMS_COUNT: usize = 5;
+const SETTINGS_ITEMS_COUNT: usize = 6;
 
 fn apply_settings_to_app(app: &mut App, s: &AppSettings) {
     app.volume = s.volume.clamp(0.0, 2.0);
@@ -842,6 +861,10 @@ fn sync_settings_from_app(s: &mut AppSettings, app: &App) {
 
 fn is_logout_selected(app: &App) -> bool {
     app.settings_selected == SETTINGS_ITEMS_COUNT - 1
+}
+
+fn is_clear_cache_selected(app: &App) -> bool {
+    app.settings_selected == SETTINGS_ITEMS_COUNT - 2
 }
 
 fn reset_app_after_logout(app: &mut App) {
