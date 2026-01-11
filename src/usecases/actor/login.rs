@@ -78,6 +78,7 @@ pub(super) async fn handle_login_command(
 
 /// 处理登录相关的 NeteaseEvent
 /// 返回 true 表示事件已处理，false 表示需要跳过
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_login_event(
     evt: &NeteaseEvent,
     app: &mut App,

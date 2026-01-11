@@ -15,7 +15,7 @@ pub(super) async fn handle_settings_command(
     cmd: AppCommand,
     app: &mut App,
     settings: &mut settings::AppSettings,
-    data_dir: &std::path::PathBuf,
+    data_dir: &std::path::Path,
     tx_audio: &std::sync::mpsc::Sender<AudioCommand>,
     tx_evt: &mpsc::Sender<AppEvent>,
 ) -> bool {
@@ -23,39 +23,39 @@ pub(super) async fn handle_settings_command(
         AppCommand::SettingsMoveUp => {
             if matches!(app.view, crate::app::View::Settings) && app.settings_selected > 0 {
                 app.settings_selected -= 1;
-                utils::push_state(&tx_evt, &app).await;
+                utils::push_state(tx_evt, app).await;
             }
         }
         AppCommand::SettingsMoveDown => {
             if matches!(app.view, crate::app::View::Settings) {
                 app.settings_selected = (app.settings_selected + 1).min(SETTINGS_ITEMS_COUNT - 1);
-                utils::push_state(&tx_evt, &app).await;
+                utils::push_state(tx_evt, app).await;
             }
         }
         AppCommand::SettingsDecrease => {
             if matches!(app.view, crate::app::View::Settings) {
                 apply_settings_adjust(app, -1);
-                sync_settings_from_app(settings, &app);
+                sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
                     tracing::warn!(err = %e, "保存设置失败");
                 }
                 if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
                     tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
                 }
-                utils::push_state(&tx_evt, &app).await;
+                utils::push_state(tx_evt, app).await;
             }
         }
         AppCommand::SettingsIncrease => {
             if matches!(app.view, crate::app::View::Settings) {
                 apply_settings_adjust(app, 1);
-                sync_settings_from_app(settings, &app);
+                sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
                     tracing::warn!(err = %e, "保存设置失败");
                 }
                 if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
                     tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
                 }
-                utils::push_state(&tx_evt, &app).await;
+                utils::push_state(tx_evt, app).await;
             }
         }
         _ => return false,
@@ -80,12 +80,12 @@ pub(super) async fn handle_settings_activate_command(
         if tx_audio.send(AudioCommand::ClearCache).is_err() {
             tracing::warn!("AudioWorker 通道已关闭：ClearCache 发送失败");
         }
-        utils::push_state(&tx_evt, &app).await;
+        utils::push_state(tx_evt, app).await;
         Some(true)
     } else if is_logout_selected(app) {
         if !app.logged_in {
             app.settings_status = "未登录，无需退出".to_owned();
-            utils::push_state(&tx_evt, &app).await;
+            utils::push_state(tx_evt, app).await;
             Some(true)
         } else {
             Some(false) // 由调用者处理登出逻辑
@@ -101,7 +101,7 @@ pub(super) async fn handle_player_settings_command(
     cmd: AppCommand,
     app: &mut App,
     settings: &mut settings::AppSettings,
-    data_dir: &std::path::PathBuf,
+    data_dir: &std::path::Path,
     tx_audio: &std::sync::mpsc::Sender<AudioCommand>,
     tx_evt: &mpsc::Sender<AppEvent>,
 ) -> bool {
@@ -111,31 +111,31 @@ pub(super) async fn handle_player_settings_command(
             if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
                 tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
             }
-            sync_settings_from_app(settings, &app);
+            sync_settings_from_app(settings, app);
             if let Err(e) = settings::save_settings(data_dir, settings) {
                 tracing::warn!(err = %e, "保存设置失败");
             }
-            utils::push_state(&tx_evt, &app).await;
+            utils::push_state(tx_evt, app).await;
         }
         AppCommand::PlayerVolumeUp => {
             app.volume = (app.volume + 0.1).clamp(0.0, 2.0);
             if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
                 tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
             }
-            sync_settings_from_app(settings, &app);
+            sync_settings_from_app(settings, app);
             if let Err(e) = settings::save_settings(data_dir, settings) {
                 tracing::warn!(err = %e, "保存设置失败");
             }
-            utils::push_state(&tx_evt, &app).await;
+            utils::push_state(tx_evt, app).await;
         }
         AppCommand::PlayerCycleMode => {
             app.play_mode = playback::next_play_mode(app.play_mode);
             app.play_status = format!("播放模式: {}", playback::play_mode_label(app.play_mode));
-            sync_settings_from_app(settings, &app);
+            sync_settings_from_app(settings, app);
             if let Err(e) = settings::save_settings(data_dir, settings) {
                 tracing::warn!(err = %e, "保存设置失败");
             }
-            utils::push_state(&tx_evt, &app).await;
+            utils::push_state(tx_evt, app).await;
         }
         _ => return false,
     }
@@ -213,4 +213,3 @@ fn br_label(br: i64) -> &'static str {
         _ => "自定义",
     }
 }
-

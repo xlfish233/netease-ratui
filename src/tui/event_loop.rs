@@ -5,7 +5,7 @@ use crate::tui::keyboard::handle_key;
 use crate::tui::mouse::handle_mouse;
 use crate::tui::views::draw_ui;
 use crossterm::event::{self, Event};
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;

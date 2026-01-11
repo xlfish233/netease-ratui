@@ -4,11 +4,7 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use tokio::sync::mpsc;
 use unicode_width::UnicodeWidthStr;
 
-pub(super) async fn handle_mouse(
-    app: &App,
-    mouse: MouseEvent,
-    tx: &mpsc::Sender<AppCommand>,
-) {
+pub(super) async fn handle_mouse(app: &App, mouse: MouseEvent, tx: &mpsc::Sender<AppCommand>) {
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && mouse.row < 3  // 页签区域高度为 3 行
         && let Some(tab_index) = calculate_tab_index(app, mouse.column)

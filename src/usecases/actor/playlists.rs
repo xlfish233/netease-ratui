@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 
 /// 处理歌单相关的 AppCommand
 /// 返回 true 表示命令已处理，false 表示未处理
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_playlists_command(
     cmd: AppCommand,
     app: &mut App,
@@ -135,6 +136,7 @@ pub(super) async fn handle_playlists_back_command(
 
 /// 处理歌单相关的 NeteaseEvent::Playlists
 /// 返回 true 表示事件已处理，false 表示 req_id 不匹配
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_playlists_event(
     req_id: u64,
     playlists: Vec<crate::domain::model::Playlist>,
@@ -170,6 +172,7 @@ pub(super) async fn handle_playlists_event(
 
 /// 处理歌单详情相关的事件（PlaylistTrackIds）
 /// 返回 Some(true) 表示已处理且应 continue，Some(false) 表示未处理，None 表示 req_id 不匹配
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_playlist_detail_event(
     req_id: u64,
     playlist_id: i64,
@@ -216,6 +219,7 @@ pub(super) async fn handle_playlist_detail_event(
 
 /// 处理歌单歌曲批量加载的事件（Songs）
 /// 返回 Some(true) 表示已处理且应 continue，Some(false) 表示未处理
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_songs_event(
     req_id: u64,
     songs: Vec<crate::domain::model::Song>,

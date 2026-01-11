@@ -67,7 +67,7 @@ pub fn process_cookie_object(
 
     cookie
         .entry("WNMCID".to_owned())
-        .or_insert_with(|| wnmcid());
+        .or_insert_with(wnmcid);
     cookie
         .entry("WEVNSM".to_owned())
         .or_insert_with(|| "1.0.0".to_owned());
@@ -105,7 +105,10 @@ pub fn process_cookie_object(
     cookie
 }
 
-pub fn build_eapi_header(cookie: &HashMap<String, String>, device_id: &str) -> HashMap<String, String> {
+pub fn build_eapi_header(
+    cookie: &HashMap<String, String>,
+    device_id: &str,
+) -> HashMap<String, String> {
     let mut header = HashMap::new();
     let mut rng = rand::thread_rng();
 

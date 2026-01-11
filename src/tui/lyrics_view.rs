@@ -1,16 +1,14 @@
 use crate::app::App;
 use crate::tui::player_status::draw_player_status;
-use crate::tui::utils::{
-    apply_lyrics_offset, current_lyric_index, fmt_offset, playback_time_ms,
-};
+use crate::tui::utils::{apply_lyrics_offset, current_lyric_index, fmt_offset, playback_time_ms};
 use crate::tui::widgets::list_state;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     prelude::Rect,
     style::{Color, Style},
     text::{Line, Text},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
-    Frame,
 };
 
 const PLAYER_PANEL_HEIGHT: u16 = 12;

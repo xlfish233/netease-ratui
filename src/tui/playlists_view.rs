@@ -1,12 +1,12 @@
 use crate::app::{App, PlaylistMode};
 use crate::tui::player_status::draw_player_status;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     prelude::Rect,
     style::{Color, Style},
     text::Line,
     widgets::{Block, Borders, List, ListItem},
-    Frame,
 };
 
 const PLAYER_PANEL_HEIGHT: u16 = 12;

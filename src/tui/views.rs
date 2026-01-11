@@ -5,18 +5,21 @@ use crate::tui::playlists_view::draw_playlists;
 use crate::tui::search_view::draw_search;
 use crate::tui::settings_view::draw_settings;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::Line,
     widgets::{Block, Borders, Tabs},
-    Frame,
 };
 
 pub(super) fn draw_ui(f: &mut Frame, app: &App) {
     let size = f.area();
 
     let configs = tab_configs(app.logged_in);
-    let titles: Vec<Line> = configs.iter().map(|c| Line::from(c.title.as_ref())).collect();
+    let titles: Vec<Line> = configs
+        .iter()
+        .map(|c| Line::from(c.title))
+        .collect();
     let selected = tab_index_for_view(app.view, app.logged_in).unwrap_or(0);
 
     let tabs = Tabs::new(titles)

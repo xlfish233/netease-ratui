@@ -11,7 +11,7 @@ use crate::netease::crypto::{self, CryptoMode};
 use crate::netease::util;
 use cookie::{cookie_obj_to_string, create_header_cookie, process_cookie_object, update_cookies};
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue, REFERER, SET_COOKIE, USER_AGENT};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use types::{UA_API_IPHONE, UA_LINUX, UA_WEAPI_PC};
 

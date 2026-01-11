@@ -1,3 +1,4 @@
+use reqwest::blocking::Client;
 use rodio::mixer::Mixer;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::fs::File;
@@ -9,7 +10,6 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use tempfile::NamedTempFile;
-use reqwest::blocking::Client;
 
 use super::cache::{AudioCache, ResolvedAudio};
 use super::messages::AudioEvent;

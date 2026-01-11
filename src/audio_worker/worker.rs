@@ -5,9 +5,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use super::messages::{AudioCommand, AudioEvent};
-use super::player::{play_track, seek_to_ms, PlayerState};
 use super::cache::AudioCache;
+use super::messages::{AudioCommand, AudioEvent};
+use super::player::{PlayerState, play_track, seek_to_ms};
 
 pub fn spawn_audio_worker(
     data_dir: PathBuf,

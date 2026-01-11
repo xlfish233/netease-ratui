@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 
 /// 处理搜索相关的 AppCommand
 /// 返回 true 表示命令已处理，false 表示未处理
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_search_command(
     cmd: AppCommand,
     app: &mut App,

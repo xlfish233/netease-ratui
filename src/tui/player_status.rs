@@ -2,11 +2,11 @@ use crate::app::{App, PlayMode};
 use crate::tui::utils::{br_label, fmt_mmss, playback_time_ms};
 use crate::tui::widgets::progress_bar_text;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     prelude::Rect,
     text::{Line, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
 };
 
 pub(super) fn draw_player_status(

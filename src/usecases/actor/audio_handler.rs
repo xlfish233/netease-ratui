@@ -101,7 +101,8 @@ pub(super) async fn handle_audio_event(
                             .map(|s| s.id)
                     })
                 {
-                    let title = app.queue_pos
+                    let title = app
+                        .queue_pos
                         .and_then(|pos| app.queue.get(pos))
                         .map(|s| format!("{} - {}", s.name, s.artists))
                         .or_else(|| app.now_playing.clone())

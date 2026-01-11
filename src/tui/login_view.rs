@@ -1,10 +1,10 @@
 use crate::app::App;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     prelude::Rect,
     text::Text,
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
 };
 
 pub(super) fn draw_login(f: &mut Frame, area: Rect, app: &App) {

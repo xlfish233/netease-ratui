@@ -11,7 +11,7 @@ pub(super) async fn handle_lyrics_command(
     cmd: AppCommand,
     app: &mut App,
     settings: &mut settings::AppSettings,
-    data_dir: &std::path::PathBuf,
+    data_dir: &std::path::Path,
     tx_evt: &mpsc::Sender<AppEvent>,
 ) -> bool {
     match cmd {

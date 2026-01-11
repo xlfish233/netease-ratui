@@ -3,11 +3,7 @@ use crate::messages::app::AppCommand;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc;
 
-pub(super) async fn handle_key(
-    app: &App,
-    key: KeyEvent,
-    tx: &mpsc::Sender<AppCommand>,
-) -> bool {
+pub(super) async fn handle_key(app: &App, key: KeyEvent, tx: &mpsc::Sender<AppCommand>) -> bool {
     match key {
         KeyEvent {
             code: KeyCode::Char('q'),
