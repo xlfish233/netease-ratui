@@ -2,9 +2,9 @@ use crate::netease::crypto::{self, CryptoMode};
 use crate::netease::util;
 use directories::ProjectDirs;
 use rand::Rng;
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, REFERER, SET_COOKIE, USER_AGENT};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue, REFERER, SET_COOKIE, USER_AGENT};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,9 +20,9 @@ pub struct NeteaseClientConfig {
 
 impl Default for NeteaseClientConfig {
     fn default() -> Self {
-        let proj = ProjectDirs::from("dev", "netease", "netease-ratui")
-            .expect("无法确定用户目录(ProjectDirs)");
-        let data_dir = proj.data_local_dir().to_path_buf();
+        let data_dir = ProjectDirs::from("dev", "netease", "netease-ratui")
+            .map(|p| p.data_local_dir().to_path_buf())
+            .unwrap_or_else(|| std::env::temp_dir().join("netease-ratui"));
         Self {
             domain: "https://music.163.com".to_owned(),
             api_domain: "https://interface.music.163.com".to_owned(),
@@ -228,16 +228,18 @@ impl NeteaseClient {
     pub async fn song_detail_by_ids(&mut self, ids: &[i64]) -> Result<Value, NeteaseError> {
         self.ensure_anonymous().await?;
         // 注意：该接口的 `c` 习惯上传字符串形式的 JSON 数组（参考 api-enhanced 实现）
-        let c = ids
-            .iter()
-            .map(|id| json!({ "id": id }))
-            .collect::<Vec<_>>();
+        let c = ids.iter().map(|id| json!({ "id": id })).collect::<Vec<_>>();
         let c = serde_json::to_string(&c).map_err(NeteaseError::Serde)?;
         self.request("/api/v3/song/detail", json!({ "c": c }), CryptoMode::Weapi)
             .await
     }
 
-    async fn request(&mut self, uri: &str, mut data: Value, crypto: CryptoMode) -> Result<Value, NeteaseError> {
+    async fn request(
+        &mut self,
+        uri: &str,
+        mut data: Value,
+        crypto: CryptoMode,
+    ) -> Result<Value, NeteaseError> {
         if !data.is_object() {
             return Err(NeteaseError::BadInput("data 必须是 JSON object"));
         }
@@ -252,14 +254,18 @@ impl NeteaseClient {
 
         let (url, form) = match crypto {
             CryptoMode::Weapi => {
-                headers.insert(REFERER, HeaderValue::from_str(&self.cfg.domain).unwrap());
+                headers.insert(
+                    REFERER,
+                    HeaderValue::from_str(&self.cfg.domain)
+                        .map_err(|e| NeteaseError::BadHeader(format!("REFERER: {e}")))?,
+                );
                 headers.insert(USER_AGENT, HeaderValue::from_static(UA_WEAPI_PC));
                 let csrf = cookie.get("__csrf").cloned().unwrap_or_default();
                 data.as_object_mut()
-                    .unwrap()
+                    .ok_or(NeteaseError::BadInput("data 必须是 JSON object"))?
                     .insert("csrf_token".to_owned(), Value::String(csrf));
 
-                let f = crypto::weapi(&data);
+                let f = crypto::weapi(&data).map_err(NeteaseError::Crypto)?;
                 cookie.insert("os".to_owned(), "pc".to_owned());
 
                 let url = format!(
@@ -272,13 +278,16 @@ impl NeteaseClient {
             }
             CryptoMode::Linuxapi => {
                 headers.insert(USER_AGENT, HeaderValue::from_static(UA_LINUX));
-                let url = format!("{}/api/linux/forward", self.cfg.domain.trim_end_matches('/'));
+                let url = format!(
+                    "{}/api/linux/forward",
+                    self.cfg.domain.trim_end_matches('/')
+                );
                 let linux_obj = json!({
                     "method": "POST",
                     "url": format!("{}{}", self.cfg.domain.trim_end_matches('/'), uri),
                     "params": data,
                 });
-                let f = crypto::linuxapi(&linux_obj);
+                let f = crypto::linuxapi(&linux_obj).map_err(NeteaseError::Crypto)?;
                 let form = vec![("eparams", f.eparams)];
                 (url, form)
             }
@@ -288,14 +297,15 @@ impl NeteaseClient {
                 let header_cookie = create_header_cookie(&header);
 
                 data.as_object_mut()
-                    .unwrap()
+                    .ok_or(NeteaseError::BadInput("data 必须是 JSON object"))?
                     .insert("header".to_owned(), json!(header));
 
-                self.state
-                    .cookies
-                    .insert("os".to_owned(), cookie.get("os").cloned().unwrap_or_else(|| "pc".to_owned()));
+                self.state.cookies.insert(
+                    "os".to_owned(),
+                    cookie.get("os").cloned().unwrap_or_else(|| "pc".to_owned()),
+                );
 
-                let f = crypto::eapi(uri, &data);
+                let f = crypto::eapi(uri, &data).map_err(NeteaseError::Crypto)?;
                 let url = format!(
                     "{}/eapi/{}",
                     self.cfg.api_domain.trim_end_matches('/'),
@@ -304,14 +314,20 @@ impl NeteaseClient {
                 let form = vec![("params", f.params)];
 
                 // eapi 的 Cookie 不是浏览器 cookie（是 header cookie），直接覆盖
-                headers.insert("Cookie", HeaderValue::from_str(&header_cookie).unwrap());
+                headers.insert(
+                    "Cookie",
+                    HeaderValue::from_str(&header_cookie).map_err(|e| {
+                        NeteaseError::BadHeader(format!("Cookie(header cookie): {e}"))
+                    })?,
+                );
                 return self.send(url, headers, form).await;
             }
         };
 
         headers.insert(
             "Cookie",
-            HeaderValue::from_str(&cookie_obj_to_string(&cookie)).unwrap(),
+            HeaderValue::from_str(&cookie_obj_to_string(&cookie))
+                .map_err(|e| NeteaseError::BadHeader(format!("Cookie: {e}")))?,
         );
         self.send(url, headers, form).await
     }
@@ -334,10 +350,8 @@ impl NeteaseClient {
             Err(e) => {
                 // 某些环境下 `interface.music.163.com` 可能 DNS 失败，降级到 `music.163.com`
                 if url.contains("https://interface.music.163.com/") {
-                    let fallback = url.replace(
-                        "https://interface.music.163.com/",
-                        "https://music.163.com/",
-                    );
+                    let fallback =
+                        url.replace("https://interface.music.163.com/", "https://music.163.com/");
                     self.http
                         .post(fallback)
                         .headers(headers)
@@ -359,9 +373,8 @@ impl NeteaseClient {
             .collect::<Vec<String>>();
 
         let bytes = resp.bytes().await.map_err(NeteaseError::Reqwest)?;
-        let body: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-            Value::String(String::from_utf8_lossy(&bytes).to_string())
-        });
+        let body: Value = serde_json::from_slice(&bytes)
+            .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).to_string()));
 
         self.update_cookies(&set_cookies);
         self.save_state()?;
@@ -391,7 +404,9 @@ impl NeteaseClient {
         cookie
             .entry("WNMCID".to_owned())
             .or_insert_with(|| self.wnmcid());
-        cookie.entry("WEVNSM".to_owned()).or_insert_with(|| "1.0.0".to_owned());
+        cookie
+            .entry("WEVNSM".to_owned())
+            .or_insert_with(|| "1.0.0".to_owned());
 
         let os = cookie.get("os").map(String::as_str).unwrap_or("pc");
         let os_profile = match os {
@@ -407,7 +422,9 @@ impl NeteaseClient {
         cookie
             .entry("deviceId".to_owned())
             .or_insert_with(|| self.device_id().to_owned());
-        cookie.entry("os".to_owned()).or_insert_with(|| os_profile.os.to_owned());
+        cookie
+            .entry("os".to_owned())
+            .or_insert_with(|| os_profile.os.to_owned());
         cookie
             .entry("channel".to_owned())
             .or_insert_with(|| os_profile.channel.to_owned());
@@ -416,7 +433,9 @@ impl NeteaseClient {
             .or_insert_with(|| os_profile.appver.to_owned());
 
         if !uri.contains("login") {
-            cookie.entry("NMTID".to_owned()).or_insert_with(|| util::random_hex_string(16));
+            cookie
+                .entry("NMTID".to_owned())
+                .or_insert_with(|| util::random_hex_string(16));
         }
 
         Ok(cookie)
@@ -429,11 +448,15 @@ impl NeteaseClient {
         let csrf = cookie.get("__csrf").cloned().unwrap_or_default();
         header.insert(
             "osver".to_owned(),
-            cookie.get("osver").cloned().unwrap_or_else(|| "undefined".to_owned()),
+            cookie
+                .get("osver")
+                .cloned()
+                .unwrap_or_else(|| "undefined".to_owned()),
         );
         header.insert(
             "deviceId".to_owned(),
-            cookie.get("deviceId")
+            cookie
+                .get("deviceId")
                 .cloned()
                 .unwrap_or_else(|| self.device_id().to_owned()),
         );
@@ -450,7 +473,10 @@ impl NeteaseClient {
         );
         header.insert(
             "versioncode".to_owned(),
-            cookie.get("versioncode").cloned().unwrap_or_else(|| "140".to_owned()),
+            cookie
+                .get("versioncode")
+                .cloned()
+                .unwrap_or_else(|| "140".to_owned()),
         );
         header.insert(
             "mobilename".to_owned(),
@@ -458,7 +484,10 @@ impl NeteaseClient {
         );
         header.insert(
             "buildver".to_owned(),
-            cookie.get("buildver").cloned().unwrap_or_else(|| now_secs().to_string()),
+            cookie
+                .get("buildver")
+                .cloned()
+                .unwrap_or_else(|| now_secs().to_string()),
         );
         header.insert(
             "resolution".to_owned(),
@@ -470,16 +499,15 @@ impl NeteaseClient {
         header.insert("__csrf".to_owned(), csrf);
         header.insert(
             "channel".to_owned(),
-            cookie.get("channel").cloned().unwrap_or_else(|| "netease".to_owned()),
+            cookie
+                .get("channel")
+                .cloned()
+                .unwrap_or_else(|| "netease".to_owned()),
         );
 
         header.insert(
             "requestId".to_owned(),
-            format!(
-                "{}_{:04}",
-                now_millis(),
-                rng.gen_range(0..1000usize)
-            ),
+            format!("{}_{:04}", now_millis(), rng.gen_range(0..1000usize)),
         );
 
         if let Some(v) = cookie.get("MUSIC_U") {
@@ -521,7 +549,9 @@ impl NeteaseClient {
     fn update_cookies(&mut self, set_cookie_headers: &[String]) {
         for sc in set_cookie_headers {
             if let Ok(c) = cookie::Cookie::parse(sc.to_owned()) {
-                self.state.cookies.insert(c.name().to_owned(), c.value().to_owned());
+                self.state
+                    .cookies
+                    .insert(c.name().to_owned(), c.value().to_owned());
             }
         }
     }
@@ -580,8 +610,7 @@ impl OsProfile {
 }
 
 const UA_WEAPI_PC: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0";
-const UA_LINUX: &str =
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36";
+const UA_LINUX: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36";
 const UA_API_IPHONE: &str = "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)";
 
 fn create_header_cookie(header: &HashMap<String, String>) -> String {
@@ -603,14 +632,14 @@ fn cookie_obj_to_string(cookie: &HashMap<String, String>) -> String {
 fn now_millis() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("time went backwards")
+        .unwrap_or_default()
         .as_millis()
 }
 
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("time went backwards")
+        .unwrap_or_default()
         .as_secs()
 }
 
@@ -641,6 +670,10 @@ pub enum NeteaseError {
     Io(std::io::Error),
     #[error("serde 错误: {0}")]
     Serde(serde_json::Error),
+    #[error("crypto 错误: {0}")]
+    Crypto(crypto::CryptoError),
+    #[error("Header 构造失败: {0}")]
+    BadHeader(String),
     #[error("输入错误: {0}")]
     BadInput(&'static str),
 }

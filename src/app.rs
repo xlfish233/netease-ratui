@@ -108,7 +108,9 @@ pub fn parse_search_songs(v: &Value) -> Vec<Song> {
         .pointer("/result/songs")
         .or_else(|| v.pointer("/songs"))
         .and_then(|x| x.as_array());
-    let Some(songs) = songs else { return vec![]; };
+    let Some(songs) = songs else {
+        return vec![];
+    };
 
     songs
         .iter()

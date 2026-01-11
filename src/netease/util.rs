@@ -40,4 +40,3 @@ pub fn build_anonymous_username(device_id: &str) -> String {
     let s = format!("{device_id} {encoded}");
     base64::engine::general_purpose::STANDARD.encode(s.as_bytes())
 }
-

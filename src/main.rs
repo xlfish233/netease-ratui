@@ -32,7 +32,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .or_else(|| v.pointer("/data/unikey").and_then(|x| x.as_str()))
             .ok_or("未找到 unikey")?;
         println!("unikey: {unikey}");
-        println!("qrurl: {}", client.login_qr_url(unikey, netease::QrPlatform::Pc));
+        println!(
+            "qrurl: {}",
+            client.login_qr_url(unikey, netease::QrPlatform::Pc)
+        );
         return Ok(());
     }
 

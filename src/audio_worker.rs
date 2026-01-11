@@ -5,6 +5,7 @@ use std::io::{BufReader, Read, Write};
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 use tempfile::NamedTempFile;
 
 #[derive(Debug)]
@@ -16,10 +17,16 @@ pub enum AudioCommand {
 
 #[derive(Debug)]
 pub enum AudioEvent {
-    NowPlaying { play_id: u64, title: String, duration_ms: Option<u64> },
+    NowPlaying {
+        play_id: u64,
+        title: String,
+        duration_ms: Option<u64>,
+    },
     Paused(bool),
     Stopped,
-    Ended { play_id: u64 },
+    Ended {
+        play_id: u64,
+    },
     Error(String),
 }
 
@@ -28,7 +35,13 @@ pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<Audio
     let (tx_evt, rx_evt) = mpsc::channel::<AudioEvent>();
 
     thread::spawn(move || {
-        let http = Client::new();
+        let http = match Client::builder().timeout(Duration::from_secs(30)).build() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx_evt.send(AudioEvent::Error(format!("初始化 HTTP 客户端失败: {e}")));
+                return;
+            }
+        };
         let (stream, handle) = match OutputStream::try_default() {
             Ok(v) => v,
             Err(e) => {
@@ -42,14 +55,20 @@ pub fn spawn_audio_worker() -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<Audio
 
         while let Ok(cmd) = rx_cmd.recv() {
             match cmd {
-                AudioCommand::PlayUrl { url, title } => match play_url(&http, &tx_evt, &mut state, &url, &title) {
-                    Ok((play_id, duration_ms)) => {
-                        let _ = tx_evt.send(AudioEvent::NowPlaying { play_id, title, duration_ms });
+                AudioCommand::PlayUrl { url, title } => {
+                    match play_url(&http, &tx_evt, &mut state, &url, &title) {
+                        Ok((play_id, duration_ms)) => {
+                            let _ = tx_evt.send(AudioEvent::NowPlaying {
+                                play_id,
+                                title,
+                                duration_ms,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = tx_evt.send(AudioEvent::Error(e));
+                        }
                     }
-                    Err(e) => {
-                        let _ = tx_evt.send(AudioEvent::Error(e));
-                    }
-                },
+                }
                 AudioCommand::TogglePause => {
                     if let Some(sink) = state.sink.as_ref() {
                         if sink.is_paused() {
