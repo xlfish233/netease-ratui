@@ -67,6 +67,9 @@ pub struct App {
     pub lyrics_song_id: Option<i64>,
     pub lyrics: Vec<crate::domain::model::LyricLine>,
     pub lyrics_status: String,
+    pub lyrics_follow: bool,
+    pub lyrics_selected: usize,
+    pub lyrics_offset_ms: i64,
 }
 
 impl Default for App {
@@ -108,6 +111,9 @@ impl Default for App {
             lyrics_song_id: None,
             lyrics: Vec::new(),
             lyrics_status: "暂无歌词".to_owned(),
+            lyrics_follow: true,
+            lyrics_selected: 0,
+            lyrics_offset_ms: 0,
         }
     }
 }

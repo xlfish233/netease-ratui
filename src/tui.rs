@@ -149,6 +149,16 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
             let _ = tx.send(AppCommand::PlayerVolumeDown).await;
             return false;
         }
+        (KeyCode::Left, m) if m.contains(KeyModifiers::ALT) && matches!(app.view, View::Lyrics) => {
+            let ms = if m.contains(KeyModifiers::SHIFT) { -50 } else { -200 };
+            let _ = tx.send(AppCommand::LyricsOffsetAddMs { ms }).await;
+            return false;
+        }
+        (KeyCode::Right, m) if m.contains(KeyModifiers::ALT) && matches!(app.view, View::Lyrics) => {
+            let ms = if m.contains(KeyModifiers::SHIFT) { 50 } else { 200 };
+            let _ = tx.send(AppCommand::LyricsOffsetAddMs { ms }).await;
+            return false;
+        }
         _ => {}
     }
 
@@ -209,7 +219,21 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
             }
             _ => {}
         },
-        View::Lyrics => {}
+        View::Lyrics => match key.code {
+            KeyCode::Char('o') => {
+                let _ = tx.send(AppCommand::LyricsToggleFollow).await;
+            }
+            KeyCode::Char('g') => {
+                let _ = tx.send(AppCommand::LyricsGotoCurrent).await;
+            }
+            KeyCode::Up => {
+                let _ = tx.send(AppCommand::LyricsMoveUp).await;
+            }
+            KeyCode::Down => {
+                let _ = tx.send(AppCommand::LyricsMoveDown).await;
+            }
+            _ => {}
+        },
     }
 
     false
@@ -402,6 +426,10 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
         .constraints([Constraint::Min(8), Constraint::Length(7)])
         .split(area);
 
+    let offset_text = fmt_offset(app.lyrics_offset_ms);
+    let mode_text = if app.lyrics_follow { "跟随" } else { "锁定" };
+    let status_text = format!("{} | {} | offset={}", app.lyrics_status, mode_text, offset_text);
+
     if app.lyrics.is_empty() {
         let block = Paragraph::new(app.lyrics_status.as_str())
             .block(Block::default().borders(Borders::ALL).title("歌词"))
@@ -409,7 +437,12 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
         f.render_widget(block, chunks[0]);
     } else {
         let (elapsed_ms, _) = playback_time_ms(app);
-        let selected = current_lyric_index(&app.lyrics, elapsed_ms).unwrap_or(0);
+        let selected = if app.lyrics_follow {
+            current_lyric_index(&app.lyrics, apply_lyrics_offset(elapsed_ms, app.lyrics_offset_ms))
+                .unwrap_or(0)
+        } else {
+            app.lyrics_selected.min(app.lyrics.len().saturating_sub(1))
+        };
 
         let items = app
             .lyrics
@@ -431,7 +464,7 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
         f.render_stateful_widget(list, chunks[0], &mut list_state(selected));
     }
 
-    draw_player_status(f, chunks[1], app, "状态", "歌词", app.lyrics_status.as_str());
+    draw_player_status(f, chunks[1], app, "状态", "歌词", status_text.as_str());
 }
 
 fn list_state(selected: usize) -> ratatui::widgets::ListState {
@@ -477,6 +510,21 @@ fn current_lyric_index(lines: &[crate::domain::model::LyricLine], elapsed_ms: u6
     }
 }
 
+fn apply_lyrics_offset(elapsed_ms: u64, offset_ms: i64) -> u64 {
+    if offset_ms >= 0 {
+        elapsed_ms.saturating_add(offset_ms as u64)
+    } else {
+        elapsed_ms.saturating_sub((-offset_ms) as u64)
+    }
+}
+
+fn fmt_offset(offset_ms: i64) -> String {
+    let sign = if offset_ms < 0 { "-" } else { "+" };
+    let abs_ms = offset_ms.unsigned_abs();
+    let s = abs_ms as f64 / 1000.0;
+    format!("{sign}{s:.2}s")
+}
+
 fn fmt_mmss(ms: u64) -> String {
     let total_sec = ms / 1000;
     let m = total_sec / 60;
@@ -515,7 +563,7 @@ fn draw_player_status(
 
     // 底栏帮助提示
     let help = Paragraph::new(
-        "帮助: Tab 切换页 | ↑↓ 选择 | Enter 打开歌单 | p 播放选中 | 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | q 退出",
+        "帮助: Tab 切换页 | ↑↓ 选择/滚动 | Enter 打开歌单 | p 播放选中 | 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | 歌词页: o 跟随/锁定 | g 回到当前行 | Alt+←/→ offset(±200ms) | Shift+Alt+←/→ offset(±50ms) | q 退出",
     )
     .block(Block::default().borders(Borders::ALL).title("帮助"));
     f.render_widget(help, status_chunks[1]);

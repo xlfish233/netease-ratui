@@ -27,6 +27,11 @@ pub enum AppCommand {
     PlayerVolumeDown,
     PlayerVolumeUp,
     PlayerCycleMode,
+    LyricsToggleFollow,
+    LyricsMoveUp,
+    LyricsMoveDown,
+    LyricsGotoCurrent,
+    LyricsOffsetAddMs { ms: i64 },
     Quit,
 }
 

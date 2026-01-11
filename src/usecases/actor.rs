@@ -218,6 +218,48 @@ pub fn spawn_app_actor(
                                 push_state(&tx_evt, &app).await;
                             }
                         }
+                        AppCommand::LyricsToggleFollow => {
+                            if matches!(app.view, View::Lyrics) {
+                                app.lyrics_follow = !app.lyrics_follow;
+                                if app.lyrics_follow {
+                                    app.lyrics_status = "歌词：跟随模式".to_owned();
+                                } else {
+                                    app.lyrics_status = "歌词：锁定模式（↑↓滚动，g 回到当前行）".to_owned();
+                                }
+                                push_state(&tx_evt, &app).await;
+                            }
+                        }
+                        AppCommand::LyricsMoveUp => {
+                            if matches!(app.view, View::Lyrics) && !app.lyrics_follow {
+                                if app.lyrics_selected > 0 {
+                                    app.lyrics_selected -= 1;
+                                    push_state(&tx_evt, &app).await;
+                                }
+                            }
+                        }
+                        AppCommand::LyricsMoveDown => {
+                            if matches!(app.view, View::Lyrics) && !app.lyrics_follow {
+                                if !app.lyrics.is_empty()
+                                    && app.lyrics_selected + 1 < app.lyrics.len()
+                                {
+                                    app.lyrics_selected += 1;
+                                    push_state(&tx_evt, &app).await;
+                                }
+                            }
+                        }
+                        AppCommand::LyricsGotoCurrent => {
+                            if matches!(app.view, View::Lyrics) {
+                                app.lyrics_follow = true;
+                                app.lyrics_status = "歌词：跟随模式".to_owned();
+                                push_state(&tx_evt, &app).await;
+                            }
+                        }
+                        AppCommand::LyricsOffsetAddMs { ms } => {
+                            if matches!(app.view, View::Lyrics) {
+                                app.lyrics_offset_ms = app.lyrics_offset_ms.saturating_add(ms);
+                                push_state(&tx_evt, &app).await;
+                            }
+                        }
                         AppCommand::PlayerTogglePause => {
                             let _ = tx_audio.send(AudioCommand::TogglePause);
                         }
@@ -433,6 +475,7 @@ pub fn spawn_app_actor(
                             pending_lyric = None;
                             app.lyrics_song_id = Some(song_id);
                             app.lyrics = lyrics;
+                            app.lyrics_selected = 0;
                             app.lyrics_status = if app.lyrics.is_empty() {
                                 "暂无歌词".to_owned()
                             } else {
