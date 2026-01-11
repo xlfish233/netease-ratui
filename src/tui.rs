@@ -1,6 +1,5 @@
-use crate::api_worker::{ApiEvent, ApiRequest};
-use crate::app::{App, PlaylistMode, View, parse_search_songs, parse_user_playlists};
-use crate::audio_worker::{AudioCommand, AudioEvent};
+use crate::app::{App, PlaylistMode, View};
+use crate::messages::app::{AppCommand, AppEvent};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -17,7 +16,6 @@ use ratatui::{
 };
 use std::io;
 use std::io::Write;
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc as tokio_mpsc;
 
@@ -44,36 +42,32 @@ impl Drop for TuiGuard {
 
 pub async fn run_tui(
     mut app: App,
-    tx: tokio_mpsc::Sender<ApiRequest>,
-    mut rx: tokio_mpsc::Receiver<ApiEvent>,
+    tx: tokio_mpsc::Sender<AppCommand>,
+    mut rx: tokio_mpsc::Receiver<AppEvent>,
 ) -> io::Result<()> {
-    let (tx_audio, rx_audio) = crate::audio_worker::spawn_audio_worker();
-
     let _guard = TuiGuard::enter()?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
+    let _ = tx.send(AppCommand::Bootstrap).await;
+
     let tick_rate = Duration::from_millis(200);
     let mut last_tick = Instant::now();
-    let mut last_qr_poll = Instant::now() - Duration::from_secs(10);
 
     loop {
         while let Ok(evt) = rx.try_recv() {
-            handle_api_event(&mut app, evt, &tx, &tx_audio).await;
-        }
-        while let Ok(evt) = rx_audio.try_recv() {
-            if let Some(req) = handle_audio_event(&mut app, evt) {
-                let _ = tx.send(req).await;
-            }
-        }
-
-        if app.login_unikey.is_some()
-            && !app.logged_in
-            && last_qr_poll.elapsed() >= Duration::from_secs(2)
-        {
-            if let Some(key) = app.login_unikey.clone() {
-                let _ = tx.send(ApiRequest::LoginQrCheck { key }).await;
-                last_qr_poll = Instant::now();
+            match evt {
+                AppEvent::State(s) => app = s,
+                AppEvent::Toast(s) => match app.view {
+                    View::Login => app.login_status = s,
+                    View::Playlists => app.playlists_status = s,
+                    View::Search => app.search_status = s,
+                },
+                AppEvent::Error(e) => match app.view {
+                    View::Login => app.login_status = format!("错误: {e}"),
+                    View::Playlists => app.playlists_status = format!("错误: {e}"),
+                    View::Search => app.search_status = format!("错误: {e}"),
+                },
             }
         }
 
@@ -82,7 +76,7 @@ pub async fn run_tui(
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if handle_key(&mut app, key, &tx, &tx_audio).await {
+                if handle_key(&app, key, &tx).await {
                     break;
                 }
             }
@@ -96,312 +90,89 @@ pub async fn run_tui(
     Ok(())
 }
 
-async fn handle_api_event(
-    app: &mut App,
-    evt: ApiEvent,
-    tx: &tokio_mpsc::Sender<ApiRequest>,
-    tx_audio: &mpsc::Sender<AudioCommand>,
-) {
-    match evt {
-        ApiEvent::Info(s) => match app.view {
-            View::Login => app.login_status = s,
-            View::Playlists => app.playlists_status = s,
-            View::Search => app.search_status = s,
-        },
-        ApiEvent::Error(e) => match app.view {
-            View::Login => app.login_status = format!("错误: {e}"),
-            View::Playlists => app.playlists_status = format!("错误: {e}"),
-            View::Search => app.search_status = format!("错误: {e}"),
-        },
-        ApiEvent::ClientReady { logged_in } => {
-            app.logged_in = logged_in;
-            if app.logged_in {
-                app.view = View::Playlists;
-                app.playlists_status = "已登录（已从本地状态恢复），正在加载账号信息...".to_owned();
-                let _ = tx.send(ApiRequest::Account).await;
-            }
-        }
-        ApiEvent::LoginQrReady { unikey, url, ascii } => {
-            app.login_unikey = Some(unikey);
-            app.login_qr_url = Some(url);
-            app.login_qr_ascii = Some(ascii);
-            app.login_status = "请用网易云 APP 扫码；扫码后会自动轮询状态".to_owned();
-            app.logged_in = false;
-        }
-        ApiEvent::LoginQrStatus {
-            code,
-            message,
-            logged_in,
-        } => {
-            if logged_in {
-                app.logged_in = true;
-                app.login_status = "登录成功".to_owned();
-                app.view = View::Playlists;
-                app.playlists_status = "登录成功，正在加载账号信息...".to_owned();
-                let _ = tx.send(ApiRequest::Account).await;
-            } else {
-                app.login_status = format!("扫码状态 code={code} {message}");
-            }
-        }
-        ApiEvent::SearchResult(v) => {
-            app.search_results = parse_search_songs(&v);
-            app.search_selected = 0;
-            app.search_status = format!("结果: {} 首", app.search_results.len());
-        }
-        ApiEvent::SongUrlReady { id: _, url, title } => {
-            app.play_status = "开始播放...".to_owned();
-            let _ = tx_audio.send(AudioCommand::PlayUrl { url, title });
-        }
-        ApiEvent::AccountReady { uid, nickname } => {
-            app.account_uid = Some(uid);
-            app.account_nickname = Some(nickname);
-            app.playlists_status = "正在加载用户歌单...".to_owned();
-            let _ = tx.send(ApiRequest::UserPlaylists { uid }).await;
-        }
-        ApiEvent::UserPlaylistsReady(v) => {
-            app.playlists = parse_user_playlists(&v);
-            app.playlists_selected = app
-                .playlists
-                .iter()
-                .position(|p| p.special_type == 5 || p.name.contains("我喜欢"))
-                .unwrap_or(0);
-            app.playlist_mode = PlaylistMode::List;
-            app.playlist_tracks.clear();
-            app.playlist_tracks_selected = 0;
-            app.playlists_status = format!(
-                "歌单: {} 个（已选中我喜欢的音乐，回车打开）",
-                app.playlists.len()
-            );
-        }
-        ApiEvent::PlaylistTracksReady {
-            playlist_id: _,
-            songs,
-        } => {
-            app.playlist_tracks = parse_search_songs(&songs);
-            app.playlist_tracks_selected = 0;
-            app.playlist_mode = PlaylistMode::Tracks;
-            app.queue = app.playlist_tracks.clone();
-            app.queue_pos = Some(0);
-            app.playlists_status = format!("歌曲: {} 首（p 播放）", app.playlist_tracks.len());
-        }
-    }
-}
-
-fn handle_audio_event(app: &mut App, evt: AudioEvent) -> Option<ApiRequest> {
-    match evt {
-        AudioEvent::NowPlaying {
-            play_id,
-            title,
-            duration_ms,
-        } => {
-            app.now_playing = Some(title);
-            app.paused = false;
-            app.play_status = "播放中".to_owned();
-            app.play_started_at = Some(Instant::now());
-            app.play_total_ms = duration_ms;
-            app.play_paused_at = None;
-            app.play_paused_accum_ms = 0;
-            app.play_id = Some(play_id);
-        }
-        AudioEvent::Paused(p) => {
-            app.paused = p;
-            app.play_status = if p { "已暂停" } else { "播放中" }.to_owned();
-            if p {
-                app.play_paused_at = Some(Instant::now());
-            } else if let Some(t) = app.play_paused_at.take() {
-                app.play_paused_accum_ms = app
-                    .play_paused_accum_ms
-                    .saturating_add(t.elapsed().as_millis() as u64);
-            }
-        }
-        AudioEvent::Stopped => {
-            app.paused = false;
-            app.play_status = "已停止".to_owned();
-            app.play_started_at = None;
-            app.play_total_ms = None;
-            app.play_paused_at = None;
-            app.play_paused_accum_ms = 0;
-            app.play_id = None;
-        }
-        AudioEvent::Ended { play_id } => {
-            if app.play_id != Some(play_id) {
-                return None;
-            }
-            let Some(pos) = app.queue_pos else {
-                return None;
-            };
-            let next = pos + 1;
-            if next >= app.queue.len() {
-                app.play_status = "播放结束".to_owned();
-                app.queue_pos = None;
-                return None;
-            }
-            app.queue_pos = Some(next);
-            if matches!(app.view, View::Playlists)
-                && matches!(app.playlist_mode, PlaylistMode::Tracks)
-            {
-                app.playlist_tracks_selected =
-                    next.min(app.playlist_tracks.len().saturating_sub(1));
-            }
-            let s = &app.queue[next];
-            app.play_status = "自动下一首...".to_owned();
-            let title = format!("{} - {}", s.name, s.artists);
-            return Some(ApiRequest::SongUrl { id: s.id, title });
-        }
-        AudioEvent::Error(e) => {
-            app.play_status = format!("播放错误: {e}");
-        }
-    }
-    None
-}
-
-async fn handle_key(
-    app: &mut App,
-    key: KeyEvent,
-    tx: &tokio_mpsc::Sender<ApiRequest>,
-    tx_audio: &mpsc::Sender<AudioCommand>,
-) -> bool {
+async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand>) -> bool {
     match key {
         KeyEvent {
             code: KeyCode::Char('q'),
             ..
-        } => return true,
+        } => {
+            let _ = tx.send(AppCommand::Quit).await;
+            return true;
+        }
         KeyEvent {
             code: KeyCode::Tab, ..
         } => {
-            if app.logged_in {
-                app.view = match app.view {
-                    View::Playlists => View::Search,
-                    View::Search => View::Playlists,
-                    View::Login => View::Playlists,
-                };
-            } else {
-                app.view = match app.view {
-                    View::Login => View::Search,
-                    View::Search => View::Login,
-                    View::Playlists => View::Login,
-                };
-            }
+            let _ = tx.send(AppCommand::TabNext).await;
         }
         _ => {}
     }
 
     match app.view {
-        View::Login => match key.code {
-            KeyCode::Char('l') => {
-                if app.logged_in {
-                    return false;
-                }
-                let _ = tx.send(ApiRequest::LoginQrKey).await;
-                app.login_status = "正在生成二维码...".to_owned();
+        View::Login => {
+            if let KeyCode::Char('l') = key.code {
+                let _ = tx.send(AppCommand::LoginGenerateQr).await;
             }
-            _ => {}
-        },
+        }
         View::Playlists => match key.code {
             KeyCode::Char('b') => {
-                app.playlist_mode = PlaylistMode::List;
-                app.playlists_status = "返回歌单列表".to_owned();
+                let _ = tx.send(AppCommand::Back).await;
             }
             KeyCode::Enter => {
-                if matches!(app.playlist_mode, PlaylistMode::List) {
-                    if let Some(p) = app.playlists.get(app.playlists_selected) {
-                        app.playlists_status = "加载歌单歌曲中...".to_owned();
-                        let _ = tx
-                            .send(ApiRequest::PlaylistTracks { playlist_id: p.id })
-                            .await;
-                    }
-                }
+                let _ = tx.send(AppCommand::PlaylistsOpenSelected).await;
             }
             KeyCode::Char('p') => {
-                if matches!(app.playlist_mode, PlaylistMode::Tracks) {
-                    if let Some(s) = app.playlist_tracks.get(app.playlist_tracks_selected) {
-                        app.play_status = "获取播放链接...".to_owned();
-                        app.queue = app.playlist_tracks.clone();
-                        app.queue_pos = Some(app.playlist_tracks_selected);
-                        let title = format!("{} - {}", s.name, s.artists);
-                        let _ = tx.send(ApiRequest::SongUrl { id: s.id, title }).await;
-                    }
-                }
+                let _ = tx.send(AppCommand::PlaylistTracksPlaySelected).await;
             }
             KeyCode::Up => match app.playlist_mode {
                 PlaylistMode::List => {
-                    if app.playlists_selected > 0 {
-                        app.playlists_selected -= 1;
-                    }
+                    let _ = tx.send(AppCommand::PlaylistsMoveUp).await;
                 }
                 PlaylistMode::Tracks => {
-                    if app.playlist_tracks_selected > 0 {
-                        app.playlist_tracks_selected -= 1;
-                    }
+                    let _ = tx.send(AppCommand::PlaylistTracksMoveUp).await;
                 }
             },
             KeyCode::Down => match app.playlist_mode {
                 PlaylistMode::List => {
-                    if !app.playlists.is_empty() && app.playlists_selected + 1 < app.playlists.len()
-                    {
-                        app.playlists_selected += 1;
-                    }
+                    let _ = tx.send(AppCommand::PlaylistsMoveDown).await;
                 }
                 PlaylistMode::Tracks => {
-                    if !app.playlist_tracks.is_empty()
-                        && app.playlist_tracks_selected + 1 < app.playlist_tracks.len()
-                    {
-                        app.playlist_tracks_selected += 1;
-                    }
+                    let _ = tx.send(AppCommand::PlaylistTracksMoveDown).await;
                 }
             },
             KeyCode::Char(' ') => {
-                let _ = tx_audio.send(AudioCommand::TogglePause);
+                let _ = tx.send(AppCommand::PlayerTogglePause).await;
             }
             KeyCode::Char('s') => {
-                let _ = tx_audio.send(AudioCommand::Stop);
+                let _ = tx.send(AppCommand::PlayerStop).await;
             }
             _ => {}
         },
         View::Search => match key.code {
             KeyCode::Char('p') => {
-                if let Some(s) = app.search_results.get(app.search_selected) {
-                    app.play_status = "获取播放链接...".to_owned();
-                    app.queue.clear();
-                    app.queue_pos = None;
-                    let title = selected_song_title(app);
-                    let _ = tx.send(ApiRequest::SongUrl { id: s.id, title }).await;
-                }
+                let _ = tx.send(AppCommand::SearchPlaySelected).await;
             }
             KeyCode::Char(' ') => {
-                let _ = tx_audio.send(AudioCommand::TogglePause);
+                let _ = tx.send(AppCommand::PlayerTogglePause).await;
             }
             KeyCode::Char('s') => {
-                let _ = tx_audio.send(AudioCommand::Stop);
+                let _ = tx.send(AppCommand::PlayerStop).await;
             }
             KeyCode::Enter => {
-                let q = app.search_input.trim().to_owned();
-                if q.is_empty() {
-                    app.search_status = "请输入关键词".to_owned();
-                } else {
-                    let _ = tx.send(ApiRequest::Search { keywords: q }).await;
-                    app.search_status = "搜索中...".to_owned();
-                }
+                let _ = tx.send(AppCommand::SearchSubmit).await;
             }
             KeyCode::Backspace => {
-                app.search_input.pop();
+                let _ = tx.send(AppCommand::SearchInputBackspace).await;
             }
             KeyCode::Char(c) => {
                 if !key.modifiers.contains(KeyModifiers::CONTROL) {
-                    app.search_input.push(c);
+                    let _ = tx.send(AppCommand::SearchInputChar { c }).await;
                 }
             }
             KeyCode::Up => {
-                if app.search_selected > 0 {
-                    app.search_selected -= 1;
-                }
+                let _ = tx.send(AppCommand::SearchMoveUp).await;
             }
             KeyCode::Down => {
-                if !app.search_results.is_empty()
-                    && app.search_selected + 1 < app.search_results.len()
-                {
-                    app.search_selected += 1;
-                }
+                let _ = tx.send(AppCommand::SearchMoveDown).await;
             }
             _ => {}
         },

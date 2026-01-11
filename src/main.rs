@@ -1,8 +1,11 @@
 mod api_worker;
 mod app;
 mod audio_worker;
+mod domain;
+mod messages;
 mod netease;
 mod tui;
+mod usecases;
 
 use app::App;
 use netease::{NeteaseClient, NeteaseClientConfig};
@@ -39,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let (tx, rx) = api_worker::spawn_api_worker(cfg);
+    let (tx, rx) = usecases::actor::spawn_app_actor(cfg);
     tui::run_tui(App::default(), tx, rx).await?;
     Ok(())
 }

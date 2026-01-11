@@ -29,15 +29,53 @@ NETEASE_QR_KEY=1 cargo run
 
 整体按“**TUI 事件循环** + **异步服务层** + **协议/加密实现**”拆分，避免 UI 被网络/加密细节耦合。
 
+## 架构蓝图（重构目标：全 Actor + 消息驱动）
+
+> 目标：把 UI、业务编排、网易云网关、音频播放彻底解耦；UI 只渲染整体状态并发送高层命令；所有跨层交互统一用消息通信。
+
+### 分层与职责
+
+- **TuiActor（UI）**：处理键盘输入、渲染 `AppState`；不直接做网络/解析/播放。
+- **AppActor（应用层 / 业务编排）**：接收 `AppCommand`，维护唯一 `AppState`，负责登录轮询、歌单加载链路、播放队列推进等业务流程。
+- **NeteaseActor（网关 / 基础设施）**：持有 `NeteaseClient`（cookie/加密/请求发送）；接收 `NeteaseCommand` 并返回强类型 `NeteaseEvent`；不包含 UI/业务策略。
+- **AudioActor（播放器 / 基础设施）**：接收 `AudioCommand` 并返回 `AudioEvent`（播放状态机）。
+
+### 消息通道拓扑（简化）
+
+```
+TuiActor  -- AppCommand -->  AppActor  -- NeteaseCommand -->  NeteaseActor
+TuiActor  <-- AppEvent  --  AppActor  <-- NeteaseEvent  --  NeteaseActor
+
+TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
+                     AppActor  <-- AudioEvent  --  AudioActor
+```
+
+### UI 协议：整体状态推送（先全量，后续可增量）
+
+- UI -> App：高层 `AppCommand`（例如 `SearchSubmit`、`PlaySelected`、`LoginGenerateQr`）。
+- App -> UI：`AppEvent::State(AppState)`（每次状态变更推送整状态；后续可替换为 patch）。
+
+### 领域模型与 DTO 分离（长期收益）
+
+- **Domain（稳定）**：`Song/Playlist/Account/...`，供 UI/业务使用。
+- **DTO（易变）**：所有 `serde` 的响应结构体（字段可选、兼容多形态）。
+- **转换层**：集中把 DTO -> Domain，缺字段则返回明确错误，避免 UI/worker 内散落 `pointer("/x/y")`。
+
+### 关键工程约定
+
+- **所有跨 actor 的请求携带 `req_id`**：事件回包携带同 `req_id`，避免并发/乱序覆盖状态。
+- **AppActor 是唯一 `AppState` 写入者**：UI 只读状态；网关/音频只发事件。
+
 ### 目录结构
 
 - `src/main.rs`：入口；选择运行模式（TUI / 调试模式）。
-- `src/tui.rs`：ratatui + crossterm 事件循环（draw / key handling / tick）。
-- `src/app.rs`：UI 状态模型（`App`）、视图枚举（`View`）、解析辅助（`parse_search_songs`）。
-- `src/api_worker.rs`：服务层 worker（单独 tokio 任务）：
-  - UI 发送 `ApiRequest`；
-  - worker 调用 `NeteaseClient`；
-  - worker 通过 `ApiEvent` 把结果回推 UI。
+- `src/tui.rs`：ratatui + crossterm 事件循环；只发送 `AppCommand`、只渲染 `AppState`（全量）。
+- `src/messages/`：UI<->AppActor 的消息协议（`AppCommand/AppEvent`）。
+- `src/usecases/actor.rs`：`AppActor`（业务编排 + 唯一状态源）。
+- `src/netease/actor.rs`：`NeteaseActor`（网关层，命令/事件 + 强类型解析）。
+- `src/netease/models/`：DTO/Domain 转换与容错（响应结构变动的集中处理点）。
+- `src/app.rs`：`App`（当前 UI 状态结构，后续会进一步演进为 `AppState` 分层模块）。
+- `src/api_worker.rs`：旧的 worker（计划淘汰，改由 `AppActor/NeteaseActor` 替代）。
 - `src/netease/`：协议与客户端实现：
   - `src/netease/crypto.rs`：weapi / eapi / linuxapi 加密与表单生成（AES + RSA + MD5）。
   - `src/netease/client.rs`：`NeteaseClient`（cookie、UA、header cookie、请求拼装与发送）。
@@ -86,4 +124,3 @@ NETEASE_QR_KEY=1 cargo run
 
 - 目标：优先保持结构清晰与可维护，避免把“网易云协议细节”散落到 UI 里。
 - 变更方式：按功能切分、逐步提交（commit），便于回滚与 code review。
-

@@ -1,26 +1,13 @@
 use serde_json::Value;
 use std::time::Instant;
 
+pub use crate::domain::model::{Playlist, Song};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Login,
     Playlists,
     Search,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Song {
-    pub id: i64,
-    pub name: String,
-    pub artists: String,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Playlist {
-    pub id: i64,
-    pub name: String,
-    pub track_count: i64,
-    pub special_type: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,7 +16,7 @@ pub enum PlaylistMode {
     Tracks,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct App {
     pub view: View,
 

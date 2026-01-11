@@ -3,6 +3,7 @@ use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -95,6 +96,7 @@ struct PlayerState {
     handle: OutputStreamHandle,
     sink: Option<Arc<Sink>>,
     _temp: Option<NamedTempFile>,
+    end_cancel: Option<Arc<AtomicBool>>,
     play_id: u64,
 }
 
@@ -104,12 +106,16 @@ impl PlayerState {
             handle,
             sink: None,
             _temp: None,
+            end_cancel: None,
             play_id: 0,
         }
     }
 
     fn stop(&mut self) {
         self.play_id = self.play_id.wrapping_add(1);
+        if let Some(c) = self.end_cancel.take() {
+            c.store(true, Ordering::Relaxed);
+        }
         if let Some(s) = self.sink.take() {
             s.stop();
         }
@@ -163,10 +169,14 @@ fn play_url(
 
     let play_id = state.play_id;
     let tx_end = tx_evt.clone();
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.end_cancel = Some(Arc::clone(&cancel));
     let sink_end = Arc::clone(&sink);
     thread::spawn(move || {
         sink_end.sleep_until_end();
-        let _ = tx_end.send(AudioEvent::Ended { play_id });
+        if !cancel.load(Ordering::Relaxed) {
+            let _ = tx_end.send(AudioEvent::Ended { play_id });
+        }
     });
 
     state.sink = Some(sink);
