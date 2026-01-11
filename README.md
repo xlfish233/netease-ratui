@@ -118,16 +118,28 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
 
 - `src/main.rs`：入口；选择运行模式（TUI / 调试模式）。
 - `src/tui.rs`：ratatui + crossterm 事件循环；只发送 `AppCommand`、只渲染 `AppEvent::State`（全量）。
+- `src/tui/`：TUI 视图层（14 个子模块）
+  - event_loop.rs: 事件循环
+  - guard.rs: TUI 生命周期管理
+  - keyboard.rs: 键盘事件处理
+  - mouse.rs: 鼠标事件处理
+  - views.rs: 视图管理
+  - login_view.rs, lyrics_view.rs, playlists_view.rs, search_view.rs, settings_view.rs: 各功能界面
+  - player_status.rs: 播放器状态面板
+  - widgets.rs: 组件模块
+  - utils.rs: 格式化和辅助函数
 - `src/messages/`：UI<->AppActor 的消息协议（`AppCommand/AppEvent`）。
 - `src/usecases/actor.rs`：`AppActor`（业务编排 + 单一状态源，主循环与路由）。
-- `src/usecases/actor/`：`AppActor` 的内聚子模块（预加载/播放控制/歌单分页加载/登出重置等）。
+- `src/usecases/actor/`：`AppActor` 的内聚子模块（12 个：login, search, playlists, lyrics, player_control, settings_handler, audio_handler, playback, preload, playlist_tracks, logout, utils）
 - `src/domain/`：领域模型（供业务/状态使用）。
+- `src/audio_worker.rs`：音频工作线程入口。
+- `src/audio_worker/`：音频工作线程子模块（6 个：messages, worker, player, cache, download）
 - `src/netease/actor.rs`：`NeteaseActor`（网关层：命令/事件 + 强类型解析）。
 - `src/netease/models/`：DTO/Domain 转换与容错（响应结构变动的集中处理点）。
+- `src/netease/client/`：NeteaseClient 子模块（config, cookie, error, types）
 - `src/app.rs`：当前整体状态结构（临时命名为 `App`，长期会演进为 `AppState` 分层模块）。
 - `src/netease/`：协议与客户端实现：
   - `src/netease/crypto.rs`：weapi / eapi / linuxapi 加密与表单生成（AES + RSA + MD5）。
-  - `src/netease/client.rs`：`NeteaseClient`（cookie、UA、header cookie、请求拼装与发送）。
   - `src/netease/util.rs`：deviceId / anonymous username 等工具函数。
 
 ## Roadmap（建议顺序）

@@ -2,6 +2,33 @@
 
 ## Unreleased（自 v0.0.2 起，更新于 2026-01-11）
 
+### 大规模模块化重构
+
+将 4 个核心大文件拆分为 37 个职责单一的子模块，提高代码可维护性：
+
+- **AppActor 重构** (`src/usecases/actor.rs`，1072 行 → 510 行，-52%)：
+  - 拆分为 12 个子模块：login.rs、search.rs、playlists.rs、lyrics.rs、player_control.rs、settings_handler.rs、audio_handler.rs、playback.rs、preload.rs、playlist_tracks.rs、logout.rs、utils.rs
+
+- **TUI 重构** (`src/tui.rs`，891 行)：
+  - 拆分为 14 个子模块：event_loop.rs、guard.rs、keyboard.rs、mouse.rs、views.rs、login_view.rs、lyrics_view.rs、playlists_view.rs、search_view.rs、settings_view.rs、player_status.rs、widgets.rs、utils.rs
+
+- **AudioWorker 重构** (`src/audio_worker.rs`，613 行)：
+  - 拆分为 6 个子模块：messages.rs、worker.rs、player.rs、cache.rs、download.rs
+
+- **NeteaseClient 重构** (`src/netease/client.rs`，735 行 → ~100 行)：
+  - 拆分为 5 个子模块：config.rs、cookie.rs、error.rs、types.rs
+
+- **Bug 修复**：
+  - fix(tui): 支持 Ctrl+C 信号处理（raw mode 下启用 tokio signal）
+
+- **代码质量优化**：
+  - 移除冗余 clone 和死代码
+  - 简化 Option 处理（使用链式方法）
+  - 优化模式匹配语法
+  - 改进函数签名（引用传递替代值传递）
+
+### 其他功能
+
 - **新增 Cookie 登录功能**：支持手动输入 `MUSIC_U` Cookie 值快速登录
   - 登录页按 `c` 键切换到 Cookie 登录模式
   - 支持输入验证和错误提示

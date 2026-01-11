@@ -1,5 +1,5 @@
 pub mod actor;
-mod client;
+pub mod client;
 mod crypto;
 pub mod models;
 mod util;

@@ -4,6 +4,8 @@ use rand::Rng;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+use super::utils;
+
 pub(super) fn next_play_mode(m: crate::app::PlayMode) -> crate::app::PlayMode {
     use crate::app::PlayMode;
     match m {
@@ -89,7 +91,7 @@ pub(super) async fn request_play_at_index(
     }
     app.play_status = "获取播放链接...".to_owned();
     let title = format!("{} - {}", s.name, s.artists);
-    let id = super::next_id(req_id);
+    let id = utils::next_id(req_id);
     *pending_song_url = Some((id, title));
     let _ = tx_netease
         .send(NeteaseCommand::SongUrl {
