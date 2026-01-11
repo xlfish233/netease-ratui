@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::{Line, Text},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Tabs, Wrap},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Tabs, Wrap},
     Terminal,
 };
 use std::io;
@@ -592,14 +592,8 @@ fn draw_player_status(
     .block(Block::default().borders(Borders::ALL).title(title));
     f.render_widget(status, status_chunks[0]);
 
-    let ratio = if let Some(total) = total_ms {
-        if total == 0 { 0.0 } else { (elapsed_ms.min(total) as f64) / (total as f64) }
-    } else {
-        0.0
-    };
-    let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::ALL).title("进度"))
-        .gauge_style(Style::default().fg(Color::Green))
-        .ratio(ratio);
-    f.render_widget(gauge, status_chunks[1]);
+    // 底栏帮助提示
+    let help = Paragraph::new("帮助: Tab 切换页 | ↑↓ 选择 | Enter 打开歌单 | p 播放 | 空格 暂停/继续 | s 停止 | q 退出")
+        .block(Block::default().borders(Borders::ALL).title("帮助"));
+    f.render_widget(help, status_chunks[1]);
 }
