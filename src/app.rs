@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::collections::HashMap;
 use std::time::Instant;
 
 pub use crate::domain::model::{Playlist, Song};
@@ -16,6 +17,21 @@ pub enum View {
 pub enum PlaylistMode {
     List,
     Tracks,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlaylistPreload {
+    pub status: PreloadStatus,
+    pub songs: Vec<Song>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PreloadStatus {
+    NotStarted,
+    Loading { loaded: usize, total: usize },
+    Completed,
+    Failed(String),
+    Cancelled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +82,9 @@ pub struct App {
     pub playlist_tracks_selected: usize,
     pub playlists_status: String,
 
+    pub playlist_preloads: HashMap<i64, PlaylistPreload>,
+    pub preload_summary: String,
+
     pub lyrics_song_id: Option<i64>,
     pub lyrics: Vec<crate::domain::model::LyricLine>,
     pub lyrics_status: String,
@@ -113,6 +132,9 @@ impl Default for App {
             playlist_tracks: Vec::new(),
             playlist_tracks_selected: 0,
             playlists_status: "等待登录后加载歌单".to_owned(),
+
+            playlist_preloads: HashMap::new(),
+            preload_summary: String::new(),
 
             lyrics_song_id: None,
             lyrics: Vec::new(),

@@ -12,6 +12,7 @@
 - 登录态轮询（扫码状态、成功 code=803）
 - 获取账号信息与用户歌单列表；进入歌单后可加载歌曲列表
 - 歌单歌曲全量加载：先取 `trackIds`，再按 200 首分批拉取歌曲详情并展示进度
+- 歌单后台预加载（默认“我喜欢 + 前 5 个歌单”）：低优先级请求，不阻塞搜索/点歌；打开歌单时若已预加载完成可秒开
 - 搜索（`/api/cloudsearch/pc`）并在 TUI 列表展示；可直接播放选中歌曲
 - 歌词页：自动滚动 + 当前行高亮（如有翻译会一并展示）
 - 设置页：音量/音质/播放模式/歌词 offset 可调整并持久化；支持退出登录（清理本地 cookie）
@@ -63,6 +64,10 @@ sudo apt-get install -y libasound2-dev
 - **NeteaseActor（网关 / 基础设施）**：持有 `NeteaseClient`（cookie/加密/请求发送）；接收 `NeteaseCommand` 并返回强类型 `NeteaseEvent`；不包含 UI 选择/队列策略。
 - **AudioActor（播放器 / 基础设施）**：接收 `AudioCommand` 并返回 `AudioEvent`（播放状态机、停止/切歌取消 Ended 上报）。
 
+### 网关优先级（避免预加载影响交互）
+
+`NeteaseActor` 提供高/低优先级两个命令通道：用户交互（搜索/点歌/打开歌单）走高优先级；后台预加载走低优先级。网关侧使用“高优先级优先”的策略处理请求，避免预加载占满队列导致 UI 卡顿。
+
 ### 消息通道拓扑（简化）
 
 ```
@@ -93,7 +98,8 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
 - `src/main.rs`：入口；选择运行模式（TUI / 调试模式）。
 - `src/tui.rs`：ratatui + crossterm 事件循环；只发送 `AppCommand`、只渲染 `AppEvent::State`（全量）。
 - `src/messages/`：UI<->AppActor 的消息协议（`AppCommand/AppEvent`）。
-- `src/usecases/actor.rs`：`AppActor`（业务编排 + 单一状态源）。
+- `src/usecases/actor.rs`：`AppActor`（业务编排 + 单一状态源，主循环与路由）。
+- `src/usecases/actor/`：`AppActor` 的内聚子模块（预加载/播放控制/歌单分页加载/登出重置等）。
 - `src/domain/`：领域模型（供业务/状态使用）。
 - `src/netease/actor.rs`：`NeteaseActor`（网关层：命令/事件 + 强类型解析）。
 - `src/netease/models/`：DTO/Domain 转换与容错（响应结构变动的集中处理点）。

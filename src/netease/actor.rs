@@ -113,8 +113,13 @@ pub enum NeteaseEvent {
 
 pub fn spawn_netease_actor(
     cfg: NeteaseClientConfig,
-) -> (mpsc::Sender<NeteaseCommand>, mpsc::Receiver<NeteaseEvent>) {
-    let (tx_cmd, mut rx_cmd) = mpsc::channel::<NeteaseCommand>(64);
+) -> (
+    mpsc::Sender<NeteaseCommand>,
+    mpsc::Sender<NeteaseCommand>,
+    mpsc::Receiver<NeteaseEvent>,
+) {
+    let (tx_hi, mut rx_hi) = mpsc::channel::<NeteaseCommand>(64);
+    let (tx_lo, mut rx_lo) = mpsc::channel::<NeteaseCommand>(64);
     let (tx_evt, rx_evt) = mpsc::channel::<NeteaseEvent>(64);
 
     tokio::spawn(async move {
@@ -131,7 +136,14 @@ pub fn spawn_netease_actor(
             }
         };
 
-        while let Some(cmd) = rx_cmd.recv().await {
+        loop {
+            let cmd = tokio::select! {
+                biased;
+                Some(cmd) = rx_hi.recv() => cmd,
+                Some(cmd) = rx_lo.recv() => cmd,
+                else => break,
+            };
+
             match cmd {
                 NeteaseCommand::Init { req_id } => {
                     let _ = tx_evt
@@ -428,7 +440,7 @@ pub fn spawn_netease_actor(
         }
     });
 
-    (tx_cmd, rx_evt)
+    (tx_hi, tx_lo, rx_evt)
 }
 
 fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, convert::ModelError> {

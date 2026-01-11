@@ -1,16 +1,18 @@
-use crate::app::{App, PlaylistMode, View};
+use crate::app::{App, PlaylistMode, PlaylistPreload, PreloadStatus, View};
 use crate::audio_worker::{AudioCommand, AudioEvent};
 use crate::messages::app::{AppCommand, AppEvent};
 use crate::netease::NeteaseClientConfig;
 use crate::netease::actor::{NeteaseCommand, NeteaseEvent};
 use crate::settings::{self, AppSettings};
 
-use rand::Rng;
 use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-const PLAYLIST_TRACKS_PAGE_SIZE: usize = 200;
+mod logout;
+mod playback;
+mod playlist_tracks;
+mod preload;
 
 pub fn spawn_app_actor(
     cfg: NeteaseClientConfig,
@@ -19,7 +21,7 @@ pub fn spawn_app_actor(
     let (tx_evt, rx_evt) = mpsc::channel::<AppEvent>(64);
 
     let data_dir = cfg.data_dir.clone();
-    let (tx_netease, mut rx_netease) = crate::netease::actor::spawn_netease_actor(cfg);
+    let (tx_netease_hi, tx_netease_lo, mut rx_netease) = crate::netease::actor::spawn_netease_actor(cfg);
 
     // Audio worker is blocking thread + std mpsc. Bridge it to tokio mpsc.
     let (tx_audio, rx_audio) = crate::audio_worker::spawn_audio_worker(data_dir.clone());
@@ -33,6 +35,7 @@ pub fn spawn_app_actor(
     tokio::spawn(async move {
         let mut app = App::default();
         let mut req_id: u64 = 1;
+        let mut preload_mgr = preload::PreloadManager::default();
 
         let mut settings = settings::load_settings(&data_dir);
         apply_settings_to_app(&mut app, &settings);
@@ -42,7 +45,7 @@ pub fn spawn_app_actor(
         let mut pending_song_url: Option<(u64, String)> = None;
         let mut pending_playlists: Option<u64> = None;
         let mut pending_playlist_detail: Option<u64> = None;
-        let mut pending_playlist_tracks: Option<PlaylistTracksLoad> = None;
+        let mut pending_playlist_tracks: Option<playlist_tracks::PlaylistTracksLoad> = None;
         let mut pending_account: Option<u64> = None;
         let mut pending_login_qr_key: Option<u64> = None;
         let mut pending_login_poll: Option<u64> = None;
@@ -57,7 +60,7 @@ pub fn spawn_app_actor(
                         if let Some(key) = app.login_unikey.clone() {
                             let id = next_id(&mut req_id);
                             pending_login_poll = Some(id);
-                            let _ = tx_netease.send(NeteaseCommand::LoginQrCheck { req_id: id, key }).await;
+                            let _ = tx_netease_hi.send(NeteaseCommand::LoginQrCheck { req_id: id, key }).await;
                         }
                     }
                 }
@@ -68,7 +71,7 @@ pub fn spawn_app_actor(
                             app.login_status = "初始化中...".to_owned();
                             push_state(&tx_evt, &app).await;
                             let id = next_id(&mut req_id);
-                            let _ = tx_netease.send(NeteaseCommand::Init { req_id: id }).await;
+                            let _ = tx_netease_hi.send(NeteaseCommand::Init { req_id: id }).await;
                         }
                         AppCommand::TabNext => {
                             if app.logged_in {
@@ -98,7 +101,7 @@ pub fn spawn_app_actor(
                             push_state(&tx_evt, &app).await;
                             let id = next_id(&mut req_id);
                             pending_login_qr_key = Some(id);
-                            let _ = tx_netease.send(NeteaseCommand::LoginQrKey { req_id: id }).await;
+                            let _ = tx_netease_hi.send(NeteaseCommand::LoginQrKey { req_id: id }).await;
                         }
                         AppCommand::SearchSubmit => {
                             let q = app.search_input.trim().to_owned();
@@ -113,7 +116,7 @@ pub fn spawn_app_actor(
                             push_state(&tx_evt, &app).await;
                             let id = next_id(&mut req_id);
                             pending_search = Some(id);
-                            let _ = tx_netease.send(NeteaseCommand::CloudSearchSongs { req_id: id, keywords: q, limit: 30, offset: 0 }).await;
+                            let _ = tx_netease_hi.send(NeteaseCommand::CloudSearchSongs { req_id: id, keywords: q, limit: 30, offset: 0 }).await;
                         }
                         AppCommand::SearchInputBackspace => {
                             app.search_input.pop();
@@ -144,7 +147,7 @@ pub fn spawn_app_actor(
                                 push_state(&tx_evt, &app).await;
                                 let id = next_id(&mut req_id);
                                 pending_song_url = Some((id, title));
-                                let _ = tx_netease
+                                let _ = tx_netease_hi
                                     .send(NeteaseCommand::SongUrl {
                                         req_id: id,
                                         id: s.id,
@@ -167,19 +170,41 @@ pub fn spawn_app_actor(
                         }
                         AppCommand::PlaylistsOpenSelected => {
                             if matches!(app.playlist_mode, PlaylistMode::List) {
-                                if let Some(p) = app.playlists.get(app.playlists_selected) {
+                                let Some(playlist_id) = app.playlists.get(app.playlists_selected).map(|p| p.id) else {
+                                    continue;
+                                };
+
+                                {
+                                    if let Some(preload) = app.playlist_preloads.get(&playlist_id)
+                                        && matches!(preload.status, crate::app::PreloadStatus::Completed)
+                                        && !preload.songs.is_empty()
+                                    {
+                                        app.playlist_tracks = preload.songs.clone();
+                                        app.playlist_tracks_selected = 0;
+                                        app.playlist_mode = PlaylistMode::Tracks;
+                                        app.queue = app.playlist_tracks.clone();
+                                        app.queue_pos = Some(0);
+                                        app.playlists_status =
+                                            format!("歌曲: {} 首（已缓存，p 播放）", app.playlist_tracks.len());
+                                        push_state(&tx_evt, &app).await;
+                                        continue;
+                                    }
+                                }
+
+                                    // 用户主动打开歌单：取消该歌单的预加载（若正在进行），并走高优先级加载
+                                    preload_mgr.cancel_playlist(&mut app, playlist_id);
+
                                     app.playlists_status = "加载歌单歌曲中...".to_owned();
                                     pending_playlist_tracks = None;
                                     push_state(&tx_evt, &app).await;
                                     let id = next_id(&mut req_id);
                                     pending_playlist_detail = Some(id);
-                                    let _ = tx_netease
+                                    let _ = tx_netease_hi
                                         .send(NeteaseCommand::PlaylistDetail {
                                             req_id: id,
-                                            playlist_id: p.id,
+                                            playlist_id,
                                         })
                                         .await;
-                                }
                             }
                         }
                         AppCommand::PlaylistTracksMoveUp => {
@@ -204,7 +229,7 @@ pub fn spawn_app_actor(
                                     push_state(&tx_evt, &app).await;
                                     let id = next_id(&mut req_id);
                                     pending_song_url = Some((id, title));
-                                    let _ = tx_netease
+                                    let _ = tx_netease_hi
                                         .send(NeteaseCommand::SongUrl {
                                             req_id: id,
                                             id: s.id,
@@ -219,7 +244,7 @@ pub fn spawn_app_actor(
                                 app.playlist_mode = PlaylistMode::List;
                                 pending_playlist_tracks = None;
                                 pending_playlist_detail = None;
-                                app.playlists_status = "返回歌单列表".to_owned();
+                                refresh_playlist_list_status(&mut app);
                                 push_state(&tx_evt, &app).await;
                             }
                         }
@@ -274,19 +299,19 @@ pub fn spawn_app_actor(
                             let _ = tx_audio.send(AudioCommand::Stop);
                         }
                         AppCommand::PlayerPrev => {
-                            play_prev(&mut app, &tx_netease, &mut pending_song_url, &mut req_id).await;
+                            playback::play_prev(&mut app, &tx_netease_hi, &mut pending_song_url, &mut req_id, next_id).await;
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::PlayerNext => {
-                            play_next(&mut app, &tx_netease, &mut pending_song_url, &mut req_id).await;
+                            playback::play_next(&mut app, &tx_netease_hi, &mut pending_song_url, &mut req_id, next_id).await;
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::PlayerSeekBackwardMs { ms } => {
-                            seek_relative(&mut app, &tx_audio, -(ms as i64));
+                            playback::seek_relative(&mut app, &tx_audio, -(ms as i64));
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::PlayerSeekForwardMs { ms } => {
-                            seek_relative(&mut app, &tx_audio, ms as i64);
+                            playback::seek_relative(&mut app, &tx_audio, ms as i64);
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::PlayerVolumeDown => {
@@ -304,8 +329,9 @@ pub fn spawn_app_actor(
                             push_state(&tx_evt, &app).await;
                         }
                         AppCommand::PlayerCycleMode => {
-                            app.play_mode = next_play_mode(app.play_mode);
-                            app.play_status = format!("播放模式: {}", play_mode_label(app.play_mode));
+                            app.play_mode = playback::next_play_mode(app.play_mode);
+                            app.play_status =
+                                format!("播放模式: {}", playback::play_mode_label(app.play_mode));
                             sync_settings_from_app(&mut settings, &app);
                             let _ = settings::save_settings(&data_dir, &settings);
                             push_state(&tx_evt, &app).await;
@@ -355,7 +381,7 @@ pub fn spawn_app_actor(
 
                                     let _ = tx_audio.send(AudioCommand::Stop);
                                     let id = next_id(&mut req_id);
-                                    let _ = tx_netease
+                                    let _ = tx_netease_hi
                                         .send(NeteaseCommand::LogoutLocal { req_id: id })
                                         .await;
 
@@ -369,7 +395,8 @@ pub fn spawn_app_actor(
                                     pending_login_poll = None;
                                     pending_lyric = None;
 
-                                    reset_app_after_logout(&mut app);
+                                    preload_mgr.reset(&mut app);
+                                    logout::reset_app_after_logout(&mut app);
                                     app.login_status =
                                         "已退出登录（已清理本地 cookie），按 l 重新登录".to_owned();
                                     push_state(&tx_evt, &app).await;
@@ -388,7 +415,7 @@ pub fn spawn_app_actor(
                                 push_state(&tx_evt, &app).await;
                                 let id = next_id(&mut req_id);
                                 pending_account = Some(id);
-                                let _ = tx_netease.send(NeteaseCommand::UserAccount { req_id: id }).await;
+                                let _ = tx_netease_hi.send(NeteaseCommand::UserAccount { req_id: id }).await;
                             } else {
                                 app.login_status = "按 l 生成二维码；q 退出；Tab 切换页面".to_owned();
                                 push_state(&tx_evt, &app).await;
@@ -419,7 +446,7 @@ pub fn spawn_app_actor(
                                 push_state(&tx_evt, &app).await;
                                 let id = next_id(&mut req_id);
                                 pending_account = Some(id);
-                                let _ = tx_netease.send(NeteaseCommand::UserAccount { req_id: id }).await;
+                                let _ = tx_netease_hi.send(NeteaseCommand::UserAccount { req_id: id }).await;
                             } else {
                                 app.login_status = format!("扫码状态 code={} {}", status.code, status.message);
                                 push_state(&tx_evt, &app).await;
@@ -435,7 +462,7 @@ pub fn spawn_app_actor(
                             push_state(&tx_evt, &app).await;
                             let id = next_id(&mut req_id);
                             pending_playlists = Some(id);
-                            let _ = tx_netease.send(NeteaseCommand::UserPlaylists { req_id: id, uid: app.account_uid.unwrap_or_default() }).await;
+                            let _ = tx_netease_hi.send(NeteaseCommand::UserPlaylists { req_id: id, uid: app.account_uid.unwrap_or_default() }).await;
                         }
                         NeteaseEvent::Playlists { req_id: id, playlists } => {
                             if pending_playlists != Some(id) {
@@ -450,10 +477,34 @@ pub fn spawn_app_actor(
                             app.playlist_mode = PlaylistMode::List;
                             app.playlist_tracks.clear();
                             app.playlist_tracks_selected = 0;
-                            app.playlists_status = format!("歌单: {} 个（已选中我喜欢的音乐，回车打开）", app.playlists.len());
+
+                            preload_mgr
+                                .start_for_playlists(&mut app, &tx_netease_lo, &mut req_id, next_id)
+                                .await;
+
+                            refresh_playlist_list_status(&mut app);
                             push_state(&tx_evt, &app).await;
                         }
                         NeteaseEvent::PlaylistTrackIds { req_id: id, playlist_id, ids } => {
+                            if preload_mgr.owns_req(id) {
+                                if preload_mgr
+                                    .on_playlist_track_ids(
+                                        &mut app,
+                                        &tx_netease_lo,
+                                        &mut req_id,
+                                        next_id,
+                                        id,
+                                        playlist_id,
+                                        &ids,
+                                    )
+                                    .await
+                                {
+                                    refresh_playlist_list_status(&mut app);
+                                    push_state(&tx_evt, &app).await;
+                                    continue;
+                                }
+                            }
+
                             if pending_playlist_detail != Some(id) {
                                 continue;
                             }
@@ -467,12 +518,12 @@ pub fn spawn_app_actor(
                             app.playlists_status = format!("加载歌单歌曲中... 0/{}", ids.len());
                             push_state(&tx_evt, &app).await;
 
-                            let mut loader = PlaylistTracksLoad::new(playlist_id, ids);
+                            let mut loader = playlist_tracks::PlaylistTracksLoad::new(playlist_id, ids);
                             let id = next_id(&mut req_id);
                             let chunk = loader.next_chunk();
                             loader.inflight_req_id = Some(id);
                             pending_playlist_tracks = Some(loader);
-                            let _ = tx_netease
+                            let _ = tx_netease_hi
                                 .send(NeteaseCommand::SongDetailByIds {
                                     req_id: id,
                                     ids: chunk,
@@ -480,6 +531,24 @@ pub fn spawn_app_actor(
                                 .await;
                         }
                         NeteaseEvent::Songs { req_id: id, songs } => {
+                            if preload_mgr.owns_req(id) {
+                                if preload_mgr
+                                    .on_songs(
+                                        &mut app,
+                                        &tx_netease_lo,
+                                        &mut req_id,
+                                        next_id,
+                                        id,
+                                        &songs,
+                                    )
+                                    .await
+                                {
+                                    refresh_playlist_list_status(&mut app);
+                                    push_state(&tx_evt, &app).await;
+                                    continue;
+                                }
+                            }
+
                             let Some(loader) = pending_playlist_tracks.as_mut() else {
                                 continue;
                             };
@@ -498,7 +567,21 @@ pub fn spawn_app_actor(
 
                             if loader.is_done() {
                                 let loader = pending_playlist_tracks.take().expect("loader");
-                                app.playlist_tracks = loader.songs;
+                                let playlist_id = loader.playlist_id;
+                                let songs = loader.songs;
+
+                                if app.playlist_preloads.contains_key(&playlist_id) {
+                                    app.playlist_preloads.insert(
+                                        playlist_id,
+                                        PlaylistPreload {
+                                            status: PreloadStatus::Completed,
+                                            songs: songs.clone(),
+                                        },
+                                    );
+                                    preload::update_preload_summary(&mut app);
+                                }
+
+                                app.playlist_tracks = songs;
                                 app.playlist_tracks_selected = 0;
                                 app.playlist_mode = PlaylistMode::Tracks;
                                 app.queue = app.playlist_tracks.clone();
@@ -510,7 +593,7 @@ pub fn spawn_app_actor(
                                 let id = next_id(&mut req_id);
                                 let chunk = loader.next_chunk();
                                 loader.inflight_req_id = Some(id);
-                                let _ = tx_netease
+                                let _ = tx_netease_hi
                                     .send(NeteaseCommand::SongDetailByIds {
                                         req_id: id,
                                         ids: chunk,
@@ -563,7 +646,13 @@ pub fn spawn_app_actor(
                             push_state(&tx_evt, &app).await;
                         }
                         NeteaseEvent::LoggedOut { .. } => {}
-                        NeteaseEvent::Error { req_id: _, message } => {
+                        NeteaseEvent::Error { req_id, message } => {
+                            if preload_mgr.on_error(&mut app, req_id, message.clone()) {
+                                refresh_playlist_list_status(&mut app);
+                                push_state(&tx_evt, &app).await;
+                                continue;
+                            }
+
                             match app.view {
                                 View::Login => app.login_status = format!("错误: {message}"),
                                 View::Playlists => app.playlists_status = format!("错误: {message}"),
@@ -580,7 +669,7 @@ pub fn spawn_app_actor(
                     handle_audio_event(
                         &mut app,
                         evt,
-                        &tx_netease,
+                        &tx_netease_hi,
                         &tx_audio,
                         &mut pending_song_url,
                         &mut pending_lyric,
@@ -600,40 +689,6 @@ fn next_id(id: &mut u64) -> u64 {
     let out = *id;
     *id = id.wrapping_add(1);
     out
-}
-
-struct PlaylistTracksLoad {
-    playlist_id: i64,
-    total: usize,
-    ids: Vec<i64>,
-    cursor: usize,
-    songs: Vec<crate::app::Song>,
-    inflight_req_id: Option<u64>,
-}
-
-impl PlaylistTracksLoad {
-    fn new(playlist_id: i64, ids: Vec<i64>) -> Self {
-        let total = ids.len();
-        Self {
-            playlist_id,
-            total,
-            ids,
-            cursor: 0,
-            songs: Vec::new(),
-            inflight_req_id: None,
-        }
-    }
-
-    fn is_done(&self) -> bool {
-        self.cursor >= self.ids.len()
-    }
-
-    fn next_chunk(&mut self) -> Vec<i64> {
-        let start = self.cursor;
-        let end = (start + PLAYLIST_TRACKS_PAGE_SIZE).min(self.ids.len());
-        self.cursor = end;
-        self.ids[start..end].to_vec()
-    }
 }
 
 fn render_qr_ascii(url: &str) -> String {
@@ -718,7 +773,7 @@ async fn handle_audio_event(
             if app.play_id != Some(play_id) {
                 return;
             }
-            play_next(app, tx_netease, pending_song_url, req_id).await;
+            playback::play_next(app, tx_netease, pending_song_url, req_id, next_id).await;
         }
         AudioEvent::Error(e) => {
             app.play_status = format!("播放错误: {e}");
@@ -764,88 +819,6 @@ async fn push_state(tx_evt: &mpsc::Sender<AppEvent>, app: &App) {
     let _ = tx_evt.send(AppEvent::State(app.clone())).await;
 }
 
-fn next_play_mode(m: crate::app::PlayMode) -> crate::app::PlayMode {
-    use crate::app::PlayMode;
-    match m {
-        PlayMode::Sequential => PlayMode::ListLoop,
-        PlayMode::ListLoop => PlayMode::SingleLoop,
-        PlayMode::SingleLoop => PlayMode::Shuffle,
-        PlayMode::Shuffle => PlayMode::Sequential,
-    }
-}
-
-fn play_mode_label(m: crate::app::PlayMode) -> &'static str {
-    use crate::app::PlayMode;
-    match m {
-        PlayMode::Sequential => "顺序",
-        PlayMode::ListLoop => "列表循环",
-        PlayMode::SingleLoop => "单曲循环",
-        PlayMode::Shuffle => "随机",
-    }
-}
-
-fn playback_elapsed_ms(app: &App) -> u64 {
-    let Some(started) = app.play_started_at else {
-        return 0;
-    };
-
-    let now = if app.paused {
-        app.play_paused_at.unwrap_or_else(std::time::Instant::now)
-    } else {
-        std::time::Instant::now()
-    };
-
-    now.duration_since(started)
-        .as_millis()
-        .saturating_sub(app.play_paused_accum_ms as u128) as u64
-}
-
-fn seek_relative(app: &mut App, tx_audio: &std::sync::mpsc::Sender<AudioCommand>, delta_ms: i64) {
-    let Some(total_ms) = app.play_total_ms else {
-        return;
-    };
-    let cur = playback_elapsed_ms(app) as i64;
-    let next = (cur + delta_ms).clamp(0, total_ms as i64) as u64;
-
-    let now = std::time::Instant::now();
-    app.play_started_at = Some(now - Duration::from_millis(next));
-    if app.paused {
-        app.play_paused_at = Some(now);
-    } else {
-        app.play_paused_at = None;
-    }
-    app.play_paused_accum_ms = 0;
-
-    let _ = tx_audio.send(AudioCommand::SeekToMs(next));
-}
-
-async fn request_play_at_index(
-    app: &mut App,
-    tx_netease: &mpsc::Sender<NeteaseCommand>,
-    pending_song_url: &mut Option<(u64, String)>,
-    req_id: &mut u64,
-    idx: usize,
-) {
-    let Some(s) = app.queue.get(idx) else {
-        return;
-    };
-    app.queue_pos = Some(idx);
-    if matches!(app.view, View::Playlists) && matches!(app.playlist_mode, PlaylistMode::Tracks) {
-        app.playlist_tracks_selected = idx.min(app.playlist_tracks.len().saturating_sub(1));
-    }
-    app.play_status = "获取播放链接...".to_owned();
-    let title = format!("{} - {}", s.name, s.artists);
-    let id = next_id(req_id);
-    *pending_song_url = Some((id, title));
-    let _ = tx_netease
-        .send(NeteaseCommand::SongUrl {
-            req_id: id,
-            id: s.id,
-            br: app.play_br,
-        })
-        .await;
-}
-
 const SETTINGS_ITEMS_COUNT: usize = 6;
 
 fn apply_settings_to_app(app: &mut App, s: &AppSettings) {
@@ -870,48 +843,6 @@ fn is_clear_cache_selected(app: &App) -> bool {
     app.settings_selected == SETTINGS_ITEMS_COUNT - 2
 }
 
-fn reset_app_after_logout(app: &mut App) {
-    app.logged_in = false;
-    app.view = View::Login;
-
-    app.login_qr_url = None;
-    app.login_qr_ascii = None;
-    app.login_unikey = None;
-    app.login_status = "按 l 生成二维码；q 退出；Tab 切换页面".to_owned();
-
-    app.account_uid = None;
-    app.account_nickname = None;
-    app.playlists.clear();
-    app.playlists_selected = 0;
-    app.playlist_mode = PlaylistMode::List;
-    app.playlist_tracks.clear();
-    app.playlist_tracks_selected = 0;
-    app.playlists_status = "等待登录后加载歌单".to_owned();
-
-    app.search_results.clear();
-    app.search_selected = 0;
-    app.search_status = "输入关键词，回车搜索".to_owned();
-
-    app.queue.clear();
-    app.queue_pos = None;
-    app.now_playing = None;
-    app.play_status = "未播放".to_owned();
-    app.paused = false;
-    app.play_started_at = None;
-    app.play_total_ms = None;
-    app.play_paused_at = None;
-    app.play_paused_accum_ms = 0;
-    app.play_id = None;
-    app.play_song_id = None;
-    app.play_error_count = 0;
-
-    app.lyrics_song_id = None;
-    app.lyrics.clear();
-    app.lyrics_status = "暂无歌词".to_owned();
-    app.lyrics_follow = true;
-    app.lyrics_selected = 0;
-}
-
 fn apply_settings_adjust(app: &mut App, dir: i32) {
     match app.settings_selected {
         0 => {
@@ -934,11 +865,14 @@ fn apply_settings_adjust(app: &mut App, dir: i32) {
         }
         2 => {
             app.play_mode = if dir > 0 {
-                next_play_mode(app.play_mode)
+                playback::next_play_mode(app.play_mode)
             } else {
-                prev_play_mode(app.play_mode)
+                playback::prev_play_mode(app.play_mode)
             };
-            app.settings_status = format!("播放模式: {}", play_mode_label(app.play_mode));
+            app.settings_status = format!(
+                "播放模式: {}",
+                playback::play_mode_label(app.play_mode)
+            );
         }
         3 => {
             app.lyrics_offset_ms =
@@ -947,16 +881,6 @@ fn apply_settings_adjust(app: &mut App, dir: i32) {
             app.settings_status = format!("歌词 offset: {}ms", app.lyrics_offset_ms);
         }
         _ => {}
-    }
-}
-
-fn prev_play_mode(m: crate::app::PlayMode) -> crate::app::PlayMode {
-    use crate::app::PlayMode;
-    match m {
-        PlayMode::Sequential => PlayMode::Shuffle,
-        PlayMode::ListLoop => PlayMode::Sequential,
-        PlayMode::SingleLoop => PlayMode::ListLoop,
-        PlayMode::Shuffle => PlayMode::SingleLoop,
     }
 }
 
@@ -970,90 +894,16 @@ fn br_label(br: i64) -> &'static str {
     }
 }
 
-async fn play_next(
-    app: &mut App,
-    tx_netease: &mpsc::Sender<NeteaseCommand>,
-    pending_song_url: &mut Option<(u64, String)>,
-    req_id: &mut u64,
-) {
-    use crate::app::PlayMode;
-
-    let Some(pos) = app.queue_pos else {
-        return;
-    };
-    if app.queue.is_empty() {
-        return;
+fn refresh_playlist_list_status(app: &mut App) {
+    if matches!(app.view, View::Playlists) && matches!(app.playlist_mode, PlaylistMode::List) {
+        let mut s = format!(
+            "歌单: {} 个（已选中我喜欢的音乐，回车打开）",
+            app.playlists.len()
+        );
+        if !app.preload_summary.is_empty() {
+            s.push_str(" | ");
+            s.push_str(&app.preload_summary);
+        }
+        app.playlists_status = s;
     }
-
-    let next_idx = match app.play_mode {
-        PlayMode::SingleLoop => pos,
-        PlayMode::Shuffle => {
-            if app.queue.len() == 1 {
-                pos
-            } else {
-                let mut rng = rand::thread_rng();
-                loop {
-                    let idx = rng.gen_range(0..app.queue.len());
-                    if idx != pos {
-                        break idx;
-                    }
-                }
-            }
-        }
-        PlayMode::Sequential => {
-            let n = pos + 1;
-            if n >= app.queue.len() {
-                app.play_status = "播放结束".to_owned();
-                app.queue_pos = None;
-                return;
-            }
-            n
-        }
-        PlayMode::ListLoop => (pos + 1) % app.queue.len(),
-    };
-
-    request_play_at_index(app, tx_netease, pending_song_url, req_id, next_idx).await;
-}
-
-async fn play_prev(
-    app: &mut App,
-    tx_netease: &mpsc::Sender<NeteaseCommand>,
-    pending_song_url: &mut Option<(u64, String)>,
-    req_id: &mut u64,
-) {
-    use crate::app::PlayMode;
-
-    let Some(pos) = app.queue_pos else {
-        return;
-    };
-    if app.queue.is_empty() {
-        return;
-    }
-
-    let prev_idx = match app.play_mode {
-        PlayMode::SingleLoop => pos,
-        PlayMode::Shuffle => {
-            if app.queue.len() == 1 {
-                pos
-            } else {
-                let mut rng = rand::thread_rng();
-                loop {
-                    let idx = rng.gen_range(0..app.queue.len());
-                    if idx != pos {
-                        break idx;
-                    }
-                }
-            }
-        }
-        PlayMode::Sequential => pos.saturating_sub(1),
-        PlayMode::ListLoop => {
-            if pos == 0 {
-                app.queue.len() - 1
-            } else {
-                pos - 1
-            }
-        }
-    };
-
-    request_play_at_index(app, tx_netease, pending_song_url, req_id, prev_idx).await;
 }
