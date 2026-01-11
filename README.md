@@ -127,11 +127,37 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
 
 ## Roadmap（建议顺序）
 
-1. 播放器内核：`song_url` → 音频拉流/解码/播放（rodio/cpal + symphonia）+ 播放状态事件
-2. 播放队列与控制：上一首/下一首/暂停/Seek/音量/循环随机
-3. 歌词与进度同步：`/api/song/lyric` + 滚动高亮
-4. 歌单/收藏/每日推荐等业务页
-5. MPRIS/通知/媒体键（Linux）
+> 方向参考：go-musicfox 的功能与分层设计，但保持本项目“Actor + 消息驱动 + 强类型模型”的实现风格。
+
+### P0：播放器完成度（像一个真正的播放器）
+
+- 播放控制：上一首/下一首、音量调节、Seek（快进/快退）
+- 播放模式：顺序/列表循环/单曲循环/随机
+- 播放错误恢复：URL 失效自动重取、连续失败重试上限、错误提示不阻塞 UI
+- 音频本地缓存：按 `(song_id, br)` 缓存音频文件 + LRU 清理（优先）
+
+### P1：歌词与信息展示（体验分水岭）
+
+- 歌词页：滚动歌词 + 当前行高亮
+- 歌词翻译与偏移（offset）调整；逐字歌词支持（可选）
+- 更完整的 Now Playing：进度条、封面/专辑/歌手信息
+
+### P2：可配置与可定制
+
+- 配置系统：缓存上限、音质、主题等
+- 可自定义快捷键（keybindings）
+- 主题/布局：配色、双栏布局、动态列表高度等
+
+### P3：外部集成
+
+- Linux MPRIS / 系统媒体键
+- 桌面通知（可选带封面）
+- Last.fm scrobble（可选）
+
+### P4：高级特性（维护成本更高）
+
+- 多播放器后端（如 mpv/mpd）可插拔
+- UNM（解锁灰歌/无版权替代音源，需谨慎）
 
 ## 开发约定
 
@@ -146,3 +172,4 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
 
 - https://github.com/feng-yifan/Netease-Cloud-Music-Web-Player
 - https://github.com/NeteaseCloudMusicApiEnhanced
+- https://github.com/go-musicfox/go-musicfox
