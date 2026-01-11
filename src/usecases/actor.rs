@@ -1,4 +1,4 @@
-use crate::app::{App, PlaylistMode, PlaylistPreload, PreloadStatus, View};
+use crate::app::{App, PlaylistMode, PlaylistPreload, PreloadStatus, View, tab_configs};
 use crate::audio_worker::{AudioCommand, AudioEvent};
 use crate::messages::app::{AppCommand, AppEvent};
 use crate::netease::NeteaseClientConfig;
@@ -85,24 +85,20 @@ pub fn spawn_app_actor(
                             }
                         }
                         AppCommand::TabNext => {
-                            if app.logged_in {
-                                app.view = match app.view {
-                                    View::Playlists => View::Search,
-                                    View::Search => View::Lyrics,
-                                    View::Lyrics => View::Settings,
-                                    View::Settings => View::Playlists,
-                                    View::Login => View::Playlists,
-                                };
-                            } else {
-                                app.view = match app.view {
-                                    View::Login => View::Search,
-                                    View::Search => View::Lyrics,
-                                    View::Lyrics => View::Settings,
-                                    View::Settings => View::Login,
-                                    View::Playlists => View::Login,
-                                };
-                            }
+                            let configs = tab_configs(app.logged_in);
+                            let current_idx = configs
+                                .iter()
+                                .position(|c| c.view == app.view)
+                                .unwrap_or(0);
+                            let next_view = configs[(current_idx + 1) % configs.len()].view;
+                            app.view = next_view;
                             push_state(&tx_evt, &app).await;
+                        }
+                        AppCommand::TabTo { index } => {
+                            if let Some(&cfg) = tab_configs(app.logged_in).get(index) {
+                                app.view = cfg.view;
+                                push_state(&tx_evt, &app).await;
+                            }
                         }
                         AppCommand::LoginGenerateQr => {
                             if app.logged_in {

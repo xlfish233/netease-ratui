@@ -1,8 +1,11 @@
-use crate::app::{App, PlaylistMode, View};
+use crate::app::{App, PlaylistMode, View, tab_configs, tab_index_for_view};
 use crate::messages::app::{AppCommand, AppEvent};
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+        MouseButton, MouseEvent, MouseEventKind,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -18,6 +21,7 @@ use std::io;
 use std::io::Write;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc as tokio_mpsc;
+use unicode_width::UnicodeWidthStr;
 
 struct TuiGuard;
 
@@ -25,7 +29,12 @@ impl TuiGuard {
     fn enter() -> io::Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            cursor::Hide,
+            EnableMouseCapture
+        )?;
         stdout.flush()?;
         Ok(Self)
     }
@@ -35,7 +44,12 @@ impl Drop for TuiGuard {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
         let mut stdout = io::stdout();
-        let _ = execute!(stdout, cursor::Show, LeaveAlternateScreen);
+        let _ = execute!(
+            stdout,
+            cursor::Show,
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        );
         let _ = stdout.flush();
     }
 }
@@ -78,11 +92,18 @@ pub async fn run_tui(
         terminal.draw(|f| draw_ui(f, &app))?;
 
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-        if event::poll(timeout)?
-            && let Event::Key(key) = event::read()?
-            && handle_key(&app, key, &tx).await
-        {
-            break;
+        if event::poll(timeout)? {
+            match event::read()? {
+                Event::Key(key) => {
+                    if handle_key(&app, key, &tx).await {
+                        break;
+                    }
+                }
+                Event::Mouse(mouse) => {
+                    handle_mouse(&app, mouse, &tx).await;
+                }
+                _ => {}
+            }
         }
 
         if last_tick.elapsed() >= tick_rate {
@@ -268,38 +289,56 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
     false
 }
 
+async fn handle_mouse(app: &App, mouse: MouseEvent, tx: &tokio_mpsc::Sender<AppCommand>) {
+    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+        && mouse.row < 3  // 页签区域高度为 3 行
+        && let Some(tab_index) = calculate_tab_index(app, mouse.column)
+    {
+        let _ = tx.send(AppCommand::TabTo { index: tab_index }).await;
+    }
+}
+
+fn calculate_tab_index(app: &App, column: u16) -> Option<usize> {
+    let configs = tab_configs(app.logged_in);
+
+    // 分隔符 "│" 在中文字体终端中通常被渲染成 2 个单元格宽
+    const DIVIDER_WIDTH: u16 = 2;
+    const PADDING_WIDTH: u16 = 1;
+
+    let mut x = 1u16;
+
+    for (i, cfg) in configs.iter().enumerate() {
+        let title_width = cfg.title.width() as u16;
+        let divider_width = if i < configs.len() - 1 {
+            DIVIDER_WIDTH
+        } else {
+            0
+        };
+
+        let tab_start = x + PADDING_WIDTH;
+        let tab_end = if i < configs.len() - 1 {
+            tab_start + title_width + divider_width
+        } else {
+            tab_start + title_width
+        };
+
+        if column >= tab_start && column < tab_end {
+            return Some(i);
+        }
+
+        x = tab_start + title_width + divider_width;
+    }
+
+    None
+}
+
 fn draw_ui(f: &mut ratatui::Frame, app: &App) {
     let size = f.area();
 
-    let (titles, selected) = if app.logged_in {
-        (
-            ["歌单", "搜索", "歌词", "设置"]
-                .into_iter()
-                .map(Line::from)
-                .collect::<Vec<_>>(),
-            match app.view {
-                View::Playlists => 0,
-                View::Search => 1,
-                View::Lyrics => 2,
-                View::Settings => 3,
-                View::Login => 0,
-            },
-        )
-    } else {
-        (
-            ["登录", "搜索", "歌词", "设置"]
-                .into_iter()
-                .map(Line::from)
-                .collect::<Vec<_>>(),
-            match app.view {
-                View::Login => 0,
-                View::Search => 1,
-                View::Lyrics => 2,
-                View::Settings => 3,
-                View::Playlists => 1,
-            },
-        )
-    };
+    let configs = tab_configs(app.logged_in);
+    let titles: Vec<Line> = configs.iter().map(|c| Line::from(c.title)).collect();
+    let selected = tab_index_for_view(app.view, app.logged_in).unwrap_or(0);
+
     let tabs = Tabs::new(titles)
         .select(selected)
         .block(

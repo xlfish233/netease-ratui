@@ -4,6 +4,7 @@ use crate::app::App;
 pub enum AppCommand {
     Bootstrap,
     TabNext,
+    TabTo { index: usize },
     LoginGenerateQr,
     SearchInputChar { c: char },
     SearchInputBackspace,

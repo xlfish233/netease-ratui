@@ -13,6 +13,61 @@ pub enum View {
     Settings,
 }
 
+/// 标签页配置：统一管理标题与对应的 View
+#[derive(Debug, Clone, Copy)]
+pub struct TabConfig {
+    pub title: &'static str,
+    pub view: View,
+}
+
+/// 获取当前登录状态下的标签页配置
+pub fn tab_configs(logged_in: bool) -> &'static [TabConfig] {
+    if logged_in {
+        &[
+            TabConfig {
+                title: "歌单",
+                view: View::Playlists,
+            },
+            TabConfig {
+                title: "搜索",
+                view: View::Search,
+            },
+            TabConfig {
+                title: "歌词",
+                view: View::Lyrics,
+            },
+            TabConfig {
+                title: "设置",
+                view: View::Settings,
+            },
+        ]
+    } else {
+        &[
+            TabConfig {
+                title: "登录",
+                view: View::Login,
+            },
+            TabConfig {
+                title: "搜索",
+                view: View::Search,
+            },
+            TabConfig {
+                title: "歌词",
+                view: View::Lyrics,
+            },
+            TabConfig {
+                title: "设置",
+                view: View::Settings,
+            },
+        ]
+    }
+}
+
+/// 根据 View 查找其在标签页列表中的索引
+pub fn tab_index_for_view(view: View, logged_in: bool) -> Option<usize> {
+    tab_configs(logged_in).iter().position(|c| c.view == view)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaylistMode {
     List,
