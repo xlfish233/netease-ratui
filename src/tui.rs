@@ -547,16 +547,30 @@ fn draw_player_status(
 
     let now = app.now_playing.as_deref().unwrap_or("-");
     let (elapsed_ms, total_ms) = playback_time_ms(app);
+    let progress = progress_bar_text(elapsed_ms, total_ms, 24);
     let time_text = format!(
         "{} / {}{}",
         fmt_mmss(elapsed_ms),
         total_ms.map(fmt_mmss).unwrap_or_else(|| "--:--".to_owned()),
         if app.paused { " (暂停)" } else { "" }
     );
+    let mode_text = match app.play_mode {
+        crate::app::PlayMode::Sequential => "顺序",
+        crate::app::PlayMode::ListLoop => "列表循环",
+        crate::app::PlayMode::SingleLoop => "单曲循环",
+        crate::app::PlayMode::Shuffle => "随机",
+    };
 
     let status = Paragraph::new(format!(
-        "{}: {}\n播放: {} | Now: {} | 时间: {}\n操作: 空格 暂停/继续 | Ctrl+S 停止 | [/] 上一首/下一首 | Ctrl+←/→ Seek | Alt+↑/↓ 音量 | M 切换模式 | q 退出",
-        context_label, context_value, app.play_status, now, time_text
+        "{}: {}\n播放: {} | Now: {}\n时间: {} | 模式: {} | 音量: {:.0}%\n{}",
+        context_label,
+        context_value,
+        app.play_status,
+        now,
+        time_text,
+        mode_text,
+        (app.volume.clamp(0.0, 1.0) * 100.0),
+        progress
     ))
     .block(Block::default().borders(Borders::ALL).title(title));
     f.render_widget(status, status_chunks[0]);
@@ -567,4 +581,15 @@ fn draw_player_status(
     )
     .block(Block::default().borders(Borders::ALL).title("帮助"));
     f.render_widget(help, status_chunks[1]);
+}
+
+fn progress_bar_text(elapsed_ms: u64, total_ms: Option<u64>, width: usize) -> String {
+    let Some(total_ms) = total_ms.filter(|t| *t > 0) else {
+        return "进度: [------------------------]".to_owned();
+    };
+
+    let ratio = (elapsed_ms.min(total_ms) as f64) / (total_ms as f64);
+    let filled = ((ratio * width as f64).round() as usize).min(width);
+    let bar = "#".repeat(filled) + &"-".repeat(width - filled);
+    format!("进度: [{bar}]")
 }
