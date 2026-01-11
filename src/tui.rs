@@ -140,10 +140,10 @@ async fn handle_api_event(
                 .iter()
                 .position(|p| p.special_type == 5 || p.name.contains("我喜欢"))
                 .unwrap_or(0);
-            app.playlists_status = format!("歌单: {} 个，正在打开我喜欢的音乐...", app.playlists.len());
-            if let Some(p) = app.playlists.get(app.playlists_selected) {
-                let _ = tx.send(ApiRequest::PlaylistTracks { playlist_id: p.id }).await;
-            }
+            app.playlist_mode = PlaylistMode::List;
+            app.playlist_tracks.clear();
+            app.playlist_tracks_selected = 0;
+            app.playlists_status = format!("歌单: {} 个（已选中我喜欢的音乐，回车打开）", app.playlists.len());
         }
         ApiEvent::PlaylistTracksReady { playlist_id: _, songs } => {
             app.playlist_tracks = parse_search_songs(&songs);
