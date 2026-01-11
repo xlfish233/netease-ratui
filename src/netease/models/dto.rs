@@ -109,3 +109,15 @@ pub struct SongUrlItem {
     pub id: i64,
     pub url: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct LyricResp {
+    pub lrc: Option<LyricBlock>,
+    pub tlyric: Option<LyricBlock>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LyricBlock {
+    #[serde(default)]
+    pub lyric: String,
+}

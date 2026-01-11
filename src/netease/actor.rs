@@ -1,4 +1,4 @@
-use crate::domain::model::{Account, LoginStatus, Playlist, Song, SongUrl};
+use crate::domain::model::{Account, LoginStatus, LyricLine, Playlist, Song, SongUrl};
 use crate::netease::models::{convert, dto};
 use crate::netease::{NeteaseClient, NeteaseClientConfig};
 
@@ -46,6 +46,10 @@ pub enum NeteaseCommand {
         id: i64,
         br: i64,
     },
+    Lyric {
+        req_id: u64,
+        song_id: i64,
+    },
 }
 
 #[derive(Debug)]
@@ -89,6 +93,11 @@ pub enum NeteaseEvent {
     SongUrl {
         req_id: u64,
         song_url: SongUrl,
+    },
+    Lyric {
+        req_id: u64,
+        song_id: i64,
+        lyrics: Vec<LyricLine>,
     },
     Error {
         req_id: u64,
@@ -366,6 +375,36 @@ pub fn spawn_netease_actor(
                         }
                     }
                 }
+                NeteaseCommand::Lyric { req_id, song_id } => match client.lyric(song_id).await {
+                    Ok(v) => match parse::<dto::LyricResp>(v) {
+                        Ok(v) => {
+                            let lyrics = convert::to_lyrics(v);
+                            let _ = tx_evt
+                                .send(NeteaseEvent::Lyric {
+                                    req_id,
+                                    song_id,
+                                    lyrics,
+                                })
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = tx_evt
+                                .send(NeteaseEvent::Error {
+                                    req_id,
+                                    message: format!("{e}"),
+                                })
+                                .await;
+                        }
+                    },
+                    Err(e) => {
+                        let _ = tx_evt
+                            .send(NeteaseEvent::Error {
+                                req_id,
+                                message: format!("{e}"),
+                            })
+                            .await;
+                    }
+                },
             }
         }
     });

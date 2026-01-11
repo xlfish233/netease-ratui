@@ -8,6 +8,7 @@ pub enum View {
     Login,
     Playlists,
     Search,
+    Lyrics,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +63,10 @@ pub struct App {
     pub playlist_tracks: Vec<Song>,
     pub playlist_tracks_selected: usize,
     pub playlists_status: String,
+
+    pub lyrics_song_id: Option<i64>,
+    pub lyrics: Vec<crate::domain::model::LyricLine>,
+    pub lyrics_status: String,
 }
 
 impl Default for App {
@@ -99,6 +104,10 @@ impl Default for App {
             playlist_tracks: Vec::new(),
             playlist_tracks_selected: 0,
             playlists_status: "等待登录后加载歌单".to_owned(),
+
+            lyrics_song_id: None,
+            lyrics: Vec::new(),
+            lyrics_status: "暂无歌词".to_owned(),
         }
     }
 }

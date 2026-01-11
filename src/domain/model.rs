@@ -31,3 +31,10 @@ pub struct LoginStatus {
     pub message: String,
     pub logged_in: bool,
 }
+
+#[derive(Debug, Default, Clone)]
+pub struct LyricLine {
+    pub time_ms: u64,
+    pub text: String,
+    pub translation: Option<String>,
+}

@@ -62,11 +62,13 @@ pub async fn run_tui(
                     View::Login => app.login_status = s,
                     View::Playlists => app.playlists_status = s,
                     View::Search => app.search_status = s,
+                    View::Lyrics => app.lyrics_status = s,
                 },
                 AppEvent::Error(e) => match app.view {
                     View::Login => app.login_status = format!("错误: {e}"),
                     View::Playlists => app.playlists_status = format!("错误: {e}"),
                     View::Search => app.search_status = format!("错误: {e}"),
+                    View::Lyrics => app.lyrics_status = format!("错误: {e}"),
                 },
             }
         }
@@ -207,6 +209,7 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
             }
             _ => {}
         },
+        View::Lyrics => {}
     }
 
     false
@@ -217,25 +220,27 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
 
     let (titles, selected) = if app.logged_in {
         (
-            ["歌单", "搜索"]
+            ["歌单", "搜索", "歌词"]
                 .into_iter()
                 .map(Line::from)
                 .collect::<Vec<_>>(),
             match app.view {
                 View::Playlists => 0,
                 View::Search => 1,
+                View::Lyrics => 2,
                 View::Login => 0,
             },
         )
     } else {
         (
-            ["登录", "搜索"]
+            ["登录", "搜索", "歌词"]
                 .into_iter()
                 .map(Line::from)
                 .collect::<Vec<_>>(),
             match app.view {
                 View::Login => 0,
                 View::Search => 1,
+                View::Lyrics => 2,
                 View::Playlists => 1,
             },
         )
@@ -260,6 +265,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
         View::Login => draw_login(f, chunks[1], app),
         View::Playlists => draw_playlists(f, chunks[1], app),
         View::Search => draw_search(f, chunks[1], app),
+        View::Lyrics => draw_lyrics(f, chunks[1], app),
     }
 }
 
@@ -390,6 +396,44 @@ fn draw_search(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
     );
 }
 
+fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(8), Constraint::Length(7)])
+        .split(area);
+
+    if app.lyrics.is_empty() {
+        let block = Paragraph::new(app.lyrics_status.as_str())
+            .block(Block::default().borders(Borders::ALL).title("歌词"))
+            .wrap(Wrap { trim: false });
+        f.render_widget(block, chunks[0]);
+    } else {
+        let (elapsed_ms, _) = playback_time_ms(app);
+        let selected = current_lyric_index(&app.lyrics, elapsed_ms).unwrap_or(0);
+
+        let items = app
+            .lyrics
+            .iter()
+            .map(|l| {
+                let mut lines = vec![Line::from(l.text.as_str())];
+                if let Some(t) = l.translation.as_deref() {
+                    if !t.trim().is_empty() {
+                        lines.push(Line::from(format!("  {t}")));
+                    }
+                }
+                ListItem::new(Text::from(lines))
+            })
+            .collect::<Vec<_>>();
+
+        let list = List::new(items)
+            .block(Block::default().borders(Borders::ALL).title("歌词（自动滚动）"))
+            .highlight_style(Style::default().fg(Color::Yellow));
+        f.render_stateful_widget(list, chunks[0], &mut list_state(selected));
+    }
+
+    draw_player_status(f, chunks[1], app, "状态", "歌词", app.lyrics_status.as_str());
+}
+
 fn list_state(selected: usize) -> ratatui::widgets::ListState {
     let mut st = ratatui::widgets::ListState::default();
     st.select(Some(selected));
@@ -419,6 +463,18 @@ fn playback_time_ms(app: &App) -> (u64, Option<u64>) {
         .as_millis()
         .saturating_sub(app.play_paused_accum_ms as u128) as u64;
     (elapsed, app.play_total_ms)
+}
+
+fn current_lyric_index(lines: &[crate::domain::model::LyricLine], elapsed_ms: u64) -> Option<usize> {
+    if lines.is_empty() {
+        return None;
+    }
+
+    match lines.binary_search_by_key(&elapsed_ms, |l| l.time_ms) {
+        Ok(i) => Some(i),
+        Err(0) => Some(0),
+        Err(i) => Some(i - 1),
+    }
 }
 
 fn fmt_mmss(ms: u64) -> String {

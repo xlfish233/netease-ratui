@@ -43,6 +43,7 @@ pub fn spawn_app_actor(
         let mut pending_account: Option<u64> = None;
         let mut pending_login_qr_key: Option<u64> = None;
         let mut pending_login_poll: Option<u64> = None;
+        let mut pending_lyric: Option<(u64, i64)> = None;
 
         let mut qr_poll = tokio::time::interval(Duration::from_secs(2));
 
@@ -70,13 +71,15 @@ pub fn spawn_app_actor(
                             if app.logged_in {
                                 app.view = match app.view {
                                     View::Playlists => View::Search,
-                                    View::Search => View::Playlists,
+                                    View::Search => View::Lyrics,
+                                    View::Lyrics => View::Playlists,
                                     View::Login => View::Playlists,
                                 };
                             } else {
                                 app.view = match app.view {
                                     View::Login => View::Search,
-                                    View::Search => View::Login,
+                                    View::Search => View::Lyrics,
+                                    View::Lyrics => View::Login,
                                     View::Playlists => View::Login,
                                 };
                             }
@@ -419,11 +422,30 @@ pub fn spawn_app_actor(
                                 });
                             }
                         }
+                        NeteaseEvent::Lyric {
+                            req_id: id,
+                            song_id,
+                            lyrics,
+                        } => {
+                            if pending_lyric.map(|(rid, _)| rid) != Some(id) {
+                                continue;
+                            }
+                            pending_lyric = None;
+                            app.lyrics_song_id = Some(song_id);
+                            app.lyrics = lyrics;
+                            app.lyrics_status = if app.lyrics.is_empty() {
+                                "暂无歌词".to_owned()
+                            } else {
+                                format!("歌词: {} 行", app.lyrics.len())
+                            };
+                            push_state(&tx_evt, &app).await;
+                        }
                         NeteaseEvent::Error { req_id: _, message } => {
                             match app.view {
                                 View::Login => app.login_status = format!("错误: {message}"),
                                 View::Playlists => app.playlists_status = format!("错误: {message}"),
                                 View::Search => app.search_status = format!("错误: {message}"),
+                                View::Lyrics => app.lyrics_status = format!("错误: {message}"),
                             }
                             push_state(&tx_evt, &app).await;
                         }
@@ -437,6 +459,7 @@ pub fn spawn_app_actor(
                         &tx_netease,
                         &tx_audio,
                         &mut pending_song_url,
+                        &mut pending_lyric,
                         &mut req_id,
                     )
                     .await;
@@ -504,6 +527,7 @@ async fn handle_audio_event(
     tx_netease: &mpsc::Sender<NeteaseCommand>,
     tx_audio: &std::sync::mpsc::Sender<AudioCommand>,
     pending_song_url: &mut Option<(u64, String)>,
+    pending_lyric: &mut Option<(u64, i64)>,
     req_id: &mut u64,
 ) {
     match evt {
@@ -524,6 +548,18 @@ async fn handle_audio_event(
             app.play_song_id = Some(song_id);
             app.play_error_count = 0;
             let _ = tx_audio.send(AudioCommand::SetVolume(app.volume));
+
+            app.lyrics_song_id = None;
+            app.lyrics.clear();
+            app.lyrics_status = "加载歌词...".to_owned();
+            let id = next_id(req_id);
+            *pending_lyric = Some((id, song_id));
+            let _ = tx_netease
+                .send(NeteaseCommand::Lyric {
+                    req_id: id,
+                    song_id,
+                })
+                .await;
         }
         AudioEvent::Paused(p) => {
             app.paused = p;
