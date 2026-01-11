@@ -110,6 +110,8 @@ pub struct App {
     pub login_unikey: Option<String>,
     pub login_status: String,
     pub logged_in: bool,
+    pub login_cookie_input: String,
+    pub login_cookie_input_visible: bool,
 
     pub search_input: String,
     pub search_results: Vec<Song>,
@@ -164,6 +166,8 @@ impl Default for App {
             login_unikey: None,
             login_status: "按 l 生成二维码；q 退出；Tab 切换页面".to_owned(),
             logged_in: false,
+            login_cookie_input: String::new(),
+            login_cookie_input_visible: false,
             search_input: String::new(),
             search_results: Vec::new(),
             search_selected: 0,

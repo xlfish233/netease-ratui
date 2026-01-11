@@ -69,6 +69,10 @@ pub enum NeteaseCommand {
     LogoutLocal {
         req_id: u64,
     },
+    LoginSetCookie {
+        req_id: u64,
+        music_u: String,
+    },
 }
 
 #[derive(Debug)]
@@ -120,6 +124,11 @@ pub enum NeteaseEvent {
     },
     LoggedOut {
         req_id: u64,
+    },
+    LoginCookieSet {
+        req_id: u64,
+        success: bool,
+        message: String,
     },
     Error {
         req_id: u64,
@@ -353,6 +362,22 @@ pub fn spawn_netease_actor(
                         emit_error(&tx_evt, req_id, "LogoutLocal", e).await;
                     }
                 },
+                NeteaseCommand::LoginSetCookie { req_id, music_u } => {
+                    match client.set_cookie_and_validate(&music_u).await {
+                        Ok(account) => {
+                            let _ = tx_evt
+                                .send(NeteaseEvent::LoginCookieSet {
+                                    req_id,
+                                    success: true,
+                                    message: format!("登录成功: {}", account.nickname),
+                                })
+                                .await;
+                        }
+                        Err(e) => {
+                            emit_error(&tx_evt, req_id, "LoginSetCookie", e).await;
+                        }
+                    }
+                }
             }
         }
     });

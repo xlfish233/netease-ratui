@@ -567,6 +567,44 @@ impl NeteaseClient {
         self.save_state()?;
         Ok(())
     }
+
+    /// 手动设置 MUSIC_U Cookie 并验证有效性
+    pub async fn set_cookie_and_validate(
+        &mut self,
+        music_u: &str,
+    ) -> Result<ValidateCookieResult, NeteaseError> {
+        // 设置 MUSIC_U cookie
+        self.state
+            .cookies
+            .insert("MUSIC_U".to_owned(), music_u.to_owned());
+        self.save_state()?;
+
+        // 立即验证 Cookie 有效性
+        match self.user_account().await {
+            Ok(v) => {
+                let resp: crate::netease::models::dto::UserAccountResp =
+                    serde_json::from_value(v).map_err(NeteaseError::Serde)?;
+                let account = resp.account.ok_or_else(|| {
+                    NeteaseError::CookieValidationFailed("未找到账号信息".to_owned())
+                })?;
+                let profile = resp.profile.ok_or_else(|| {
+                    NeteaseError::CookieValidationFailed("未找到用户资料".to_owned())
+                })?;
+                Ok(ValidateCookieResult {
+                    uid: account.id,
+                    nickname: profile.nickname,
+                })
+            }
+            Err(e) => {
+                // 验证失败，清除刚设置的 cookie
+                self.state.cookies.remove("MUSIC_U");
+                self.save_state()?;
+                Err(NeteaseError::CookieValidationFailed(format!(
+                    "Cookie 验证失败: {e}"
+                )))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -671,6 +709,13 @@ fn save_state(data_dir: &Path, state: &ClientState) -> Result<(), NeteaseError> 
     fs::write(p, bytes).map_err(NeteaseError::Io)
 }
 
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ValidateCookieResult {
+    pub uid: i64,
+    pub nickname: String,
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum NeteaseError {
     #[error("reqwest 错误: {0}")]
@@ -685,4 +730,6 @@ pub enum NeteaseError {
     BadHeader(String),
     #[error("输入错误: {0}")]
     BadInput(&'static str),
+    #[error("Cookie 验证失败: {0}")]
+    CookieValidationFailed(String),
 }
