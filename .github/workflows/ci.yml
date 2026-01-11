@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-14
+            target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Linux deps (ALSA)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev pkg-config
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --target ${{ matrix.target }} --all-targets
+
+      - name: Test
+        run: cargo test --target ${{ matrix.target }}

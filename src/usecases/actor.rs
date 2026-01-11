@@ -708,8 +708,11 @@ async fn handle_audio_event(
             app.play_error_count = 0;
         }
         AudioEvent::CacheCleared { files, bytes } => {
-            app.settings_status =
-                format!("已清除音频缓存：{} 个文件，释放 {} MB", files, bytes / 1024 / 1024);
+            app.settings_status = format!(
+                "已清除音频缓存：{} 个文件，释放 {} MB",
+                files,
+                bytes / 1024 / 1024
+            );
         }
         AudioEvent::Ended { play_id } => {
             if app.play_id != Some(play_id) {
@@ -938,7 +941,9 @@ fn apply_settings_adjust(app: &mut App, dir: i32) {
             app.settings_status = format!("播放模式: {}", play_mode_label(app.play_mode));
         }
         3 => {
-            app.lyrics_offset_ms = app.lyrics_offset_ms.saturating_add(if dir > 0 { 200 } else { -200 });
+            app.lyrics_offset_ms =
+                app.lyrics_offset_ms
+                    .saturating_add(if dir > 0 { 200 } else { -200 });
             app.settings_status = format!("歌词 offset: {}ms", app.lyrics_offset_ms);
         }
         _ => {}

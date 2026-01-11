@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin: netease-ratui
+            package: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: netease-ratui.exe
+            package: zip
+          - os: macos-14
+            target: aarch64-apple-darwin
+            bin: netease-ratui
+            package: tar.gz
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Linux deps (ALSA)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev pkg-config
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          DIST="netease-ratui-${VERSION}-${{ matrix.target }}"
+          mkdir -p "${DIST}"
+          cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "${DIST}/"
+          cp README.md "${DIST}/"
+          cp CHANGELOG.md "${DIST}/"
+          tar -czf "${DIST}.tar.gz" "${DIST}"
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $Version = "${env:GITHUB_REF_NAME}".Replace("v","")
+          $Dist = "netease-ratui-$Version-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path $Dist | Out-Null
+          Copy-Item "target\\${{ matrix.target }}\\release\\${{ matrix.bin }}" "$Dist\\"
+          Copy-Item "README.md" "$Dist\\"
+          Copy-Item "CHANGELOG.md" "$Dist\\"
+          Compress-Archive -Path "$Dist\\*" -DestinationPath "$Dist.zip"
+
+      - name: Upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            netease-ratui-*.tar.gz
+            netease-ratui-*.zip
+

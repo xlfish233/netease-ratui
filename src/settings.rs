@@ -65,4 +65,3 @@ pub fn play_mode_from_string(s: &str) -> PlayMode {
 fn settings_path(data_dir: &Path) -> PathBuf {
     data_dir.join("settings.json")
 }
-

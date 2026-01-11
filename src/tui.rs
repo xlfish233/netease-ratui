@@ -152,12 +152,22 @@ async fn handle_key(app: &App, key: KeyEvent, tx: &tokio_mpsc::Sender<AppCommand
             return false;
         }
         (KeyCode::Left, m) if m.contains(KeyModifiers::ALT) && matches!(app.view, View::Lyrics) => {
-            let ms = if m.contains(KeyModifiers::SHIFT) { -50 } else { -200 };
+            let ms = if m.contains(KeyModifiers::SHIFT) {
+                -50
+            } else {
+                -200
+            };
             let _ = tx.send(AppCommand::LyricsOffsetAddMs { ms }).await;
             return false;
         }
-        (KeyCode::Right, m) if m.contains(KeyModifiers::ALT) && matches!(app.view, View::Lyrics) => {
-            let ms = if m.contains(KeyModifiers::SHIFT) { 50 } else { 200 };
+        (KeyCode::Right, m)
+            if m.contains(KeyModifiers::ALT) && matches!(app.view, View::Lyrics) =>
+        {
+            let ms = if m.contains(KeyModifiers::SHIFT) {
+                50
+            } else {
+                200
+            };
             let _ = tx.send(AppCommand::LyricsOffsetAddMs { ms }).await;
             return false;
         }
@@ -450,8 +460,15 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
         .split(area);
 
     let offset_text = fmt_offset(app.lyrics_offset_ms);
-    let mode_text = if app.lyrics_follow { "跟随" } else { "锁定" };
-    let status_text = format!("{} | {} | offset={}", app.lyrics_status, mode_text, offset_text);
+    let mode_text = if app.lyrics_follow {
+        "跟随"
+    } else {
+        "锁定"
+    };
+    let status_text = format!(
+        "{} | {} | offset={}",
+        app.lyrics_status, mode_text, offset_text
+    );
 
     if app.lyrics.is_empty() {
         let block = Paragraph::new(app.lyrics_status.as_str())
@@ -461,8 +478,11 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
     } else {
         let (elapsed_ms, _) = playback_time_ms(app);
         let selected = if app.lyrics_follow {
-            current_lyric_index(&app.lyrics, apply_lyrics_offset(elapsed_ms, app.lyrics_offset_ms))
-                .unwrap_or(0)
+            current_lyric_index(
+                &app.lyrics,
+                apply_lyrics_offset(elapsed_ms, app.lyrics_offset_ms),
+            )
+            .unwrap_or(0)
         } else {
             app.lyrics_selected.min(app.lyrics.len().saturating_sub(1))
         };
@@ -482,7 +502,11 @@ fn draw_lyrics(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App) 
             .collect::<Vec<_>>();
 
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("歌词（自动滚动）"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("歌词（自动滚动）"),
+            )
             .highlight_style(Style::default().fg(Color::Yellow));
         f.render_stateful_widget(list, chunks[0], &mut list_state(selected));
     }
@@ -499,8 +523,14 @@ fn draw_settings(f: &mut ratatui::Frame, area: ratatui::prelude::Rect, app: &App
     let items = vec![
         ListItem::new(Line::from(format!("音质: {}", br_label(app.play_br)))),
         ListItem::new(Line::from(format!("音量: {:.0}%", app.volume * 100.0))),
-        ListItem::new(Line::from(format!("播放模式: {}", play_mode_label(app.play_mode)))),
-        ListItem::new(Line::from(format!("歌词 offset: {}", fmt_offset(app.lyrics_offset_ms)))),
+        ListItem::new(Line::from(format!(
+            "播放模式: {}",
+            play_mode_label(app.play_mode)
+        ))),
+        ListItem::new(Line::from(format!(
+            "歌词 offset: {}",
+            fmt_offset(app.lyrics_offset_ms)
+        ))),
         ListItem::new(Line::from("清除音频缓存".to_owned())),
         ListItem::new(Line::from(if app.logged_in {
             "退出登录".to_owned()
@@ -560,7 +590,10 @@ fn playback_time_ms(app: &App) -> (u64, Option<u64>) {
     (elapsed, app.play_total_ms)
 }
 
-fn current_lyric_index(lines: &[crate::domain::model::LyricLine], elapsed_ms: u64) -> Option<usize> {
+fn current_lyric_index(
+    lines: &[crate::domain::model::LyricLine],
+    elapsed_ms: u64,
+) -> Option<usize> {
     if lines.is_empty() {
         return None;
     }

@@ -32,6 +32,17 @@ cargo run
 NETEASE_SKIP_LOGIN=1 cargo run
 ```
 
+## 安装（预编译包）
+
+在 GitHub Release 下载与你系统匹配的压缩包，解压后运行可执行文件即可。
+
+Linux 可能需要系统音频依赖（以 Debian/Ubuntu 为例）：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libasound2-dev
+```
+
 ## 快捷键
 
 - 全局：`Tab` 切换页，`q` 退出

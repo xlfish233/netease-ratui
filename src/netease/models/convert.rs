@@ -1,8 +1,8 @@
 use crate::domain::model::{Account, LoginStatus, LyricLine, Playlist, Song, SongUrl};
 
 use super::dto::{
-    CloudSearchResp, LoginQrCheckResp, LoginQrKeyResp, PlaylistDetailResp, SongDetailResp,
-    LyricResp, SongUrlResp, UserAccountResp, UserPlaylistResp,
+    CloudSearchResp, LoginQrCheckResp, LoginQrKeyResp, LyricResp, PlaylistDetailResp,
+    SongDetailResp, SongUrlResp, UserAccountResp, UserPlaylistResp,
 };
 
 #[derive(Debug, thiserror::Error)]
