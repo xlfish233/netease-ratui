@@ -76,6 +76,13 @@ fn handle_api_event(app: &mut App, evt: ApiEvent) {
             View::Login => app.login_status = format!("错误: {e}"),
             View::Search => app.search_status = format!("错误: {e}"),
         },
+        ApiEvent::ClientReady { logged_in } => {
+            app.logged_in = logged_in;
+            if app.logged_in {
+                app.view = View::Search;
+                app.search_status = "已登录（已从本地状态恢复）".to_owned();
+            }
+        }
         ApiEvent::LoginQrReady { unikey, url, ascii } => {
             app.login_unikey = Some(unikey);
             app.login_qr_url = Some(url);
@@ -87,6 +94,8 @@ fn handle_api_event(app: &mut App, evt: ApiEvent) {
             if logged_in {
                 app.logged_in = true;
                 app.login_status = "登录成功".to_owned();
+                app.view = View::Search;
+                app.search_status = "已登录，可直接搜索".to_owned();
             } else {
                 app.login_status = format!("扫码状态 code={code} {message}");
             }
@@ -108,6 +117,9 @@ async fn handle_key(app: &mut App, key: KeyEvent, tx: &mpsc::Sender<ApiRequest>)
         KeyEvent {
             code: KeyCode::Tab, ..
         } => {
+            if app.logged_in {
+                return false;
+            }
             app.view = match app.view {
                 View::Login => View::Search,
                 View::Search => View::Login,
@@ -119,6 +131,9 @@ async fn handle_key(app: &mut App, key: KeyEvent, tx: &mpsc::Sender<ApiRequest>)
     match app.view {
         View::Login => match key.code {
             KeyCode::Char('l') => {
+                if app.logged_in {
+                    return false;
+                }
                 let _ = tx.send(ApiRequest::LoginQrKey).await;
                 app.login_status = "正在生成二维码...".to_owned();
             }
@@ -162,13 +177,22 @@ async fn handle_key(app: &mut App, key: KeyEvent, tx: &mpsc::Sender<ApiRequest>)
 fn draw_ui(f: &mut ratatui::Frame, app: &App) {
     let size = f.area();
 
-    let titles = ["登录", "搜索"]
-        .into_iter()
-        .map(|t| Line::from(t))
-        .collect::<Vec<_>>();
-    let selected = match app.view {
-        View::Login => 0,
-        View::Search => 1,
+    let (titles, selected) = if app.logged_in {
+        (
+            ["搜索"].into_iter().map(Line::from).collect::<Vec<_>>(),
+            0,
+        )
+    } else {
+        (
+            ["登录", "搜索"]
+                .into_iter()
+                .map(Line::from)
+                .collect::<Vec<_>>(),
+            match app.view {
+                View::Login => 0,
+                View::Search => 1,
+            },
+        )
     };
     let tabs = Tabs::new(titles)
         .select(selected)
@@ -251,4 +275,3 @@ fn list_state(selected: usize) -> ratatui::widgets::ListState {
     st.select(Some(selected));
     st
 }
-

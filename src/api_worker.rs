@@ -14,6 +14,7 @@ pub enum ApiRequest {
 pub enum ApiEvent {
     Info(String),
     Error(String),
+    ClientReady { logged_in: bool },
     LoginQrReady { unikey: String, url: String, ascii: String },
     LoginQrStatus { code: i64, message: String, logged_in: bool },
     SearchResult(Value),
@@ -33,6 +34,12 @@ pub fn spawn_api_worker(
                 return;
             }
         };
+
+        let _ = tx_evt
+            .send(ApiEvent::ClientReady {
+                logged_in: client.is_logged_in(),
+            })
+            .await;
 
         while let Some(req) = rx_req.recv().await {
             match req {
