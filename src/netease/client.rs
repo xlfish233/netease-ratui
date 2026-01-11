@@ -227,7 +227,12 @@ impl NeteaseClient {
 
     pub async fn song_detail_by_ids(&mut self, ids: &[i64]) -> Result<Value, NeteaseError> {
         self.ensure_anonymous().await?;
-        let c = ids.iter().map(|id| json!({"id": id})).collect::<Vec<_>>();
+        // 注意：该接口的 `c` 习惯上传字符串形式的 JSON 数组（参考 api-enhanced 实现）
+        let c = ids
+            .iter()
+            .map(|id| json!({ "id": id }))
+            .collect::<Vec<_>>();
+        let c = serde_json::to_string(&c).map_err(NeteaseError::Serde)?;
         self.request("/api/v3/song/detail", json!({ "c": c }), CryptoMode::Weapi)
             .await
     }

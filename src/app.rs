@@ -101,9 +101,14 @@ impl Default for App {
 }
 
 pub fn parse_search_songs(v: &Value) -> Vec<Song> {
-    let Some(songs) = v.pointer("/result/songs").and_then(|x| x.as_array()) else {
-        return vec![];
-    };
+    // 兼容两种常见返回：
+    // - cloudsearch: {"result":{"songs":[...]}}
+    // - song/detail: {"songs":[...]}
+    let songs = v
+        .pointer("/result/songs")
+        .or_else(|| v.pointer("/songs"))
+        .and_then(|x| x.as_array());
+    let Some(songs) = songs else { return vec![]; };
 
     songs
         .iter()
@@ -112,6 +117,7 @@ pub fn parse_search_songs(v: &Value) -> Vec<Song> {
             let name = s.get("name")?.as_str()?.to_owned();
             let artists = s
                 .get("ar")
+                .or_else(|| s.get("artists"))
                 .and_then(|a| a.as_array())
                 .map(|arr| {
                     arr.iter()
