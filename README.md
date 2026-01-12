@@ -76,72 +76,44 @@ sudo apt-get install -y libasound2-dev
 
 ## 架构
 
-整体采用“**全 Actor + 消息驱动 + 单一状态源**”的分层架构：UI 不直接做网络/解析/播放，所有跨层交互通过消息通信完成。
+整体仍采用“**Actor + 消息驱动 + 单一状态源**”的约定：UI 只发 `AppCommand`，由 `core::spawn_app_actor` 维护唯一的 `App` 状态，并通过 `AppEvent` 通知 UI 。`core::reducer` 在 tokio 任务中循环处理来自 UI / Netease / Audio / 定时器的 `CoreMsg`，通过 `features` 模块完成业务逻辑，再将 `CoreEffects` 中收集的状态推送、toast、错误、`NeteaseCommand`、`AudioCommand` 一并下发。`core::infra` 提供 `RequestTracker`、`PreloadManager`、`NextSongCacheManager` 等基础设施，`core::prelude` 把常见类型导出给每个 feature。`settings` 在 actor 启动时从 `src/settings/store.rs` 读取并应用，音频工作线程通过 std mpsc 与 tokio 任务互通。
 
 ### 分层与职责
 
-- **TuiActor（UI）**：处理键盘输入、渲染整体状态；只发送 `AppCommand`，只接收 `AppEvent`。
-- **AppActor（应用层 / 业务编排）**：接收 `AppCommand`，维护唯一状态（当前实现为 `src/app.rs` 的 `App`），编排登录轮询、搜索、歌单链路拼装、播放队列推进等业务流程。
-- **NeteaseActor（网关 / 基础设施）**：持有 `NeteaseClient`（cookie/加密/请求发送）；接收 `NeteaseCommand` 并返回强类型 `NeteaseEvent`；不包含 UI 选择/队列策略。
-- **AudioActor（播放器 / 基础设施）**：接收 `AudioCommand` 并返回 `AudioEvent`（播放状态机、停止/切歌取消 Ended 上报）。
-- **TransferActor（下载/缓存 / 基础设施）**：异步下载音频并落盘缓存；接收 `TransferCommand` 并返回 `TransferEvent`（支持优先级、重试/超时、并发下载）。
+- **UI 层（`src/ui`）**：`cli.rs` 负责命令行参数、`run_tui` 运行 ratatui 界面。`src/ui/tui/` 包含事件循环、生命周期 guard、键盘/鼠标处理、视图管理、播放器状态面板、歌词/歌单/搜索/设置界面、组件、工具函数等；只渲染 `AppEvent::State`，所有用户输入都翻译为 `AppCommand`。
+- **Core 层（`src/core`）**：`spawn_app_actor` 启动 `NeteaseActor`（高/低优先级通道）、音频工作线程并运行 `core::reducer`，`CoreState` 持有 `App`、`settings`、`RequestTracker`、`PreloadManager`、`NextSongCacheManager`、待处理请求等信息；`CoreEffects` 统一管理 `EmitState`/`Toast`/`Error` 和命令；`core::infra` 提供预加载、预取、请求跟踪能力。
+- **Features（`src/features`）**：按业务拆分为 login/logout/lyrics/player/playlists/search/settings，提供命令与事件处理函数。每个 handler 接收 `AppCommand`/`NeteaseEvent`/`AudioEvent`、操作 `App`、调度 `CoreEffects`，特定模块之间只通过 `App` 状态、`PreloadManager`、`NextSongCacheManager` 等共享上下文。
+- **状态与消息**：`src/app/state.rs` 定义 `App`、`View`、`TabConfig`、播放/歌单/歌词状态，`src/app/parsers.rs` 保留搜索/歌单解析工具；`src/messages/app.rs` 定义 `AppCommand`/`AppEvent`，`core::prelude` 把 `App`、`NeteaseCommand/Event`、`AudioCommand/Event` 等再导出一次。
+- **Domain / 网关 / 音频**：`src/domain` 提供 `Song`/`Playlist`/`LyricLine` 等稳定模型；`src/netease` 包含 `NeteaseClient`（config/cookie/error/types/crypto 等）、`NeteaseActor`；`src/audio_worker` 负责播放线程（`messages`/`worker`/`player`/`cache`/`download`/`transfer`），通过 std mpsc 与 `core` 的 tokio 通道互通；`src/settings/store.rs` 实现设置与 cookie 持久化；`src/logging.rs`、`src/error.rs` 分别负责日志与错误边界。
 
-### 网关优先级（避免预加载影响交互）
+### 消息通道与协议
 
-`NeteaseActor` 提供高/低优先级两个命令通道：用户交互（搜索/点歌/打开歌单）走高优先级；后台预加载走低优先级。网关侧使用“高优先级优先”的策略处理请求，避免预加载占满队列导致 UI 卡顿。
-
-### 消息通道拓扑（简化）
-
-```
-TuiActor  -- AppCommand -->  AppActor  -- NeteaseCommand -->  NeteaseActor
-TuiActor  <-- AppEvent  --  AppActor  <-- NeteaseEvent  --  NeteaseActor
-
-TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
-                     AppActor  <-- AudioEvent  --  AudioActor
-```
-
-### UI 协议：整体状态推送（先全量，后续可增量）
-
-- UI -> App：高层 `AppCommand`（例如 `SearchSubmit`、`SearchPlaySelected`、`LoginGenerateQr`）。
-- App -> UI：`AppEvent::State(AppState)`（当前实现为 `AppEvent::State(App)`，每次变更推送整状态；后续可替换为 patch）。
+- UI 通过 `AppCommand` 交给 `core::reducer`；命令可能直接在 `features` 中处理（如登录、搜索、歌词）、也可能触发 `NeteaseCommand` 或 `AudioCommand`。
+- `core::reducer` 依赖 `RequestTracker` 防止重复/过期响应（每条跨层请求携带 `req_id`），使用 `PreloadManager` 维护歌单预加载状态、`NextSongCacheManager` 预取下一首下载链接，调用 `features` 掌握业务细节，最后把 `App` 状态交给 `CoreEffects`。
+- `CoreEffects` 将 `AppEvent::State`/`Toast`/`Error` 发送给 UI，并将 `NeteaseCommand` 交由 `NeteaseActor` 的高/低优先级通道，`AudioCommand` 交给 `audio_worker`；事件（Netease/Audio）被打包成 `CoreMsg` 送回 reducer，形成完整的单向数据流。
+- UI 只读 `App`，所有跨 layer 写操作都由 `core` 自动调度，`features` 共享 `App` 全量快照，保持 View/Model 同步。
 
 ### 关键约定（长期收益）
 
-- **所有跨 actor 的请求携带 `req_id`**：事件回包携带同 `req_id`，用于丢弃过期响应、避免并发/乱序覆盖状态。
-- **AppActor 是唯一状态写入者**：UI 只读状态；网关/音频只发事件。
-- **网关不做业务拼装**：例如“歌单详情 -> trackIds -> song_detail_by_ids”由 AppActor 负责串联请求并组装结果。
-- **Domain/DTO 分离**：
-  - Domain（稳定）：`src/domain/model.rs`（供 AppActor/UI 使用）
-  - DTO（易变）：`src/netease/models/dto.rs`
-  - 转换层：`src/netease/models/convert.rs`
+- **req_id + RequestTracker**：所有跨 actor 的请求携带 `req_id`，`RequestTracker` 只接收最新的响应，避免界面被旧数据覆盖。
+- **Core 是唯一状态写入者**：UI 只渲染，`core::reducer` + `features` 通过 `App` 结构更新状态；`features` 之间不直接传数据，所有共享数据都在 `App` 或 `core::infra`。
+- **网关/播放层不做业务拼装**：`NeteaseActor`、`audio_worker` 只做请求/解析/播放，`features` 负责业务流程。
+- **Domain/DTO 分离**：`src/domain/model.rs` 提供稳定领域模型，`src/netease/models/dto.rs` 负责不稳定的 API 结构；`src/netease/models/convert.rs` 统一转换。
 
 ### 目录结构
 
-- `src/main.rs`：入口；选择运行模式（TUI / 调试模式）。
-- `src/tui.rs`：ratatui + crossterm 事件循环；只发送 `AppCommand`、只渲染 `AppEvent::State`（全量）。
-- `src/tui/`：TUI 视图层（14 个子模块）
-  - event_loop.rs: 事件循环
-  - guard.rs: TUI 生命周期管理
-  - keyboard.rs: 键盘事件处理
-  - mouse.rs: 鼠标事件处理
-  - views.rs: 视图管理
-  - login_view.rs, lyrics_view.rs, playlists_view.rs, search_view.rs, settings_view.rs: 各功能界面
-  - player_status.rs: 播放器状态面板
-  - widgets.rs: 组件模块
-  - utils.rs: 格式化和辅助函数
-- `src/messages/`：UI<->AppActor 的消息协议（`AppCommand/AppEvent`）。
-- `src/usecases/actor.rs`：`AppActor`（业务编排 + 单一状态源，主循环与路由）。
-- `src/usecases/actor/`：`AppActor` 的内聚子模块（13 个：login, search, playlists, lyrics, player_control, settings_handler, audio_handler, playback, preload, playlist_tracks, logout, utils, next_song_cache）
-- `src/domain/`：领域模型（供业务/状态使用）。
-- `src/audio_worker.rs`：音频工作线程入口。
-- `src/audio_worker/`：音频工作线程子模块（6 个：messages, worker, player, cache, download, transfer）
-- `src/netease/actor.rs`：`NeteaseActor`（网关层：命令/事件 + 强类型解析）。
-- `src/netease/models/`：DTO/Domain 转换与容错（响应结构变动的集中处理点）。
-- `src/netease/client/`：NeteaseClient 子模块（config, cookie, error, types）
-- `src/app.rs`：当前整体状态结构（临时命名为 `App`，长期会演进为 `AppState` 分层模块）。
-- `src/netease/`：协议与客户端实现：
-  - `src/netease/crypto.rs`：weapi / eapi / linuxapi 加密与表单生成（AES + RSA + MD5）。
-  - `src/netease/util.rs`：deviceId / anonymous username 等工具函数。
+- `src/main.rs`：入口；解析 CLI、初始化日志、构造 `NeteaseClientConfig`，通过 `core::spawn_app_actor` 启动 actor 用于 `run_tui`。
+- `src/ui/cli.rs`：命令行参数与子命令（TUI / SkipLogin / QrKey）；`src/ui/tui.rs` 搭建 ratatui 渲染与事件处理。
+- `src/ui/tui/`：纯 UI 组织（event_loop、guard、keyboard、mouse、views、widgets、player_status、login/lyrics/playlists/search/settings 视图、utils）。
+- `src/core`：`spawn_app_actor`、`reducer`、`effects`、`infra`（`RequestTracker`/`PreloadManager`/`NextSongCacheManager`）、`prelude`、`utils`。
+- `src/features`：按功能拆分的 handler 模块（login/logout/lyrics/player/playlists/search/settings），共享 `core::prelude`。
+- `src/app`：`App` 状态、`TabConfig`、搜索/歌单解析函数。
+- `src/messages`：`AppCommand`、`AppEvent`。
+- `src/domain`：`Song`、`Playlist`、`LyricLine` 等稳定模型。
+- `src/netease`：`NeteaseClient` + `NeteaseActor`、models、crypto、util、client 子模块。
+- `src/audio_worker`：音频 worker 线程的 messages/worker/player/cache/download/transfer。
+- `src/settings`：设置、cookie、缓存、日志等存储接口（`store.rs`）。
+- `src/logging.rs` / `src/error.rs`：日志与错误入口。
 
 ## Roadmap（建议顺序）
 
@@ -193,9 +165,10 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
 
 - 目标：优先保持结构清晰与可维护，避免把“网易云协议细节”散落到 UI 里。
 - 分层规则：
-  - `tui` 只依赖 `messages` 与状态结构，不直接调用 `netease`/`reqwest`/`serde_json`。
-  - `netease`（网关）只做“请求/解析/持久化 cookie”，不做业务拼装。
-  - 业务拼装与策略统一放 `usecases`（AppActor）。
+  - `src/ui` 只依赖 `messages` 与 `App`，渲染 `AppEvent`，不直接访问 `netease`/`audio_worker`/`core`。
+  - `src/core` + `src/features` 是唯一的状态写入者，`core::reducer` 调度命令、事件与 `CoreEffects`，`features` 负责具体业务流程，所有跨层交互都通过消息。
+  - `src/netease` 只做请求/解析/持久化 Cookie，不承担业务拼装；`src/audio_worker` 只处理播放命令和状态返回。
+  - `src/settings/store.rs` 管理设置/缓存/日志数据，`core` 在启动时加载并在需要时更新。
 - 变更方式：按功能切分、逐步提交（commit），便于回滚与 code review。
 
 ## 致谢

@@ -2,47 +2,31 @@
 
 ## Unreleased（自 v0.0.2 起，更新于 2026-01-12）
 
-### 大规模模块化重构
+### 核心 + 特性模块化
 
-将 4 个核心大文件拆分为 37 个职责单一的子模块，提高代码可维护性：
+- `src/core` 重新承担 App Actor 角色：`spawn_app_actor` 启动 `NeteaseActor`（高/低优先级）、音频工作线程与 tokio `CoreMsg` 循环，`core::reducer` 维护 `CoreState`（`App`、`settings`、`RequestTracker`、`PreloadManager`、`NextSongCacheManager` 等）并把状态更新、`NeteaseCommand`、`AudioCommand` 统一交给 `CoreEffects`；`core::prelude` 负责导出常用类型与工具。
+- `src/app/state.rs` 把 `App`、`View`、`TabConfig`、播放/歌词/歌单状态与默认值集中起来，`src/app/parsers.rs` 保留搜索/歌单解析辅助。
+- `src/features` 按业务拆分为 login/logout/lyrics/player/playlists/search/settings，专注命令/事件处理、`App` 维护与 `CoreEffects` 调度，保持 `core::reducer` 业务面向最小。
+- `src/messages/app.rs` 继续定义 `AppCommand`/`AppEvent`；所有功能模块通过 `AppCommand` 触发，`AppEvent::State`/`Toast`/`Error` 推给 UI。
 
-- **AppActor 重构** (`src/usecases/actor.rs`，1072 行 → 510 行，-52%)：
-  - 拆分为 12 个子模块：login.rs、search.rs、playlists.rs、lyrics.rs、player_control.rs、settings_handler.rs、audio_handler.rs、playback.rs、preload.rs、playlist_tracks.rs、logout.rs、utils.rs
+### 基础设施与状态管理
 
-- **TUI 重构** (`src/tui.rs`，891 行)：
-  - 拆分为 14 个子模块：event_loop.rs、guard.rs、keyboard.rs、mouse.rs、views.rs、login_view.rs、lyrics_view.rs、playlists_view.rs、search_view.rs、settings_view.rs、player_status.rs、widgets.rs、utils.rs
+- `core::infra::RequestTracker` 让每条跨层请求携带 `req_id`，只接受最新响应，并在登录、搜索、歌单等链路里避免旧数据覆盖。
+- `core::infra::PreloadManager` 维护歌单预加载状态，`core::infra::NextSongCacheManager` 负责下一首 URL 缓存、播放队列变化时自动失效、停止时重置，preload 与自动调度共享 `CoreState`。
+- `src/settings/store.rs` 提供设置/缓存/日志目录等持久化，`core` 在启动时加载并根据用户操作更新，`audio_worker` 启动阶段同步当前 `play_br`。
 
-- **AudioWorker 重构** (`src/audio_worker.rs`，613 行)：
-  - 拆分为 6 个子模块：messages.rs、worker.rs、player.rs、cache.rs、download.rs
+### UI / 网关 / 音频整理
 
-- **NeteaseClient 重构** (`src/netease/client.rs`，735 行 → ~100 行)：
-  - 拆分为 5 个子模块：config.rs、cookie.rs、error.rs、types.rs
-
-- **Bug 修复**：
-  - fix(tui): 支持 Ctrl+C 信号处理（raw mode 下启用 tokio signal）
-
-- **代码质量优化**：
-  - 移除冗余 clone 和死代码
-  - 简化 Option 处理（使用链式方法）
-  - 优化模式匹配语法
-  - 改进函数签名（引用传递替代值传递）
+- `src/ui` 现在托管 CLI (`cli.rs`) 以及完整的 TUI（`tui.rs` + `tui/` 目录）；ratatui 的事件循环、guard、keyboard/mouse、views、widgets、player_status、login/lyrics/playlists/search/settings 视图都在这里，UI 只接收 `AppEvent` 并发出 `AppCommand`。
+- `src/audio_worker` 维持 `messages`/`worker`/`player`/`cache`/`download`/`transfer` 结构，通过 std mpsc 与 tokio `CoreMsg` 互通，下载/落盘/缓存逻辑全部由 worker 线程执行。
+- `src/netease` 将 `NeteaseClient` 拆分为 config/cookie/error/types，`actor.rs` 集中命令/事件，models/convert 处理 DTO→Domain；`core` 和 `NeteaseActor` 之间依旧保持高/低优先级通道。
 
 ### 其他功能
 
-- **新增"缓存下一首歌"功能**：播放时自动预缓存下一首歌曲，实现无缝切换
-  - 支持播放模式：顺序播放、列表循环
-  - 不支持模式：随机播放（不可预测）、单曲循环（下一首是当前）
-  - 智能失效：队列改变/播放模式切换/停止播放/用户登出时自动失效
-  - 错误处理：预缓存失败静默处理，不影响当前播放
-- **音频缓存下载链路升级**：TransferActor 改为 tokio 异步下载与落盘缓存（消息协议保持稳定）
-  - 支持下载超时与自动重试（可配置）
-  - 并发下载默认等于 CPU 核心数（可配置）
-  - 缓存策略：仅保留当前设置的音质 br（切换音质会清理其它 br）
-- **新增 Cookie 登录功能**：支持手动输入 `MUSIC_U` Cookie 值快速登录
-  - 登录页按 `c` 键切换到 Cookie 登录模式
-  - 支持输入验证和错误提示
-  - 适用于已通过浏览器登录 music.163.com 的用户
-- 登录页 UI 改进：显示两种登录方式的说明和快捷键提示
+- **新增“缓存下一首歌”能力**：`NextSongCacheManager` 在播放列表顺序/列表循环模式下提前获取下一首并把 URL 交给 `AudioWorker`，队列变化、模式切换、停止、登出时自动失效，失败静默处理。
+- **音频缓存下载链路升级**：`audio_worker::transfer` 置于 tokio 异步下载器，支持超时/重试/退避、默认并发等配置，缓存策略保持“只保留当前音质 br”。
+- **Cookie 登录支持**：加入 `MUSIC_U` 手动输入、输入校验与错误提示；`c` 键在登录页内切换 Cookie 模式，`Enter` 提交，`Esc` 取消。
+- 登录页 UI 改进：更加明显地展示二维码与 Cookie 登录模式的说明和快捷键提示。
 
 ## v0.0.2（2026-01-11）
 

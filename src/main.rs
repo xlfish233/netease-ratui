@@ -1,21 +1,21 @@
 mod app;
 mod audio_worker;
-mod cli;
+mod core;
 mod domain;
 mod error;
+mod features;
 mod logging;
 mod messages;
 mod netease;
 mod settings;
-mod tui;
-mod usecases;
+mod ui;
 
 use app::App;
 use clap::Parser;
-use cli::{Cli, Command};
 use error::AppError;
 use netease::{NeteaseClient, NeteaseClientConfig};
 use std::env;
+use ui::{Cli, Command, run_tui};
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -70,8 +70,8 @@ async fn main() -> Result<(), AppError> {
 
     match cli.command.unwrap_or(Command::Tui) {
         Command::Tui => {
-            let (tx, rx) = usecases::actor::spawn_app_actor(cfg);
-            tui::run_tui(App::default(), tx, rx).await?;
+            let (tx, rx) = core::spawn_app_actor(cfg);
+            run_tui(App::default(), tx, rx).await?;
             Ok(())
         }
         Command::SkipLogin { keywords, limit } => {

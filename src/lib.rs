@@ -1,11 +1,11 @@
 pub mod app;
 pub mod audio_worker;
-pub mod cli;
+pub mod core;
 pub mod domain;
 pub mod error;
+pub mod features;
 pub mod logging;
 pub mod messages;
 pub mod netease;
 pub mod settings;
-pub mod tui;
-pub mod usecases;
+pub mod ui;
