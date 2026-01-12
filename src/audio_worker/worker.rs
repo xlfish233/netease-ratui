@@ -28,7 +28,7 @@ pub fn spawn_audio_worker_with_config(
     // Spawn TransferActor on tokio runtime if available; otherwise it will self-host.
     let (tx_transfer, mut rx_transfer) = spawn_transfer_actor_with_config(data_dir.clone(), config);
 
-    tokio::spawn(async move {
+    let run = async move {
         let stream = match OutputStreamBuilder::open_default_stream() {
             Ok(v) => v,
             Err(e) => {
@@ -192,6 +192,14 @@ pub fn spawn_audio_worker_with_config(
                 }
             }
         }
+    };
+
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        rt.block_on(run);
     });
 
     (tx_cmd, rx_evt)
