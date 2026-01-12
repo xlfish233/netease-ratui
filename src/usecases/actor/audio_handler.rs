@@ -15,6 +15,8 @@ pub(super) async fn handle_audio_event(
     pending_song_url: &mut Option<(u64, String)>,
     pending_lyric: &mut Option<(u64, i64)>,
     req_id: &mut u64,
+    next_song_cache: &mut super::next_song_cache::NextSongCacheManager,
+    tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
 ) {
     match evt {
         crate::audio_worker::AudioEvent::NowPlaying {
@@ -86,7 +88,15 @@ pub(super) async fn handle_audio_event(
             if app.play_id != Some(play_id) {
                 return;
             }
-            playback::play_next(app, tx_netease, pending_song_url, req_id).await;
+            playback::play_next(
+                app,
+                tx_netease,
+                pending_song_url,
+                req_id,
+                next_song_cache,
+                tx_netease_lo,
+            )
+            .await;
         }
         crate::audio_worker::AudioEvent::Error(e) => {
             app.play_status = format!("播放错误: {e}");

@@ -106,6 +106,8 @@ pub(super) async fn request_play_at_index(
     pending_song_url: &mut Option<(u64, String)>,
     req_id: &mut u64,
     idx: usize,
+    next_song_cache: &mut super::next_song_cache::NextSongCacheManager,
+    tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
 ) {
     let Some(s) = app.queue.get(idx) else {
         return;
@@ -125,6 +127,11 @@ pub(super) async fn request_play_at_index(
             br: app.play_br,
         })
         .await;
+
+    // 触发下一首预缓存
+    next_song_cache
+        .prefetch_next(app, tx_netease_lo, req_id)
+        .await;
 }
 
 pub(super) async fn play_next(
@@ -132,6 +139,8 @@ pub(super) async fn play_next(
     tx_netease: &mpsc::Sender<NeteaseCommand>,
     pending_song_url: &mut Option<(u64, String)>,
     req_id: &mut u64,
+    next_song_cache: &mut super::next_song_cache::NextSongCacheManager,
+    tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
 ) {
     use crate::app::PlayMode;
 
@@ -169,7 +178,16 @@ pub(super) async fn play_next(
         PlayMode::ListLoop => (pos + 1) % app.queue.len(),
     };
 
-    request_play_at_index(app, tx_netease, pending_song_url, req_id, next_idx).await;
+    request_play_at_index(
+        app,
+        tx_netease,
+        pending_song_url,
+        req_id,
+        next_idx,
+        next_song_cache,
+        tx_netease_lo,
+    )
+    .await;
 }
 
 pub(super) async fn play_prev(
@@ -177,6 +195,8 @@ pub(super) async fn play_prev(
     tx_netease: &mpsc::Sender<NeteaseCommand>,
     pending_song_url: &mut Option<(u64, String)>,
     req_id: &mut u64,
+    next_song_cache: &mut super::next_song_cache::NextSongCacheManager,
+    tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
 ) {
     use crate::app::PlayMode;
 
@@ -212,5 +232,14 @@ pub(super) async fn play_prev(
         }
     };
 
-    request_play_at_index(app, tx_netease, pending_song_url, req_id, prev_idx).await;
+    request_play_at_index(
+        app,
+        tx_netease,
+        pending_song_url,
+        req_id,
+        prev_idx,
+        next_song_cache,
+        tx_netease_lo,
+    )
+    .await;
 }

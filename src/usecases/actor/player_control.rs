@@ -17,6 +17,8 @@ pub(super) async fn handle_player_control_command(
     tx_audio: &std::sync::mpsc::Sender<AudioCommand>,
     tx_netease_hi: &mpsc::Sender<NeteaseCommand>,
     tx_evt: &mpsc::Sender<AppEvent>,
+    next_song_cache: &mut super::next_song_cache::NextSongCacheManager,
+    tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
 ) -> bool {
     match cmd {
         AppCommand::PlayerTogglePause => {
@@ -30,11 +32,27 @@ pub(super) async fn handle_player_control_command(
             }
         }
         AppCommand::PlayerPrev => {
-            playback::play_prev(app, tx_netease_hi, pending_song_url, req_id).await;
+            playback::play_prev(
+                app,
+                tx_netease_hi,
+                pending_song_url,
+                req_id,
+                next_song_cache,
+                tx_netease_lo,
+            )
+            .await;
             utils::push_state(tx_evt, app).await;
         }
         AppCommand::PlayerNext => {
-            playback::play_next(app, tx_netease_hi, pending_song_url, req_id).await;
+            playback::play_next(
+                app,
+                tx_netease_hi,
+                pending_song_url,
+                req_id,
+                next_song_cache,
+                tx_netease_lo,
+            )
+            .await;
             utils::push_state(tx_evt, app).await;
         }
         AppCommand::PlayerSeekBackwardMs { ms } => {

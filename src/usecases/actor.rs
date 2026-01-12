@@ -213,6 +213,8 @@ pub fn spawn_app_actor(
                                 &tx_audio,
                                 &tx_netease_hi,
                                 &tx_evt,
+                                &mut next_song_cache,
+                                &tx_netease_lo,
                             )
                             .await;
                         }
@@ -508,8 +510,7 @@ pub fn spawn_app_actor(
                     }
                 }
                 Some(evt) = rx_audio_evt.recv() => {
-                    // 在移动 evt 之前检查事件类型，用于触发预缓存
-                    let is_now_playing = matches!(evt, AudioEvent::NowPlaying { .. });
+                    // 在移动 evt 之前检查事件类型，用于重置预缓存
                     let is_stopped = matches!(evt, AudioEvent::Stopped);
 
                     audio_handler::handle_audio_event(
@@ -520,13 +521,10 @@ pub fn spawn_app_actor(
                         &mut pending_song_url,
                         &mut pending_lyric,
                         &mut req_id,
+                        &mut next_song_cache,
+                        &tx_netease_lo,
                     )
                     .await;
-
-                    // 播放开始后触发下一首预缓存
-                    if is_now_playing {
-                        next_song_cache.prefetch_next(&app, &tx_netease_lo, &mut req_id).await;
-                    }
 
                     // 播放停止时失效预缓存
                     if is_stopped {
