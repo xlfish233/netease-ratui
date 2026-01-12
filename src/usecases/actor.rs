@@ -50,6 +50,7 @@ pub fn spawn_app_actor(
 
         let mut settings = settings::load_settings(&data_dir);
         settings_handler::apply_settings_to_app(&mut app, &settings);
+        let _ = tx_audio.send(AudioCommand::SetCacheBr(app.play_br));
 
         // pending req ids to drop stale responses
         let mut pending_search: Option<u64> = None;

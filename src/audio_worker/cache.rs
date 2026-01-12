@@ -1,4 +1,3 @@
-use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -7,7 +6,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
-use super::download::{clear_dir_files, download_to_file, now_ms};
+use super::download::{clear_dir_files, now_ms};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub(super) struct CacheIndex {
@@ -21,11 +20,6 @@ struct CacheEntry {
     file_name: String,
     size_bytes: u64,
     last_access_ms: u64,
-}
-
-pub(super) enum ResolvedAudio {
-    Path(PathBuf),
-    Temp(NamedTempFile),
 }
 
 pub struct AudioCache {
@@ -84,47 +78,47 @@ impl AudioCache {
         }
     }
 
-    pub fn resolve_audio_file(
-        &mut self,
-        http: &Client,
-        song_id: i64,
-        br: i64,
-        url: &str,
-        title: &str,
-    ) -> Result<ResolvedAudio, String> {
-        let Some(dir) = self.dir.as_ref() else {
-            // fallback: no cache dir
-            let mut tmp = NamedTempFile::new().map_err(|e| format!("创建临时文件失败: {e}"))?;
-            download_to_file(http, &mut tmp, url, title)?;
-            return Ok(ResolvedAudio::Temp(tmp));
-        };
+    pub fn cache_dir(&self) -> Option<&Path> {
+        self.dir.as_deref()
+    }
 
-        let key = format!("{song_id}_{br}");
+    pub fn lookup_path(&mut self, song_id: i64, br: i64) -> Option<PathBuf> {
+        let dir = self.dir.as_ref()?;
+
+        let key = cache_key(song_id, br);
         let file_name = format!("{key}.bin");
         let path = dir.join(&file_name);
 
-        if path.exists() {
-            self.touch(&key, &file_name, &path);
+        if !path.exists() {
+            self.index.entries.remove(&key);
             self.persist_index();
-            return Ok(ResolvedAudio::Path(path));
+            return None;
         }
-
-        let mut tmp = NamedTempFile::new_in(dir)
-            .map_err(|e| format!("创建缓存临时文件失败({title}): {e}"))?;
-        download_to_file(http, &mut tmp, url, title)?;
-
-        if path.exists() {
-            let _ = fs::remove_file(&path);
-        }
-
-        tmp.persist(&path)
-            .map_err(|e| format!("写入缓存文件失败({title}): {e}"))?;
 
         self.touch(&key, &file_name, &path);
-        self.cleanup(Some(&path));
+        self.persist_index();
+        Some(path)
+    }
+
+    pub fn commit_tmp_file(&mut self, song_id: i64, br: i64, tmp_path: &Path) -> Result<PathBuf, String> {
+        let dir = self.dir.as_ref().ok_or_else(|| "缓存目录不可用".to_owned())?;
+
+        let key = cache_key(song_id, br);
+        let file_name = format!("{key}.bin");
+        let final_path = dir.join(&file_name);
+
+        if final_path.exists() {
+            let _ = fs::remove_file(&final_path);
+        }
+
+        fs::rename(tmp_path, &final_path)
+            .map_err(|e| format!("写入缓存文件失败: {e}"))?;
+
+        self.touch(&key, &file_name, &final_path);
+        self.cleanup(Some(&final_path));
         self.persist_index();
 
-        Ok(ResolvedAudio::Path(path))
+        Ok(final_path)
     }
 
     fn touch(&mut self, key: &str, file_name: &str, path: &Path) {
@@ -205,7 +199,7 @@ impl AudioCache {
         let Some(dir) = self.dir.as_ref() else {
             return;
         };
-        let key = format!("{song_id}_{br}");
+        let key = cache_key(song_id, br);
         if let Some(ent) = self.index.entries.remove(&key) {
             let _ = fs::remove_file(dir.join(ent.file_name));
         } else {
@@ -224,4 +218,75 @@ impl AudioCache {
         self.persist_index();
         (files, bytes)
     }
+
+    pub fn purge_not_br(&mut self, keep_br: i64, keep: Option<&Path>) {
+        let Some(dir) = self.dir.as_ref() else {
+            return;
+        };
+
+        let keep = keep.and_then(|p| p.file_name().map(|n| dir.join(n)));
+
+        let keys = self.index.entries.keys().cloned().collect::<Vec<_>>();
+
+        for key in keys {
+            let Some((_song_id, br)) = parse_cache_key(&key) else {
+                continue;
+            };
+            if br == keep_br {
+                continue;
+            }
+
+            if let Some(ent) = self.index.entries.remove(&key) {
+                let p = dir.join(&ent.file_name);
+                if keep.as_ref().is_some_and(|kp| kp == &p) {
+                    self.index.entries.insert(key, ent);
+                    continue;
+                }
+                let _ = fs::remove_file(p);
+            }
+        }
+
+        self.cleanup(keep.as_deref());
+        self.persist_index();
+    }
+
+    pub fn purge_song_other_brs(&mut self, song_id: i64, keep_br: i64, keep: Option<&Path>) {
+        let Some(dir) = self.dir.as_ref() else {
+            return;
+        };
+
+        let keep = keep.and_then(|p| p.file_name().map(|n| dir.join(n)));
+
+        let keys = self.index.entries.keys().cloned().collect::<Vec<_>>();
+
+        for key in keys {
+            let Some((sid, br)) = parse_cache_key(&key) else {
+                continue;
+            };
+            if sid != song_id || br == keep_br {
+                continue;
+            }
+
+            if let Some(ent) = self.index.entries.remove(&key) {
+                let p = dir.join(&ent.file_name);
+                if keep.as_ref().is_some_and(|kp| kp == &p) {
+                    self.index.entries.insert(key, ent);
+                    continue;
+                }
+                let _ = fs::remove_file(p);
+            }
+        }
+
+        self.cleanup(keep.as_deref());
+        self.persist_index();
+    }
+}
+
+fn cache_key(song_id: i64, br: i64) -> String {
+    format!("{song_id}_{br}")
+}
+
+fn parse_cache_key(key: &str) -> Option<(i64, i64)> {
+    let (a, b) = key.split_once('_')?;
+    Some((a.parse().ok()?, b.parse().ok()?))
 }

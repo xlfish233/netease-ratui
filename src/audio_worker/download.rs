@@ -1,9 +1,11 @@
-use reqwest::blocking::Client;
+use reqwest::StatusCode;
+use std::env;
 use std::fs;
-use std::io::{Read, Write};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tempfile::NamedTempFile;
+
+use futures_util::StreamExt;
+use tokio::io::AsyncWriteExt;
 
 pub(super) fn clear_dir_files(dir: &Path, keep: Option<&Path>) -> (usize, u64) {
     let mut removed_files = 0usize;
@@ -37,31 +39,94 @@ pub(super) fn clear_dir_files(dir: &Path, keep: Option<&Path>) -> (usize, u64) {
     (removed_files, removed_bytes)
 }
 
-pub(super) fn download_to_file(
-    http: &Client,
-    out: &mut NamedTempFile,
+pub(super) async fn download_to_path(
+    http: &reqwest::Client,
+    out_path: &Path,
     url: &str,
     title: &str,
 ) -> Result<(), String> {
-    let mut resp = http
-        .get(url)
-        .send()
-        .map_err(|e| format!("下载音频失败({title}): {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("下载音频失败({title}): HTTP {}", resp.status()));
+    let retries = env::var("NETEASE_AUDIO_DOWNLOAD_RETRIES")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(2);
+    let backoff_ms = env::var("NETEASE_AUDIO_DOWNLOAD_RETRY_BACKOFF_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(250);
+    let backoff_max_ms = env::var("NETEASE_AUDIO_DOWNLOAD_RETRY_BACKOFF_MAX_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(2_000);
+
+    for attempt in 0..=retries {
+        // Ensure each attempt starts from a clean file.
+        let _ = tokio::fs::remove_file(out_path).await;
+
+        let resp = match http.get(url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                if attempt < retries {
+                    sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
+                    continue;
+                }
+                return Err(format!("下载音频失败({title}): {e}"));
+            }
+        };
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            if attempt < retries && is_retryable_status(status) {
+                sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
+                continue;
+            }
+            return Err(format!("下载音频失败({title}): HTTP {status}"));
+        }
+
+        let mut file = match tokio::fs::File::create(out_path).await {
+            Ok(f) => f,
+            Err(e) => {
+                if attempt < retries {
+                    sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
+                    continue;
+                }
+                return Err(format!("创建临时文件失败({title}): {e}"));
+            }
+        };
+
+        let mut stream = resp.bytes_stream();
+        let mut failed = None::<String>;
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    if let Err(e) = file.write_all(&bytes).await {
+                        failed = Some(format!("写入临时文件失败({title}): {e}"));
+                        break;
+                    }
+                }
+                Err(e) => {
+                    failed = Some(format!("下载音频失败({title}): {e}"));
+                    break;
+                }
+            }
+        }
+
+        if failed.is_none() {
+            if let Err(e) = file.flush().await {
+                failed = Some(format!("写入临时文件失败({title}): {e}"));
+            }
+        }
+
+        if let Some(err) = failed {
+            if attempt < retries {
+                sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
+                continue;
+            }
+            return Err(err);
+        }
+
+        return Ok(());
     }
 
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        let n = resp
-            .read(&mut buf)
-            .map_err(|e| format!("下载音频失败({title}): {e}"))?;
-        if n == 0 {
-            break;
-        }
-        out.write_all(&buf[..n])
-            .map_err(|e| format!("写入临时文件失败({title}): {e}"))?;
-    }
     Ok(())
 }
 
@@ -70,4 +135,21 @@ pub(super) fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
+}
+
+fn is_retryable_status(status: StatusCode) -> bool {
+    status == StatusCode::REQUEST_TIMEOUT
+        || status == StatusCode::TOO_MANY_REQUESTS
+        || status.is_server_error()
+}
+
+async fn sleep_backoff(attempt: u32, base_ms: u64, max_ms: u64) {
+    let exp = base_ms.saturating_mul(2u64.saturating_pow(attempt.min(6)));
+    let mut ms = exp.min(max_ms);
+
+    // Tiny jitter (0..=250ms) without pulling in RNG deps.
+    let jitter = (now_ms() % 251) as u64;
+    ms = ms.saturating_add(jitter).min(max_ms);
+
+    tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
 }

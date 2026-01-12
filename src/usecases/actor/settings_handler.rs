@@ -36,6 +36,7 @@ pub(super) async fn handle_settings_command(
         }
         AppCommand::SettingsDecrease => {
             if matches!(app.view, crate::app::View::Settings) {
+                let old_br = app.play_br;
                 apply_settings_adjust(app, -1, next_song_cache);
                 sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
@@ -44,11 +45,15 @@ pub(super) async fn handle_settings_command(
                 if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
                     tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
                 }
+                if old_br != app.play_br {
+                    let _ = tx_audio.send(AudioCommand::SetCacheBr(app.play_br));
+                }
                 utils::push_state(tx_evt, app).await;
             }
         }
         AppCommand::SettingsIncrease => {
             if matches!(app.view, crate::app::View::Settings) {
+                let old_br = app.play_br;
                 apply_settings_adjust(app, 1, next_song_cache);
                 sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
@@ -56,6 +61,9 @@ pub(super) async fn handle_settings_command(
                 }
                 if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
                     tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
+                }
+                if old_br != app.play_br {
+                    let _ = tx_audio.send(AudioCommand::SetCacheBr(app.play_br));
                 }
                 utils::push_state(tx_evt, app).await;
             }

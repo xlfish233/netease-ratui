@@ -11,6 +11,8 @@ pub enum AudioCommand {
     SeekToMs(u64),
     SetVolume(f32),
     ClearCache,
+    /// 设置“仅保留当前音质(br)”的缓存策略
+    SetCacheBr(i64),
     /// 预缓存音频文件（仅缓存，不播放）
     PrefetchAudio {
         id: i64,

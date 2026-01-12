@@ -22,7 +22,7 @@
   - Seek（快进/快退）、音量调节
   - 播放模式：顺序/列表循环/单曲循环/随机
   - 播放错误恢复：URL 失效自动重取并重试（有限次）
-- 音频本地缓存（仅音乐）：按 `(song_id, br)` 落盘缓存 + LRU 自动清理（默认上限 2GB）+ 自动预缓存下一首歌（支持顺序/列表循环模式）
+- 音频本地缓存（仅音乐）：按 `(song_id, br)` 落盘缓存 + LRU 自动清理（默认上限 2GB）+ 自动预缓存下一首歌（支持顺序/列表循环模式）；**仅保留当前设置的音质 br（切换音质会清理其它 br）**
 
 ## 快速开始
 
@@ -84,6 +84,7 @@ sudo apt-get install -y libasound2-dev
 - **AppActor（应用层 / 业务编排）**：接收 `AppCommand`，维护唯一状态（当前实现为 `src/app.rs` 的 `App`），编排登录轮询、搜索、歌单链路拼装、播放队列推进等业务流程。
 - **NeteaseActor（网关 / 基础设施）**：持有 `NeteaseClient`（cookie/加密/请求发送）；接收 `NeteaseCommand` 并返回强类型 `NeteaseEvent`；不包含 UI 选择/队列策略。
 - **AudioActor（播放器 / 基础设施）**：接收 `AudioCommand` 并返回 `AudioEvent`（播放状态机、停止/切歌取消 Ended 上报）。
+- **TransferActor（下载/缓存 / 基础设施）**：异步下载音频并落盘缓存；接收 `TransferCommand` 并返回 `TransferEvent`（支持优先级、重试/超时、并发下载）。
 
 ### 网关优先级（避免预加载影响交互）
 
@@ -133,7 +134,7 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
 - `src/usecases/actor/`：`AppActor` 的内聚子模块（13 个：login, search, playlists, lyrics, player_control, settings_handler, audio_handler, playback, preload, playlist_tracks, logout, utils, next_song_cache）
 - `src/domain/`：领域模型（供业务/状态使用）。
 - `src/audio_worker.rs`：音频工作线程入口。
-- `src/audio_worker/`：音频工作线程子模块（6 个：messages, worker, player, cache, download）
+- `src/audio_worker/`：音频工作线程子模块（6 个：messages, worker, player, cache, download, transfer）
 - `src/netease/actor.rs`：`NeteaseActor`（网关层：命令/事件 + 强类型解析）。
 - `src/netease/models/`：DTO/Domain 转换与容错（响应结构变动的集中处理点）。
 - `src/netease/client/`：NeteaseClient 子模块（config, cookie, error, types）
@@ -153,7 +154,17 @@ TuiActor  <-- AppEvent  --  AppActor  -- AudioCommand  -->  AudioActor
 - 播放控制：上一首/下一首、音量调节、Seek（快进/快退）
 - 播放模式：顺序/列表循环/单曲循环/随机
 - 播放错误恢复：URL 失效自动重取、连续失败重试上限、错误提示不阻塞 UI
-- 音频本地缓存：按 `(song_id, br)` 缓存音频文件 + LRU 清理（默认上限 2GB，可通过 `NETEASE_AUDIO_CACHE_MAX_MB` 调整）
+- 音频本地缓存：按 `(song_id, br)` 缓存音频文件 + LRU 清理（默认上限 2GB，可通过 `NETEASE_AUDIO_CACHE_MAX_MB` 调整）；仅保留当前设置的音质 br
+
+### 音频缓存相关环境变量
+
+- `NETEASE_AUDIO_CACHE_MAX_MB`：音频缓存上限（默认 2048）
+- `NETEASE_AUDIO_DOWNLOAD_CONCURRENCY`：并发下载数（默认 CPU 核心数）
+- `NETEASE_AUDIO_HTTP_TIMEOUT_SECS`：HTTP 总超时（默认 30）
+- `NETEASE_AUDIO_HTTP_CONNECT_TIMEOUT_SECS`：HTTP 连接超时（默认 10）
+- `NETEASE_AUDIO_DOWNLOAD_RETRIES`：下载重试次数（默认 2）
+- `NETEASE_AUDIO_DOWNLOAD_RETRY_BACKOFF_MS`：重试退避基准毫秒（默认 250）
+- `NETEASE_AUDIO_DOWNLOAD_RETRY_BACKOFF_MAX_MS`：重试退避上限毫秒（默认 2000）
 
 ### P1：歌词与信息展示（体验分水岭）
 

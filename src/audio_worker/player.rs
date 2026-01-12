@@ -1,4 +1,3 @@
-use reqwest::blocking::Client;
 use rodio::mixer::Mixer;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::fs::File;
@@ -9,9 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
-use tempfile::NamedTempFile;
 
-use super::cache::{AudioCache, ResolvedAudio};
 use super::messages::AudioEvent;
 
 pub struct PlayerState {
@@ -19,28 +16,24 @@ pub struct PlayerState {
     #[allow(dead_code)]
     stream: OutputStream,
     pub(super) sink: Option<Arc<Sink>>,
-    temp: Option<NamedTempFile>,
     pub(super) path: Option<PathBuf>,
     end_cancel: Option<Arc<AtomicBool>>,
     play_id: u64,
     pub(super) paused: bool,
     pub(super) volume: f32,
-    pub cache: AudioCache,
 }
 
 impl PlayerState {
-    pub fn new(mixer: Mixer, stream: OutputStream, cache: AudioCache) -> Self {
+    pub fn new(mixer: Mixer, stream: OutputStream) -> Self {
         Self {
             mixer,
             stream,
             sink: None,
-            temp: None,
             path: None,
             end_cancel: None,
             play_id: 0,
             paused: false,
             volume: 1.0,
-            cache,
         }
     }
 
@@ -52,7 +45,6 @@ impl PlayerState {
         if let Some(s) = self.sink.take() {
             s.stop();
         }
-        self.temp = None;
         self.path = None;
     }
 
@@ -66,61 +58,15 @@ impl PlayerState {
     }
 }
 
-pub(super) fn play_track(
-    http: &Client,
+pub(super) fn play_path(
     tx_evt: &mpsc::Sender<AudioEvent>,
     state: &mut PlayerState,
-    song_id: i64,
-    br: i64,
-    url: &str,
     title: &str,
+    path: &Path,
 ) -> Result<(u64, Option<u64>), String> {
-    state.stop();
+    state.path = Some(path.to_path_buf());
 
-    let resolved = state
-        .cache
-        .resolve_audio_file(http, song_id, br, url, title)?;
-    let is_cached = matches!(resolved, ResolvedAudio::Path(_));
-    let path = match resolved {
-        ResolvedAudio::Path(path) => {
-            state.temp = None;
-            path
-        }
-        ResolvedAudio::Temp(tmp) => {
-            let path = tmp.path().to_path_buf();
-            state.temp = Some(tmp);
-            path
-        }
-    };
-    state.path = Some(path.clone());
-
-    let (sink, duration_ms) = match build_sink_from_path(&state.mixer, &path, None, title) {
-        Ok(v) => v,
-        Err(e) => {
-            // 如果是缓存文件损坏/解码失败，清掉缓存并重试一次下载
-            if is_cached {
-                state.cache.invalidate(song_id, br);
-                let resolved = state
-                    .cache
-                    .resolve_audio_file(http, song_id, br, url, title)?;
-                let path = match resolved {
-                    ResolvedAudio::Path(path) => {
-                        state.temp = None;
-                        path
-                    }
-                    ResolvedAudio::Temp(tmp) => {
-                        let path = tmp.path().to_path_buf();
-                        state.temp = Some(tmp);
-                        path
-                    }
-                };
-                state.path = Some(path.clone());
-                build_sink_from_path(&state.mixer, &path, None, title)?
-            } else {
-                return Err(e);
-            }
-        }
-    };
+    let (sink, duration_ms) = build_sink_from_path(&state.mixer, path, None, title)?;
     sink.set_volume(state.volume);
     if state.paused {
         sink.pause();
