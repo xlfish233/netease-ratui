@@ -73,6 +73,7 @@ pub async fn handle_netease_event(
                 &mut state.preload_mgr,
                 effects,
                 &mut state.req_id,
+                state.settings.preload_count,
             )
             .await
             {

@@ -49,12 +49,16 @@ enum UiAction {
 
 impl CoreState {
     fn new(data_dir: &std::path::Path) -> Self {
+        Self::new_with_settings(data_dir, app_settings::load_settings(data_dir))
+    }
+
+    fn new_with_settings(_data_dir: &std::path::Path, settings: app_settings::AppSettings) -> Self {
         Self {
             app: App::default(),
             req_id: 1,
             preload_mgr: PreloadManager::default(),
             next_song_cache: NextSongCacheManager::default(),
-            settings: app_settings::load_settings(data_dir),
+            settings,
             request_tracker: RequestTracker::new(),
             pending_song_url: None,
             pending_playlists: None,
@@ -130,13 +134,30 @@ pub fn spawn_app_actor(
     let (tx_evt, rx_evt) = mpsc::channel::<AppEvent>(64);
 
     let data_dir = cfg.data_dir.clone();
+
+    // 先加载 settings，以便创建配置化的 audio worker
+    let settings = app_settings::load_settings(&data_dir);
+
     let (tx_netease_hi, tx_netease_lo, mut rx_netease) =
         crate::netease::actor::spawn_netease_actor(cfg);
 
-    let (tx_audio, mut rx_audio_evt) = crate::audio_worker::spawn_audio_worker(data_dir.clone());
+    // Audio worker is now tokio-native, no need for std mpsc bridge
+    let transfer_config = crate::audio_worker::TransferConfig {
+        http_timeout_secs: settings.http_timeout_secs,
+        http_connect_timeout_secs: settings.http_connect_timeout_secs,
+        download_concurrency: settings.download_concurrency,
+        download_retries: settings.download_retries,
+        download_retry_backoff_ms: settings.download_retry_backoff_ms,
+        download_retry_backoff_max_ms: settings.download_retry_backoff_max_ms,
+        audio_cache_max_mb: settings.audio_cache_max_mb,
+    };
+    let (tx_audio, mut rx_audio_evt) = crate::audio_worker::spawn_audio_worker_with_config(
+        data_dir.clone(),
+        transfer_config,
+    );
 
     tokio::spawn(async move {
-        let mut state = CoreState::new(&data_dir);
+        let mut state = CoreState::new_with_settings(&data_dir, settings);
 
         settings_handlers::apply_settings_to_app(&mut state.app, &state.settings);
         let _ = tx_audio.send(AudioCommand::SetCacheBr(state.app.play_br)).await;

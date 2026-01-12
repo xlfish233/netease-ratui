@@ -58,6 +58,18 @@ pub(super) async fn download_to_path(
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(2_000);
 
+    download_to_path_with_config(http, out_path, url, title, retries, backoff_ms, backoff_max_ms).await
+}
+
+pub async fn download_to_path_with_config(
+    http: &reqwest::Client,
+    out_path: &Path,
+    url: &str,
+    title: &str,
+    retries: u32,
+    backoff_ms: u64,
+    backoff_max_ms: u64,
+) -> Result<(), String> {
     for attempt in 0..=retries {
         // Ensure each attempt starts from a clean file.
         let _ = tokio::fs::remove_file(out_path).await;

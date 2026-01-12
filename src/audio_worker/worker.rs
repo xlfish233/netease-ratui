@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 
 use super::messages::{AudioCommand, AudioEvent};
 use super::player::{PlayerState, play_path, seek_to_ms};
-use super::transfer::{CacheKey, Priority, TransferCommand, TransferEvent, spawn_transfer_actor};
+use super::transfer::{CacheKey, Priority, TransferCommand, TransferEvent, TransferConfig, TransferReceiver, spawn_transfer_actor_with_config};
 
 struct PendingPlay {
     token: u64,
@@ -18,11 +18,18 @@ struct PendingPlay {
 pub fn spawn_audio_worker(
     data_dir: PathBuf,
 ) -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<AudioEvent>) {
+    spawn_audio_worker_with_config(data_dir, TransferConfig::default())
+}
+
+pub fn spawn_audio_worker_with_config(
+    data_dir: PathBuf,
+    config: TransferConfig,
+) -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<AudioEvent>) {
     let (tx_cmd, mut rx_cmd) = mpsc::channel::<AudioCommand>(64);
     let (tx_evt, rx_evt) = mpsc::channel::<AudioEvent>(64);
 
     // Spawn TransferActor on tokio runtime if available; otherwise it will self-host.
-    let (tx_transfer, mut rx_transfer) = spawn_transfer_actor(data_dir.clone());
+    let (tx_transfer, mut rx_transfer) = spawn_transfer_actor_with_config(data_dir.clone(), config);
 
     tokio::spawn(async move {
         let stream = match OutputStreamBuilder::open_default_stream() {

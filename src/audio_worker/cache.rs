@@ -31,12 +31,18 @@ pub struct AudioCache {
 
 impl AudioCache {
     pub fn new(data_dir: &Path) -> Self {
-        const INDEX_VERSION: u32 = 2;
-
         let max_bytes = env::var("NETEASE_AUDIO_CACHE_MAX_MB")
             .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(2048)
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(2048);
+
+        Self::new_with_config(data_dir, max_bytes)
+    }
+
+    pub fn new_with_config(data_dir: &Path, max_mb: usize) -> Self {
+        const INDEX_VERSION: u32 = 2;
+
+        let max_bytes = (max_mb as u64)
             .saturating_mul(1024)
             .saturating_mul(1024);
 

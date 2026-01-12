@@ -1,6 +1,7 @@
 use reqwest::Client;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
+use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,7 +10,7 @@ use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 
 use super::cache::AudioCache;
-use super::download::{download_to_path, now_ms};
+use super::download::{now_ms, download_to_path_with_config};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CacheKey {
@@ -120,43 +121,98 @@ enum JobResult {
 pub type TransferSender = mpsc::Sender<TransferCommand>;
 pub type TransferReceiver = mpsc::Receiver<TransferEvent>;
 
+/// 传输配置
+#[derive(Debug, Clone)]
+pub struct TransferConfig {
+    /// HTTP 超时（秒）
+    pub http_timeout_secs: u64,
+    /// HTTP 连接超时（秒）
+    pub http_connect_timeout_secs: u64,
+    /// 下载并发数（None 表示自动检测）
+    pub download_concurrency: Option<usize>,
+    /// 下载重试次数
+    pub download_retries: u32,
+    /// 重试退避初始时间（毫秒）
+    pub download_retry_backoff_ms: u64,
+    /// 重试退避最大时间（毫秒）
+    pub download_retry_backoff_max_ms: u64,
+    /// 音频缓存大小（MB）
+    pub audio_cache_max_mb: usize,
+}
+
+impl Default for TransferConfig {
+    fn default() -> Self {
+        Self {
+            http_timeout_secs: env::var("NETEASE_AUDIO_HTTP_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(30),
+            http_connect_timeout_secs: env::var("NETEASE_AUDIO_HTTP_CONNECT_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(10),
+            download_concurrency: env::var("NETEASE_AUDIO_DOWNLOAD_CONCURRENCY")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .filter(|v| *v > 0),
+            download_retries: env::var("NETEASE_AUDIO_DOWNLOAD_RETRIES")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(2),
+            download_retry_backoff_ms: env::var("NETEASE_AUDIO_DOWNLOAD_RETRY_BACKOFF_MS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(250),
+            download_retry_backoff_max_ms: env::var("NETEASE_AUDIO_DOWNLOAD_RETRY_BACKOFF_MAX_MS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(2_000),
+            audio_cache_max_mb: env::var("NETEASE_AUDIO_CACHE_MAX_MB")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(2048),
+        }
+    }
+}
+
 pub fn spawn_transfer_actor(data_dir: PathBuf) -> (TransferSender, TransferReceiver) {
+    spawn_transfer_actor_with_config(data_dir, TransferConfig::default())
+}
+
+pub fn spawn_transfer_actor_with_config(
+    data_dir: PathBuf,
+    config: TransferConfig,
+) -> (TransferSender, TransferReceiver) {
     let (tx_cmd, rx_cmd) = mpsc::channel::<TransferCommand>(256);
     let (tx_evt, rx_evt) = mpsc::channel::<TransferEvent>(256);
 
     let run = async move {
-        let timeout_secs = std::env::var("NETEASE_AUDIO_HTTP_TIMEOUT_SECS")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(30);
-        let connect_timeout_secs = std::env::var("NETEASE_AUDIO_HTTP_CONNECT_TIMEOUT_SECS")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(10);
-
         let http = Client::builder()
-            .timeout(Duration::from_secs(timeout_secs))
-            .connect_timeout(Duration::from_secs(connect_timeout_secs))
+            .timeout(Duration::from_secs(config.http_timeout_secs))
+            .connect_timeout(Duration::from_secs(config.http_connect_timeout_secs))
             .build()
             .unwrap_or_else(|e| {
                 tracing::error!(err = %e, "初始化 HTTP 客户端失败");
                 Client::new()
             });
 
-        let concurrency = std::env::var("NETEASE_AUDIO_DOWNLOAD_CONCURRENCY")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .filter(|v| *v > 0)
-            .unwrap_or_else(|| {
-                std::thread::available_parallelism()
-                    .map(|n| n.get())
-                    .unwrap_or(1)
-            });
+        let concurrency = config.download_concurrency.unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        });
 
         let semaphore = Arc::new(Semaphore::new(concurrency));
-        tracing::info!(concurrency, "TransferActor 已启动");
+        tracing::info!(
+            concurrency,
+            timeout_secs = config.http_timeout_secs,
+            connect_timeout_secs = config.http_connect_timeout_secs,
+            retries = config.download_retries,
+            cache_max_mb = config.audio_cache_max_mb,
+            "TransferActor 已启动（配置化模式）"
+        );
 
-        let mut cache = AudioCache::new(&data_dir);
+        let mut cache = AudioCache::new_with_config(&data_dir, config.audio_cache_max_mb);
         let cache_dir = cache.cache_dir().map(|p| p.to_path_buf());
 
         let (tx_done, mut rx_done) = mpsc::channel::<JobResult>(256);
@@ -312,10 +368,13 @@ pub fn spawn_transfer_actor(data_dir: PathBuf) -> (TransferSender, TransferRecei
                 let title = st.title.clone();
                 let http = http.clone();
                 let tx_done = tx_done.clone();
+                let retries = config.download_retries;
+                let backoff_ms = config.download_retry_backoff_ms;
+                let backoff_max_ms = config.download_retry_backoff_max_ms;
 
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let res = download_to_path(&http, &tmp_path, &url, &title).await;
+                    let res = download_to_path_with_config(&http, &tmp_path, &url, &title, retries, backoff_ms, backoff_max_ms).await;
                     match res {
                         Ok(_) => {
                             let _ = tx_done.send(JobResult::Ok { key, tmp_path }).await;

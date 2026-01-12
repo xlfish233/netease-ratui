@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 use crate::core::prelude::{effects::CoreEffects, netease::NeteaseCommand, utils::next_id};
 use crate::features::playlists::PlaylistTracksLoad;
 
-pub const PRELOAD_COUNT: usize = 5;
+/// 默认预加载数量（已废弃，仅用于兼容无配置的场景）
+pub const DEFAULT_PRELOAD_COUNT: usize = 5;
 
 #[derive(Debug, Clone, Copy)]
 enum PreloadPendingKind {
@@ -41,6 +42,7 @@ impl PreloadManager {
         app: &mut App,
         effects: &mut CoreEffects,
         req_id: &mut u64,
+        preload_count: usize,
     ) {
         self.generation = self.generation.wrapping_add(1);
         self.pending.clear();
@@ -49,7 +51,7 @@ impl PreloadManager {
         app.playlist_preloads.clear();
         app.preload_summary.clear();
 
-        let selected = select_preload_targets(&app.playlists, PRELOAD_COUNT);
+        let selected = select_preload_targets(&app.playlists, preload_count);
         if selected.is_empty() {
             return;
         }

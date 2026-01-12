@@ -144,6 +144,7 @@ pub async fn handle_playlists_event(
     preload_mgr: &mut PreloadManager,
     effects: &mut CoreEffects,
     next_req_id: &mut u64,
+    preload_count: usize,
 ) -> bool {
     if *pending_playlists != Some(req_id) {
         return false;
@@ -160,7 +161,7 @@ pub async fn handle_playlists_event(
     app.playlist_tracks_selected = 0;
 
     preload_mgr
-        .start_for_playlists(app, effects, next_req_id)
+        .start_for_playlists(app, effects, next_req_id, preload_count)
         .await;
 
     refresh_playlist_list_status(app);
