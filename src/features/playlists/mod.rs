@@ -1,6 +1,6 @@
 use crate::app::{PlaylistMode, PlaylistPreload, PreloadStatus};
 
-use crate::core::infra::{NextSongCacheManager, PreloadManager};
+use crate::core::infra::{NextSongCacheManager, PreloadManager, RequestKey, RequestTracker};
 use crate::core::prelude::{
     app::App, effects::CoreEffects, messages::AppCommand, netease::NeteaseCommand,
 };
@@ -17,9 +17,9 @@ pub async fn handle_playlists_command(
     cmd: AppCommand,
     app: &mut App,
     req_id: &mut u64,
-    pending_song_url: &mut Option<(u64, String)>,
-    pending_playlist_detail: &mut Option<u64>,
-    pending_playlist_tracks: &mut Option<PlaylistTracksLoad>,
+    request_tracker: &mut RequestTracker<RequestKey>,
+    song_request_titles: &mut std::collections::HashMap<i64, String>,
+    playlist_tracks_loader: &mut Option<PlaylistTracksLoad>,
     preload_mgr: &mut PreloadManager,
     effects: &mut CoreEffects,
     next_song_cache: &mut NextSongCacheManager,
@@ -65,10 +65,10 @@ pub async fn handle_playlists_command(
                 preload_mgr.cancel_playlist(app, playlist_id);
 
                 app.playlists_status = "加载歌单歌曲中...".to_owned();
-                *pending_playlist_tracks = None;
+                *playlist_tracks_loader = None;
                 effects.emit_state(app);
-                let id = utils::next_id(req_id);
-                *pending_playlist_detail = Some(id);
+                let id =
+                    request_tracker.issue(RequestKey::PlaylistDetail, || utils::next_id(req_id));
                 effects.send_netease_hi(NeteaseCommand::PlaylistDetail {
                     req_id: id,
                     playlist_id,
@@ -99,8 +99,9 @@ pub async fn handle_playlists_command(
                 next_song_cache.reset(); // 失效预缓存
                 let title = format!("{} - {}", s.name, s.artists);
                 effects.emit_state(app);
-                let id = utils::next_id(req_id);
-                *pending_song_url = Some((id, title));
+                song_request_titles.clear();
+                let id = request_tracker.issue(RequestKey::SongUrl, || utils::next_id(req_id));
+                song_request_titles.insert(s.id, title);
                 effects.send_netease_hi(NeteaseCommand::SongUrl {
                     req_id: id,
                     id: s.id,
@@ -118,14 +119,12 @@ pub async fn handle_playlists_command(
 pub async fn handle_playlists_back_command(
     cmd: AppCommand,
     app: &mut App,
-    pending_playlist_detail: &mut Option<u64>,
-    pending_playlist_tracks: &mut Option<PlaylistTracksLoad>,
+    playlist_tracks_loader: &mut Option<PlaylistTracksLoad>,
     effects: &mut CoreEffects,
 ) -> bool {
     if matches!(cmd, AppCommand::Back) && matches!(app.view, crate::app::View::Playlists) {
         app.playlist_mode = PlaylistMode::List;
-        *pending_playlist_detail = None;
-        *pending_playlist_tracks = None;
+        *playlist_tracks_loader = None;
         refresh_playlist_list_status(app);
         effects.emit_state(app);
         return true;
@@ -140,16 +139,16 @@ pub async fn handle_playlists_event(
     req_id: u64,
     playlists: Vec<crate::domain::model::Playlist>,
     app: &mut App,
-    pending_playlists: &mut Option<u64>,
+    request_tracker: &mut RequestTracker<RequestKey>,
     preload_mgr: &mut PreloadManager,
     effects: &mut CoreEffects,
     next_req_id: &mut u64,
     preload_count: usize,
 ) -> bool {
-    if *pending_playlists != Some(req_id) {
+    let key = RequestKey::Playlists;
+    if !request_tracker.accept(&key, req_id) {
         return false;
     }
-    *pending_playlists = None;
     app.playlists = playlists;
     app.playlists_selected = app
         .playlists
@@ -177,8 +176,8 @@ pub async fn handle_playlist_detail_event(
     playlist_id: i64,
     ids: Vec<i64>,
     app: &mut App,
-    pending_playlist_detail: &mut Option<u64>,
-    pending_playlist_tracks: &mut Option<PlaylistTracksLoad>,
+    request_tracker: &mut RequestTracker<RequestKey>,
+    playlist_tracks_loader: &mut Option<PlaylistTracksLoad>,
     preload_mgr: &PreloadManager,
     effects: &mut CoreEffects,
     next_req_id: &mut u64,
@@ -188,10 +187,10 @@ pub async fn handle_playlist_detail_event(
         return Some(false); // 由预加载管理器处理
     }
 
-    if *pending_playlist_detail != Some(req_id) {
+    let key = RequestKey::PlaylistDetail;
+    if !request_tracker.accept(&key, req_id) {
         return None;
     }
-    *pending_playlist_detail = None;
     if ids.is_empty() {
         app.playlists_status = "歌单为空或无法解析".to_owned();
         effects.emit_state(app);
@@ -202,10 +201,11 @@ pub async fn handle_playlist_detail_event(
     effects.emit_state(app);
 
     let mut loader = PlaylistTracksLoad::new(playlist_id, ids);
-    let id = utils::next_id(next_req_id);
+    let id =
+        request_tracker.issue(RequestKey::PlaylistTracks, || utils::next_id(next_req_id));
     let chunk = loader.next_chunk();
     loader.inflight_req_id = Some(id);
-    *pending_playlist_tracks = Some(loader);
+    *playlist_tracks_loader = Some(loader);
     effects.send_netease_hi(NeteaseCommand::SongDetailByIds {
         req_id: id,
         ids: chunk,
@@ -220,7 +220,8 @@ pub async fn handle_songs_event(
     req_id: u64,
     songs: Vec<crate::domain::model::Song>,
     app: &mut App,
-    pending_playlist_tracks: &mut Option<PlaylistTracksLoad>,
+    request_tracker: &mut RequestTracker<RequestKey>,
+    playlist_tracks_loader: &mut Option<PlaylistTracksLoad>,
     preload_mgr: &mut PreloadManager,
     effects: &mut CoreEffects,
     next_req_id: &mut u64,
@@ -230,10 +231,13 @@ pub async fn handle_songs_event(
         return Some(false); // 由预加载管理器处理
     }
 
-    let Some(loader) = pending_playlist_tracks.as_mut() else {
+    let Some(loader) = playlist_tracks_loader.as_mut() else {
         return Some(false);
     };
     if loader.inflight_req_id != Some(req_id) {
+        return Some(false);
+    }
+    if !request_tracker.accept(&RequestKey::PlaylistTracks, req_id) {
         return Some(false);
     }
     loader.inflight_req_id = None;
@@ -243,7 +247,7 @@ pub async fn handle_songs_event(
     effects.emit_state(app);
 
     if loader.is_done() {
-        let Some(loader) = pending_playlist_tracks.take() else {
+        let Some(loader) = playlist_tracks_loader.take() else {
             tracing::warn!("pending_playlist_tracks 丢失（已完成但无法 take）");
             return Some(true);
         };
@@ -271,7 +275,8 @@ pub async fn handle_songs_event(
         effects.emit_state(app);
         Some(true)
     } else {
-        let id = utils::next_id(next_req_id);
+        let id =
+            request_tracker.issue(RequestKey::PlaylistTracks, || utils::next_id(next_req_id));
         let chunk = loader.next_chunk();
         loader.inflight_req_id = Some(id);
         effects.send_netease_hi(NeteaseCommand::SongDetailByIds {

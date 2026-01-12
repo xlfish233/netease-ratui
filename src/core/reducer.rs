@@ -34,11 +34,8 @@ struct CoreState {
     next_song_cache: NextSongCacheManager,
     settings: app_settings::AppSettings,
     request_tracker: RequestTracker<RequestKey>,
-    pending_song_url: Option<(u64, String)>,
-    pending_playlists: Option<u64>,
-    pending_playlist_detail: Option<u64>,
-    pending_playlist_tracks: Option<playlists::PlaylistTracksLoad>,
-    pending_lyric: Option<(u64, i64)>,
+    playlist_tracks_loader: Option<playlists::PlaylistTracksLoad>,
+    song_request_titles: std::collections::HashMap<i64, String>,
 }
 
 enum UiAction {
@@ -60,11 +57,8 @@ impl CoreState {
             next_song_cache: NextSongCacheManager::default(),
             settings,
             request_tracker: RequestTracker::new(),
-            pending_song_url: None,
-            pending_playlists: None,
-            pending_playlist_detail: None,
-            pending_playlist_tracks: None,
-            pending_lyric: None,
+            playlist_tracks_loader: None,
+            song_request_titles: Default::default(),
         }
     }
 }

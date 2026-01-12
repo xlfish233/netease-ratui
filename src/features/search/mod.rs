@@ -16,7 +16,7 @@ pub async fn handle_search_command(
     app: &mut App,
     req_id: &mut u64,
     request_tracker: &mut RequestTracker<RequestKey>,
-    pending_song_url: &mut Option<(u64, String)>,
+    song_request_titles: &mut std::collections::HashMap<i64, String>,
     effects: &mut CoreEffects,
 ) -> bool {
     match cmd {
@@ -70,8 +70,9 @@ pub async fn handle_search_command(
                 app.queue_pos = None;
                 let title = format!("{} - {}", s.name, s.artists);
                 effects.emit_state(app);
-                let id = utils::next_id(req_id);
-                *pending_song_url = Some((id, title.clone()));
+                song_request_titles.clear();
+                let id = request_tracker.issue(RequestKey::SongUrl, || utils::next_id(req_id));
+                song_request_titles.insert(s.id, title.clone());
 
                 // 先停止当前播放
                 effects.send_audio(AudioCommand::Stop);

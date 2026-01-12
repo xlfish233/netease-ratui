@@ -1,4 +1,4 @@
-﻿use crate::core::prelude::{app::App, effects::CoreEffects, messages::AppCommand};
+﻿use crate::core::prelude::{app::App, effects::CoreEffects, infra::{RequestKey, RequestTracker}, messages::AppCommand};
 use crate::settings;
 
 /// 处理歌词相关的 AppCommand
@@ -73,13 +73,12 @@ pub async fn handle_lyric_event(
     song_id: i64,
     lyrics: Vec<crate::domain::model::LyricLine>,
     app: &mut App,
-    pending_lyric: &mut Option<(u64, i64)>,
+    request_tracker: &mut RequestTracker<RequestKey>,
     effects: &mut CoreEffects,
 ) -> bool {
-    if pending_lyric.map(|(rid, _)| rid) != Some(req_id) {
+    if !request_tracker.accept(&RequestKey::Lyric, req_id) {
         return false;
     }
-    *pending_lyric = None;
     app.lyrics_song_id = Some(song_id);
     app.lyrics = lyrics;
     app.lyrics_selected = 0;

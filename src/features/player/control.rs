@@ -1,12 +1,13 @@
 use crate::core::prelude::{
-    app::App, audio::AudioCommand, effects::CoreEffects, infra::NextSongCacheManager,
+    app::App, audio::AudioCommand, effects::CoreEffects, infra::{NextSongCacheManager, RequestKey, RequestTracker},
     messages::AppCommand,
 };
 use crate::features::player::playback::{play_next, play_prev, seek_relative};
 
 pub struct PlayerControlCtx<'a> {
     pub req_id: &'a mut u64,
-    pub pending_song_url: &'a mut Option<(u64, String)>,
+    pub request_tracker: &'a mut RequestTracker<RequestKey>,
+    pub song_request_titles: &'a mut std::collections::HashMap<i64, String>,
     pub next_song_cache: &'a mut NextSongCacheManager,
     pub effects: &'a mut CoreEffects,
 }
@@ -32,7 +33,8 @@ pub async fn handle_player_control_command(
         AppCommand::PlayerPrev => {
             play_prev(
                 app,
-                ctx.pending_song_url,
+                ctx.request_tracker,
+                ctx.song_request_titles,
                 ctx.req_id,
                 ctx.next_song_cache,
                 ctx.effects,
@@ -43,7 +45,8 @@ pub async fn handle_player_control_command(
         AppCommand::PlayerNext => {
             play_next(
                 app,
-                ctx.pending_song_url,
+                ctx.request_tracker,
+                ctx.song_request_titles,
                 ctx.req_id,
                 ctx.next_song_cache,
                 ctx.effects,

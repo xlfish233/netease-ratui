@@ -2,15 +2,15 @@ use crate::core::prelude::{
     app::App,
     audio::{AudioCommand, AudioEvent},
     effects::CoreEffects,
-    infra::NextSongCacheManager,
+    infra::{NextSongCacheManager, RequestKey, RequestTracker},
     netease::NeteaseCommand,
 };
 use crate::core::utils;
 use crate::features::player::playback::play_next;
 
 pub struct AudioEventCtx<'a> {
-    pub pending_song_url: &'a mut Option<(u64, String)>,
-    pub pending_lyric: &'a mut Option<(u64, i64)>,
+    pub request_tracker: &'a mut RequestTracker<RequestKey>,
+    pub song_request_titles: &'a mut std::collections::HashMap<i64, String>,
     pub req_id: &'a mut u64,
     pub next_song_cache: &'a mut NextSongCacheManager,
 }
@@ -47,8 +47,9 @@ pub async fn handle_audio_event(
             app.lyrics_song_id = None;
             app.lyrics.clear();
             app.lyrics_status = "加载歌词...".to_owned();
-            let id = utils::next_id(ctx.req_id);
-            *ctx.pending_lyric = Some((id, song_id));
+            let id = ctx
+                .request_tracker
+                .issue(RequestKey::Lyric, || utils::next_id(ctx.req_id));
             effects.send_netease_hi_warn(
                 NeteaseCommand::Lyric {
                     req_id: id,
@@ -93,7 +94,8 @@ pub async fn handle_audio_event(
             }
             play_next(
                 app,
-                ctx.pending_song_url,
+                ctx.request_tracker,
+                ctx.song_request_titles,
                 ctx.req_id,
                 ctx.next_song_cache,
                 effects,
@@ -112,16 +114,19 @@ pub async fn handle_audio_event(
                             .and_then(|pos| app.queue.get(pos))
                             .map(|s| s.id)
                     })
-                {
-                    let title = app
-                        .queue_pos
+                    {
+                        let title = app
+                            .queue_pos
                         .and_then(|pos| app.queue.get(pos))
                         .map(|s| format!("{} - {}", s.name, s.artists))
                         .or_else(|| app.now_playing.clone())
-                        .unwrap_or_else(|| "未知歌曲".to_owned());
+                            .unwrap_or_else(|| "未知歌曲".to_owned());
                     app.play_status = format!("播放失败，正在重试({}/2)...", app.play_error_count);
-                    let id = utils::next_id(ctx.req_id);
-                    *ctx.pending_song_url = Some((id, title));
+                    ctx.song_request_titles.clear();
+                    let id = ctx
+                        .request_tracker
+                        .issue(RequestKey::SongUrl, || utils::next_id(ctx.req_id));
+                    ctx.song_request_titles.insert(song_id, title);
                     effects.send_netease_hi(crate::netease::actor::NeteaseCommand::SongUrl {
                         req_id: id,
                         id: song_id,

@@ -47,7 +47,7 @@ pub async fn handle_netease_event(
                 *song_id,
                 lyrics.clone(),
                 &mut state.app,
-                &mut state.pending_lyric,
+                &mut state.request_tracker,
                 effects,
             )
             .await
@@ -60,8 +60,11 @@ pub async fn handle_netease_event(
 mod tests {
     use super::handle_ui;
     use crate::app::View;
+    use crate::core::infra::RequestKey;
     use crate::core::reducer::{CoreState, UiAction};
+    use crate::domain::model::LyricLine;
     use crate::messages::app::AppCommand;
+    use crate::netease::actor::NeteaseEvent;
 
     #[tokio::test]
     async fn lyrics_offset_updates_settings() {
@@ -81,5 +84,47 @@ mod tests {
         assert!(matches!(outcome, UiAction::Handled));
         assert_eq!(state.app.lyrics_offset_ms, 200);
         assert_eq!(state.settings.lyrics_offset_ms, 200);
+    }
+
+    #[tokio::test]
+    async fn outdated_lyric_is_dropped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut state = CoreState::new(dir.path());
+        let mut effects = crate::core::effects::CoreEffects::default();
+
+        state
+            .request_tracker
+            .issue(RequestKey::Lyric, || 1);
+        state
+            .request_tracker
+            .issue(RequestKey::Lyric, || 2);
+
+        let stale = NeteaseEvent::Lyric {
+            req_id: 1,
+            song_id: 1,
+            lyrics: vec![LyricLine {
+                time_ms: 0,
+                text: "old".to_owned(),
+                translation: None,
+            }],
+        };
+        let handled_stale = super::handle_netease_event(&stale, &mut state, &mut effects).await;
+        assert!(!handled_stale);
+        assert!(state.app.lyrics.is_empty());
+        assert_eq!(state.app.lyrics_status, "暂无歌词");
+
+        let fresh = NeteaseEvent::Lyric {
+            req_id: 2,
+            song_id: 2,
+            lyrics: vec![LyricLine {
+                time_ms: 0,
+                text: "new".to_owned(),
+                translation: None,
+            }],
+        };
+        let handled_fresh = super::handle_netease_event(&fresh, &mut state, &mut effects).await;
+        assert!(handled_fresh);
+        assert_eq!(state.app.lyrics_song_id, Some(2));
+        assert_eq!(state.app.lyrics_status, "歌词: 1 行");
     }
 }

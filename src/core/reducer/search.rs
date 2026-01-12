@@ -24,7 +24,7 @@ pub async fn handle_ui(
         &mut state.app,
         &mut state.req_id,
         &mut state.request_tracker,
-        &mut state.pending_song_url,
+        &mut state.song_request_titles,
         effects,
     )
     .await;
@@ -57,8 +57,9 @@ mod tests {
     use super::handle_ui;
     use crate::core::effects::CoreEffect;
     use crate::core::reducer::{CoreState, UiAction};
+    use crate::domain::model::Song;
     use crate::messages::app::AppCommand;
-    use crate::netease::actor::NeteaseCommand;
+    use crate::netease::actor::{NeteaseCommand, NeteaseEvent};
 
     #[tokio::test]
     async fn search_submit_emits_request() {
@@ -80,5 +81,48 @@ mod tests {
                 }
             )
         }));
+    }
+
+    #[tokio::test]
+    async fn outdated_search_response_is_dropped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut state = CoreState::new(dir.path());
+        let mut effects = crate::core::effects::CoreEffects::default();
+
+        state.app.search_input = "first".to_owned();
+        let _ = handle_ui(&AppCommand::SearchSubmit, &mut state, &mut effects).await;
+        state.app.search_input = "second".to_owned();
+        let _ = handle_ui(&AppCommand::SearchSubmit, &mut state, &mut effects).await;
+
+        let stale_songs = vec![Song {
+            id: 1,
+            name: "old".to_owned(),
+            artists: "a".to_owned(),
+        }];
+        let stale_evt = NeteaseEvent::SearchSongs {
+            req_id: 1,
+            songs: stale_songs.clone(),
+        };
+        let handled_stale = super::handle_netease_event(&stale_evt, &mut state, &mut effects).await;
+        assert!(!handled_stale);
+        assert!(state.app.search_results.is_empty());
+        assert_eq!(state.app.search_status, "搜索中...");
+
+        let fresh_songs = vec![Song {
+            id: 2,
+            name: "new".to_owned(),
+            artists: "b".to_owned(),
+        }];
+        let fresh_evt = NeteaseEvent::SearchSongs {
+            req_id: 2,
+            songs: fresh_songs.clone(),
+        };
+        let handled_fresh =
+            super::handle_netease_event(&fresh_evt, &mut state, &mut effects).await;
+
+        assert!(handled_fresh);
+        assert_eq!(state.app.search_results.len(), 1);
+        assert_eq!(state.app.search_results[0].id, 2);
+        assert_eq!(state.app.search_status, "结果: 1 首");
     }
 }

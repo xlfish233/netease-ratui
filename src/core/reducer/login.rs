@@ -40,7 +40,6 @@ pub async fn handle_netease_event(
         &mut state.app,
         &mut state.req_id,
         &mut state.request_tracker,
-        &mut state.pending_playlists,
         effects,
     )
     .await

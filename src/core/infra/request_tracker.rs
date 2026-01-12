@@ -92,6 +92,16 @@ pub enum RequestKey {
     LoginSetCookie,
     /// 用户账号信息请求
     Account,
+    /// 用户歌单列表请求
+    Playlists,
+    /// 歌单详情（歌曲 ID 列表）请求
+    PlaylistDetail,
+    /// 歌单歌曲详情分页请求
+    PlaylistTracks,
+    /// 播放链接请求
+    SongUrl,
+    /// 歌词请求
+    Lyric,
 }
 
 #[cfg(test)]

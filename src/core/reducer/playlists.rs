@@ -31,9 +31,9 @@ pub async fn handle_ui(
                 playlist_cmd,
                 &mut state.app,
                 &mut state.req_id,
-                &mut state.pending_song_url,
-                &mut state.pending_playlist_detail,
-                &mut state.pending_playlist_tracks,
+                &mut state.request_tracker,
+                &mut state.song_request_titles,
+                &mut state.playlist_tracks_loader,
                 &mut state.preload_mgr,
                 effects,
                 &mut state.next_song_cache,
@@ -45,8 +45,7 @@ pub async fn handle_ui(
             playlists_handlers::handle_playlists_back_command(
                 AppCommand::Back,
                 &mut state.app,
-                &mut state.pending_playlist_detail,
-                &mut state.pending_playlist_tracks,
+                &mut state.playlist_tracks_loader,
                 effects,
             )
             .await;
@@ -69,7 +68,7 @@ pub async fn handle_netease_event(
                 *req_id,
                 playlists.clone(),
                 &mut state.app,
-                &mut state.pending_playlists,
+                &mut state.request_tracker,
                 &mut state.preload_mgr,
                 effects,
                 &mut state.req_id,
@@ -109,8 +108,8 @@ pub async fn handle_netease_event(
                 *playlist_id,
                 ids.clone(),
                 &mut state.app,
-                &mut state.pending_playlist_detail,
-                &mut state.pending_playlist_tracks,
+                &mut state.request_tracker,
+                &mut state.playlist_tracks_loader,
                 &state.preload_mgr,
                 effects,
                 &mut state.req_id,
@@ -138,7 +137,8 @@ pub async fn handle_netease_event(
                 *req_id,
                 songs.clone(),
                 &mut state.app,
-                &mut state.pending_playlist_tracks,
+                &mut state.request_tracker,
+                &mut state.playlist_tracks_loader,
                 &mut state.preload_mgr,
                 effects,
                 &mut state.req_id,
@@ -159,6 +159,7 @@ mod tests {
     use super::handle_ui;
     use crate::app::{PlaylistMode, Playlist};
     use crate::core::effects::CoreEffect;
+    use crate::core::infra::RequestKey;
     use crate::core::reducer::{CoreState, UiAction};
     use crate::messages::app::AppCommand;
     use crate::netease::actor::NeteaseCommand;
@@ -182,7 +183,12 @@ mod tests {
 
         assert!(matches!(outcome, UiAction::Handled));
         assert_eq!(state.app.playlists_status, "加载歌单歌曲中...");
-        assert!(state.pending_playlist_detail.is_some());
+        assert_eq!(
+            state
+                .request_tracker
+                .get_pending(&RequestKey::PlaylistDetail),
+            Some(1)
+        );
         assert!(effects.actions.iter().any(|effect| {
             matches!(
                 effect,

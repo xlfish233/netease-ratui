@@ -77,7 +77,6 @@ pub async fn handle_login_event(
     app: &mut App,
     req_id: &mut u64,
     request_tracker: &mut RequestTracker<RequestKey>,
-    pending_playlists: &mut Option<u64>,
     effects: &mut CoreEffects,
 ) -> bool {
     match evt {
@@ -181,8 +180,8 @@ pub async fn handle_login_event(
             app.playlists_status = "正在加载用户歌单...".to_owned();
             effects.emit_state(app);
             // 发送 UserPlaylists 请求
-            let id = utils::next_id(req_id);
-            *pending_playlists = Some(id);
+            let key = RequestKey::Playlists;
+            let id = request_tracker.issue(key, || utils::next_id(req_id));
             effects.send_netease_hi_warn(
                 NeteaseCommand::UserPlaylists {
                     req_id: id,

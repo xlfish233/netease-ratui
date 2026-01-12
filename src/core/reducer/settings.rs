@@ -113,11 +113,8 @@ pub async fn handle_ui(
             );
 
             state.request_tracker.reset_all();
-            state.pending_song_url = None;
-            state.pending_playlists = None;
-            state.pending_playlist_detail = None;
-            state.pending_playlist_tracks = None;
-            state.pending_lyric = None;
+            state.playlist_tracks_loader = None;
+            state.song_request_titles.clear();
 
             state.preload_mgr.reset(&mut state.app);
             state.next_song_cache.reset();

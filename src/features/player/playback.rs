@@ -3,7 +3,7 @@ use rand::Rng;
 use std::time::Duration;
 
 use crate::core::prelude::{
-    app::App, audio::AudioCommand, effects::CoreEffects, infra::NextSongCacheManager,
+    app::App, audio::AudioCommand, effects::CoreEffects, infra::{NextSongCacheManager, RequestKey, RequestTracker},
     netease::NeteaseCommand,
 };
 use crate::core::utils;
@@ -100,7 +100,8 @@ pub fn calculate_next_index(app: &App) -> Option<usize> {
 
 pub(super) async fn request_play_at_index(
     app: &mut App,
-    pending_song_url: &mut Option<(u64, String)>,
+    request_tracker: &mut RequestTracker<RequestKey>,
+    song_request_titles: &mut std::collections::HashMap<i64, String>,
     req_id: &mut u64,
     idx: usize,
     next_song_cache: &mut NextSongCacheManager,
@@ -115,8 +116,9 @@ pub(super) async fn request_play_at_index(
     }
     app.play_status = "获取播放链接...".to_owned();
     let title = format!("{} - {}", s.name, s.artists);
-    let id = utils::next_id(req_id);
-    *pending_song_url = Some((id, title));
+    song_request_titles.clear();
+    let id = request_tracker.issue(RequestKey::SongUrl, || utils::next_id(req_id));
+    song_request_titles.insert(s.id, title);
     effects.send_netease_hi(NeteaseCommand::SongUrl {
         req_id: id,
         id: s.id,
@@ -129,7 +131,8 @@ pub(super) async fn request_play_at_index(
 
 pub(super) async fn play_next(
     app: &mut App,
-    pending_song_url: &mut Option<(u64, String)>,
+    request_tracker: &mut RequestTracker<RequestKey>,
+    song_request_titles: &mut std::collections::HashMap<i64, String>,
     req_id: &mut u64,
     next_song_cache: &mut NextSongCacheManager,
     effects: &mut CoreEffects,
@@ -172,7 +175,8 @@ pub(super) async fn play_next(
 
     request_play_at_index(
         app,
-        pending_song_url,
+        request_tracker,
+        song_request_titles,
         req_id,
         next_idx,
         next_song_cache,
@@ -183,7 +187,8 @@ pub(super) async fn play_next(
 
 pub(super) async fn play_prev(
     app: &mut App,
-    pending_song_url: &mut Option<(u64, String)>,
+    request_tracker: &mut RequestTracker<RequestKey>,
+    song_request_titles: &mut std::collections::HashMap<i64, String>,
     req_id: &mut u64,
     next_song_cache: &mut NextSongCacheManager,
     effects: &mut CoreEffects,
@@ -224,7 +229,8 @@ pub(super) async fn play_prev(
 
     request_play_at_index(
         app,
-        pending_song_url,
+        request_tracker,
+        song_request_titles,
         req_id,
         prev_idx,
         next_song_cache,
