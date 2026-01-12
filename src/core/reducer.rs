@@ -15,8 +15,8 @@ use crate::features::settings as settings_handlers;
 
 mod login;
 mod lyrics;
-mod playlists;
 mod player;
+mod playlists;
 mod search;
 mod settings;
 
@@ -45,6 +45,7 @@ enum UiAction {
 }
 
 impl CoreState {
+    #[cfg(test)]
     fn new(data_dir: &std::path::Path) -> Self {
         Self::new_with_settings(data_dir, app_settings::load_settings(data_dir))
     }
@@ -79,19 +80,34 @@ async fn reduce(
                 UiAction::NotHandled => {}
             }
 
-            if matches!(login::handle_ui(&cmd, state, effects).await, UiAction::Handled) {
+            if matches!(
+                login::handle_ui(&cmd, state, effects).await,
+                UiAction::Handled
+            ) {
                 return false;
             }
-            if matches!(search::handle_ui(&cmd, state, effects).await, UiAction::Handled) {
+            if matches!(
+                search::handle_ui(&cmd, state, effects).await,
+                UiAction::Handled
+            ) {
                 return false;
             }
-            if matches!(playlists::handle_ui(&cmd, state, effects).await, UiAction::Handled) {
+            if matches!(
+                playlists::handle_ui(&cmd, state, effects).await,
+                UiAction::Handled
+            ) {
                 return false;
             }
-            if matches!(player::handle_ui(&cmd, state, effects).await, UiAction::Handled) {
+            if matches!(
+                player::handle_ui(&cmd, state, effects).await,
+                UiAction::Handled
+            ) {
                 return false;
             }
-            if matches!(lyrics::handle_ui(&cmd, state, effects, data_dir).await, UiAction::Handled) {
+            if matches!(
+                lyrics::handle_ui(&cmd, state, effects, data_dir).await,
+                UiAction::Handled
+            ) {
                 return false;
             }
         }
@@ -145,16 +161,16 @@ pub fn spawn_app_actor(
         download_retry_backoff_max_ms: settings.download_retry_backoff_max_ms,
         audio_cache_max_mb: settings.audio_cache_max_mb,
     };
-    let (tx_audio, mut rx_audio_evt) = crate::audio_worker::spawn_audio_worker_with_config(
-        data_dir.clone(),
-        transfer_config,
-    );
+    let (tx_audio, mut rx_audio_evt) =
+        crate::audio_worker::spawn_audio_worker_with_config(data_dir.clone(), transfer_config);
 
     tokio::spawn(async move {
         let mut state = CoreState::new_with_settings(&data_dir, settings);
 
         settings_handlers::apply_settings_to_app(&mut state.app, &state.settings);
-        let _ = tx_audio.send(AudioCommand::SetCacheBr(state.app.play_br)).await;
+        let _ = tx_audio
+            .send(AudioCommand::SetCacheBr(state.app.play_br))
+            .await;
 
         let mut qr_poll = tokio::time::interval(Duration::from_secs(2));
         let dispatch = CoreDispatch {

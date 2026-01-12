@@ -27,7 +27,7 @@ pub(super) async fn run_tui_internal(
     loop {
         while let Ok(evt) = rx.try_recv() {
             match evt {
-                AppEvent::State(s) => app = s,
+                AppEvent::State(s) => app = *s,
                 AppEvent::Toast(s) => apply_status_message(&mut app, s),
                 AppEvent::Error(e) => apply_status_message(&mut app, format!("错误: {e}")),
             }

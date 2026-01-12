@@ -114,13 +114,13 @@ pub async fn handle_audio_event(
                             .and_then(|pos| app.queue.get(pos))
                             .map(|s| s.id)
                     })
-                    {
-                        let title = app
-                            .queue_pos
+                {
+                    let title = app
+                        .queue_pos
                         .and_then(|pos| app.queue.get(pos))
                         .map(|s| format!("{} - {}", s.name, s.artists))
                         .or_else(|| app.now_playing.clone())
-                            .unwrap_or_else(|| "未知歌曲".to_owned());
+                        .unwrap_or_else(|| "未知歌曲".to_owned());
                     app.play_status = format!("播放失败，正在重试({}/2)...", app.play_error_count);
                     ctx.song_request_titles.clear();
                     let id = ctx

@@ -11,7 +11,7 @@ pub async fn handle_ui(
     state: &mut CoreState,
     effects: &mut CoreEffects,
 ) -> UiAction {
-    let action = match cmd {
+    match cmd {
         AppCommand::PlaylistsMoveUp
         | AppCommand::PlaylistsMoveDown
         | AppCommand::PlaylistsOpenSelected
@@ -52,9 +52,7 @@ pub async fn handle_ui(
             UiAction::Handled
         }
         _ => UiAction::NotHandled,
-    };
-
-    action
+    }
 }
 
 pub async fn handle_netease_event(
@@ -157,7 +155,7 @@ pub async fn handle_netease_event(
 #[cfg(test)]
 mod tests {
     use super::handle_ui;
-    use crate::app::{PlaylistMode, Playlist};
+    use crate::app::{Playlist, PlaylistMode};
     use crate::core::effects::CoreEffect;
     use crate::core::infra::RequestKey;
     use crate::core::reducer::{CoreState, UiAction};

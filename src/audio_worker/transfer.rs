@@ -10,7 +10,7 @@ use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 
 use super::cache::AudioCache;
-use super::download::{now_ms, download_to_path_with_config};
+use super::download::{download_to_path_with_config, now_ms};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CacheKey {
@@ -173,10 +173,6 @@ impl Default for TransferConfig {
                 .unwrap_or(2048),
         }
     }
-}
-
-pub fn spawn_transfer_actor(data_dir: PathBuf) -> (TransferSender, TransferReceiver) {
-    spawn_transfer_actor_with_config(data_dir, TransferConfig::default())
 }
 
 pub fn spawn_transfer_actor_with_config(
@@ -374,7 +370,16 @@ pub fn spawn_transfer_actor_with_config(
 
                 tokio::spawn(async move {
                     let _permit = permit;
-                    let res = download_to_path_with_config(&http, &tmp_path, &url, &title, retries, backoff_ms, backoff_max_ms).await;
+                    let res = download_to_path_with_config(
+                        &http,
+                        &tmp_path,
+                        &url,
+                        &title,
+                        retries,
+                        backoff_ms,
+                        backoff_max_ms,
+                    )
+                    .await;
                     match res {
                         Ok(_) => {
                             let _ = tx_done.send(JobResult::Ok { key, tmp_path }).await;

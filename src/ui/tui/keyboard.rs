@@ -146,12 +146,12 @@ pub(super) async fn handle_key(
                     _ => PlaylistMode::List,
                 };
                 match playlist_mode {
-                PlaylistMode::List => {
-                    let _ = tx.send(AppCommand::PlaylistsMoveUp).await;
-                }
-                PlaylistMode::Tracks => {
-                    let _ = tx.send(AppCommand::PlaylistTracksMoveUp).await;
-                }
+                    PlaylistMode::List => {
+                        let _ = tx.send(AppCommand::PlaylistsMoveUp).await;
+                    }
+                    PlaylistMode::Tracks => {
+                        let _ = tx.send(AppCommand::PlaylistTracksMoveUp).await;
+                    }
                 }
             }
             KeyCode::Down => {
@@ -160,12 +160,12 @@ pub(super) async fn handle_key(
                     _ => PlaylistMode::List,
                 };
                 match playlist_mode {
-                PlaylistMode::List => {
-                    let _ = tx.send(AppCommand::PlaylistsMoveDown).await;
-                }
-                PlaylistMode::Tracks => {
-                    let _ = tx.send(AppCommand::PlaylistTracksMoveDown).await;
-                }
+                    PlaylistMode::List => {
+                        let _ = tx.send(AppCommand::PlaylistsMoveDown).await;
+                    }
+                    PlaylistMode::Tracks => {
+                        let _ = tx.send(AppCommand::PlaylistTracksMoveDown).await;
+                    }
                 }
             }
             _ => {}

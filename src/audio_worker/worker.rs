@@ -5,7 +5,10 @@ use tokio::sync::mpsc;
 
 use super::messages::{AudioCommand, AudioEvent};
 use super::player::{PlayerState, play_path, seek_to_ms};
-use super::transfer::{CacheKey, Priority, TransferCommand, TransferEvent, TransferConfig, TransferReceiver, spawn_transfer_actor_with_config};
+use super::transfer::{
+    CacheKey, Priority, TransferCommand, TransferConfig, TransferEvent,
+    spawn_transfer_actor_with_config,
+};
 
 struct PendingPlay {
     token: u64,
@@ -13,12 +16,6 @@ struct PendingPlay {
     title: String,
     url: String,
     retries: u8,
-}
-
-pub fn spawn_audio_worker(
-    data_dir: PathBuf,
-) -> (mpsc::Sender<AudioCommand>, mpsc::Receiver<AudioEvent>) {
-    spawn_audio_worker_with_config(data_dir, TransferConfig::default())
 }
 
 pub fn spawn_audio_worker_with_config(

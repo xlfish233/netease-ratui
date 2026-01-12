@@ -27,10 +27,7 @@ pub(super) fn draw_settings(
 
     let items = vec![
         ListItem::new(Line::from(format!("音质: {}", br_label(player.play_br)))),
-        ListItem::new(Line::from(format!(
-            "音量: {:.0}%",
-            player.volume * 100.0
-        ))),
+        ListItem::new(Line::from(format!("音量: {:.0}%", player.volume * 100.0))),
         ListItem::new(Line::from(format!(
             "播放模式: {}",
             play_mode_label(player.play_mode)

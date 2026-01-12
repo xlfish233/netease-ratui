@@ -117,8 +117,7 @@ mod tests {
             req_id: 2,
             songs: fresh_songs.clone(),
         };
-        let handled_fresh =
-            super::handle_netease_event(&fresh_evt, &mut state, &mut effects).await;
+        let handled_fresh = super::handle_netease_event(&fresh_evt, &mut state, &mut effects).await;
 
         assert!(handled_fresh);
         assert_eq!(state.app.search_results.len(), 1);

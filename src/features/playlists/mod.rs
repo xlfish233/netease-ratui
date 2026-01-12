@@ -201,8 +201,7 @@ pub async fn handle_playlist_detail_event(
     effects.emit_state(app);
 
     let mut loader = PlaylistTracksLoad::new(playlist_id, ids);
-    let id =
-        request_tracker.issue(RequestKey::PlaylistTracks, || utils::next_id(next_req_id));
+    let id = request_tracker.issue(RequestKey::PlaylistTracks, || utils::next_id(next_req_id));
     let chunk = loader.next_chunk();
     loader.inflight_req_id = Some(id);
     *playlist_tracks_loader = Some(loader);
@@ -275,8 +274,7 @@ pub async fn handle_songs_event(
         effects.emit_state(app);
         Some(true)
     } else {
-        let id =
-            request_tracker.issue(RequestKey::PlaylistTracks, || utils::next_id(next_req_id));
+        let id = request_tracker.issue(RequestKey::PlaylistTracks, || utils::next_id(next_req_id));
         let chunk = loader.next_chunk();
         loader.inflight_req_id = Some(id);
         effects.send_netease_hi(NeteaseCommand::SongDetailByIds {

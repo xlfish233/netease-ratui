@@ -1,4 +1,9 @@
-﻿use crate::core::prelude::{app::App, effects::CoreEffects, infra::{RequestKey, RequestTracker}, messages::AppCommand};
+use crate::core::prelude::{
+    app::App,
+    effects::CoreEffects,
+    infra::{RequestKey, RequestTracker},
+    messages::AppCommand,
+};
 use crate::settings;
 
 /// 处理歌词相关的 AppCommand

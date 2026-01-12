@@ -47,10 +47,7 @@ pub async fn handle_netease_event(
                 return true;
             }
 
-            if !state
-                .request_tracker
-                .accept(&RequestKey::SongUrl, *req_id)
-            {
+            if !state.request_tracker.accept(&RequestKey::SongUrl, *req_id) {
                 return false;
             }
 
@@ -110,9 +107,7 @@ mod tests {
         let mut effects = crate::core::effects::CoreEffects::default();
 
         let req_id = 42;
-        state
-            .request_tracker
-            .issue(RequestKey::SongUrl, || req_id);
+        state.request_tracker.issue(RequestKey::SongUrl, || req_id);
         state
             .song_request_titles
             .insert(7, "artist - title".to_owned());
@@ -150,13 +145,9 @@ mod tests {
         let mut state = CoreState::new(dir.path());
         let mut effects = crate::core::effects::CoreEffects::default();
 
-        state
-            .request_tracker
-            .issue(RequestKey::SongUrl, || 1);
+        state.request_tracker.issue(RequestKey::SongUrl, || 1);
         state.song_request_titles.insert(1, "old".to_owned());
-        state
-            .request_tracker
-            .issue(RequestKey::SongUrl, || 2);
+        state.request_tracker.issue(RequestKey::SongUrl, || 2);
         state.song_request_titles.insert(1, "new".to_owned());
 
         let stale = NeteaseEvent::SongUrl {

@@ -1,5 +1,4 @@
 use reqwest::StatusCode;
-use std::env;
 use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -37,28 +36,6 @@ pub(super) fn clear_dir_files(dir: &Path, keep: Option<&Path>) -> (usize, u64) {
     }
 
     (removed_files, removed_bytes)
-}
-
-pub(super) async fn download_to_path(
-    http: &reqwest::Client,
-    out_path: &Path,
-    url: &str,
-    title: &str,
-) -> Result<(), String> {
-    let retries = env::var("NETEASE_AUDIO_DOWNLOAD_RETRIES")
-        .ok()
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(2);
-    let backoff_ms = env::var("NETEASE_AUDIO_DOWNLOAD_RETRY_BACKOFF_MS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(250);
-    let backoff_max_ms = env::var("NETEASE_AUDIO_DOWNLOAD_RETRY_BACKOFF_MAX_MS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(2_000);
-
-    download_to_path_with_config(http, out_path, url, title, retries, backoff_ms, backoff_max_ms).await
 }
 
 pub async fn download_to_path_with_config(

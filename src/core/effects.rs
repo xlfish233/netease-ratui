@@ -1,6 +1,6 @@
-﻿use crate::app::App;
-use crate::audio_worker::AudioCommand;
+use crate::app::App;
 use crate::app::AppSnapshot;
+use crate::audio_worker::AudioCommand;
 use crate::messages::app::AppEvent;
 use crate::netease::actor::NeteaseCommand;
 use tokio::sync::mpsc;
@@ -91,7 +91,7 @@ pub async fn run_effects(effects: CoreEffects, dispatch: &CoreDispatch<'_>) {
     for effect in effects.actions {
         match effect {
             CoreEffect::EmitState(app) => {
-                let _ = dispatch.tx_evt.send(AppEvent::State(app)).await;
+                let _ = dispatch.tx_evt.send(AppEvent::State(Box::new(app))).await;
             }
             CoreEffect::EmitToast(msg) => {
                 let _ = dispatch.tx_evt.send(AppEvent::Toast(msg)).await;

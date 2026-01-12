@@ -1,5 +1,5 @@
 use super::player_status::draw_player_status;
-use crate::app::{PlaylistsSnapshot, PlayerSnapshot, PlaylistMode};
+use crate::app::{PlayerSnapshot, PlaylistMode, PlaylistsSnapshot};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},

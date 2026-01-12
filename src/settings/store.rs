@@ -52,14 +52,30 @@ impl Default for AppSettings {
 }
 
 // 默认值函数（用于 serde default）
-fn default_preload_count() -> usize { 5 }
-fn default_audio_cache_max_mb() -> usize { 2048 }
-fn default_download_concurrency() -> Option<usize> { None }
-fn default_http_timeout_secs() -> u64 { 30 }
-fn default_http_connect_timeout_secs() -> u64 { 10 }
-fn default_download_retries() -> u32 { 2 }
-fn default_download_retry_backoff_ms() -> u64 { 250 }
-fn default_download_retry_backoff_max_ms() -> u64 { 2000 }
+fn default_preload_count() -> usize {
+    5
+}
+fn default_audio_cache_max_mb() -> usize {
+    2048
+}
+fn default_download_concurrency() -> Option<usize> {
+    None
+}
+fn default_http_timeout_secs() -> u64 {
+    30
+}
+fn default_http_connect_timeout_secs() -> u64 {
+    10
+}
+fn default_download_retries() -> u32 {
+    2
+}
+fn default_download_retry_backoff_ms() -> u64 {
+    250
+}
+fn default_download_retry_backoff_max_ms() -> u64 {
+    2000
+}
 
 pub fn load_settings(data_dir: &Path) -> AppSettings {
     let p = settings_path(data_dir);

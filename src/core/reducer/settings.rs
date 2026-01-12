@@ -45,9 +45,7 @@ pub async fn handle_ui(
             }
             return UiAction::Handled;
         }
-        AppCommand::PlayerVolumeDown
-        | AppCommand::PlayerVolumeUp
-        | AppCommand::PlayerCycleMode => {
+        AppCommand::PlayerVolumeDown | AppCommand::PlayerVolumeUp | AppCommand::PlayerCycleMode => {
             let player_cmd = match cmd {
                 AppCommand::PlayerVolumeDown => AppCommand::PlayerVolumeDown,
                 AppCommand::PlayerVolumeUp => AppCommand::PlayerVolumeUp,
@@ -102,10 +100,7 @@ pub async fn handle_ui(
             }
 
             tracing::info!("用户触发：退出登录");
-            effects.send_audio_warn(
-                AudioCommand::Stop,
-                "AudioWorker 通道已关闭：Stop 发送失败",
-            );
+            effects.send_audio_warn(AudioCommand::Stop, "AudioWorker 通道已关闭：Stop 发送失败");
             let id = utils::next_id(&mut state.req_id);
             effects.send_netease_hi_warn(
                 NeteaseCommand::LogoutLocal { req_id: id },

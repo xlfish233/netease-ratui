@@ -92,12 +92,8 @@ mod tests {
         let mut state = CoreState::new(dir.path());
         let mut effects = crate::core::effects::CoreEffects::default();
 
-        state
-            .request_tracker
-            .issue(RequestKey::Lyric, || 1);
-        state
-            .request_tracker
-            .issue(RequestKey::Lyric, || 2);
+        state.request_tracker.issue(RequestKey::Lyric, || 1);
+        state.request_tracker.issue(RequestKey::Lyric, || 2);
 
         let stale = NeteaseEvent::Lyric {
             req_id: 1,

@@ -82,12 +82,5 @@ pub(super) fn draw_lyrics(
         f.render_stateful_widget(list, chunks[0], &mut list_state(selected));
     }
 
-    draw_player_status(
-        f,
-        chunks[1],
-        player,
-        "状态",
-        "歌词",
-        status_text.as_str(),
-    );
+    draw_player_status(f, chunks[1], player, "状态", "歌词", status_text.as_str());
 }

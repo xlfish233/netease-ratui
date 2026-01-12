@@ -3,7 +3,10 @@ use rand::Rng;
 use std::time::Duration;
 
 use crate::core::prelude::{
-    app::App, audio::AudioCommand, effects::CoreEffects, infra::{NextSongCacheManager, RequestKey, RequestTracker},
+    app::App,
+    audio::AudioCommand,
+    effects::CoreEffects,
+    infra::{NextSongCacheManager, RequestKey, RequestTracker},
     netease::NeteaseCommand,
 };
 use crate::core::utils;

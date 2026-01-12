@@ -1,5 +1,8 @@
 use crate::core::prelude::{
-    app::App, audio::AudioCommand, effects::CoreEffects, infra::{NextSongCacheManager, RequestKey, RequestTracker},
+    app::App,
+    audio::AudioCommand,
+    effects::CoreEffects,
+    infra::{NextSongCacheManager, RequestKey, RequestTracker},
     messages::AppCommand,
 };
 use crate::features::player::playback::{play_next, play_prev, seek_relative};

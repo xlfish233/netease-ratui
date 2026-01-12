@@ -4,9 +4,6 @@ use std::collections::{HashMap, HashSet};
 use crate::core::prelude::{effects::CoreEffects, netease::NeteaseCommand, utils::next_id};
 use crate::features::playlists::PlaylistTracksLoad;
 
-/// 默认预加载数量（已废弃，仅用于兼容无配置的场景）
-pub const DEFAULT_PRELOAD_COUNT: usize = 5;
-
 #[derive(Debug, Clone, Copy)]
 enum PreloadPendingKind {
     PlaylistDetail { playlist_id: i64 },
