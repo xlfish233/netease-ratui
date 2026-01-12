@@ -4,7 +4,7 @@ use crate::core::prelude::{
 };
 use crate::settings;
 
-const SETTINGS_ITEMS_COUNT: usize = 6;
+const SETTINGS_ITEMS_COUNT: usize = 7;
 
 /// 处理设置相关的 AppCommand
 /// 返回 true 表示命令已处理，false 表示未处理
@@ -32,6 +32,7 @@ pub async fn handle_settings_command(
         AppCommand::SettingsDecrease => {
             if matches!(app.view, crate::app::View::Settings) {
                 let old_br = app.play_br;
+                let old_crossfade = app.crossfade_ms;
                 apply_settings_adjust(app, -1, next_song_cache);
                 sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
@@ -44,12 +45,19 @@ pub async fn handle_settings_command(
                 if old_br != app.play_br {
                     effects.send_audio(AudioCommand::SetCacheBr(app.play_br));
                 }
+                if old_crossfade != app.crossfade_ms {
+                    effects.send_audio_warn(
+                        AudioCommand::SetCrossfadeMs(app.crossfade_ms),
+                        "AudioWorker 通道已关闭：SetCrossfadeMs 发送失败",
+                    );
+                }
                 effects.emit_state(app);
             }
         }
         AppCommand::SettingsIncrease => {
             if matches!(app.view, crate::app::View::Settings) {
                 let old_br = app.play_br;
+                let old_crossfade = app.crossfade_ms;
                 apply_settings_adjust(app, 1, next_song_cache);
                 sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
@@ -61,6 +69,12 @@ pub async fn handle_settings_command(
                 );
                 if old_br != app.play_br {
                     effects.send_audio(AudioCommand::SetCacheBr(app.play_br));
+                }
+                if old_crossfade != app.crossfade_ms {
+                    effects.send_audio_warn(
+                        AudioCommand::SetCrossfadeMs(app.crossfade_ms),
+                        "AudioWorker 通道已关闭：SetCrossfadeMs 发送失败",
+                    );
                 }
                 effects.emit_state(app);
             }
@@ -161,6 +175,7 @@ pub fn apply_settings_to_app(app: &mut App, s: &settings::AppSettings) {
     app.play_br = s.br;
     app.play_mode = settings::play_mode_from_string(&s.play_mode);
     app.lyrics_offset_ms = s.lyrics_offset_ms;
+    app.crossfade_ms = s.crossfade_ms;
 }
 
 /// 从 App 同步到设置
@@ -169,6 +184,7 @@ pub fn sync_settings_from_app(s: &mut settings::AppSettings, app: &App) {
     s.br = app.play_br;
     s.play_mode = settings::play_mode_to_string(app.play_mode);
     s.lyrics_offset_ms = app.lyrics_offset_ms;
+    s.crossfade_ms = app.crossfade_ms;
 }
 
 fn is_logout_selected(app: &App) -> bool {
@@ -216,6 +232,16 @@ fn apply_settings_adjust(app: &mut App, dir: i32, next_song_cache: &mut NextSong
                 app.lyrics_offset_ms
                     .saturating_add(if dir > 0 { 200 } else { -200 });
             app.settings_status = format!("歌词 offset: {}ms", app.lyrics_offset_ms);
+        }
+        4 => {
+            let step = if dir > 0 { 50 } else { -50 };
+            let next = (app.crossfade_ms as i64 + step).clamp(0, 2000) as u64;
+            app.crossfade_ms = next;
+            app.settings_status = if app.crossfade_ms == 0 {
+                "淡入淡出已关闭".to_owned()
+            } else {
+                format!("淡入淡出: {}ms", app.crossfade_ms)
+            };
         }
         _ => {}
     }

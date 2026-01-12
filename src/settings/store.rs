@@ -10,6 +10,8 @@ pub struct AppSettings {
     pub br: i64,
     pub play_mode: String,
     pub lyrics_offset_ms: i64,
+    #[serde(default = "default_crossfade_ms")]
+    pub crossfade_ms: u64,
 
     // 缓存/预加载设置
     #[serde(default = "default_preload_count")]
@@ -37,6 +39,7 @@ impl Default for AppSettings {
             br: 999_000,
             play_mode: "ListLoop".to_owned(),
             lyrics_offset_ms: 0,
+            crossfade_ms: 300,
 
             // 缓存/预加载默认值
             preload_count: 5,
@@ -75,6 +78,9 @@ fn default_download_retry_backoff_ms() -> u64 {
 }
 fn default_download_retry_backoff_max_ms() -> u64 {
     2000
+}
+fn default_crossfade_ms() -> u64 {
+    300
 }
 
 pub fn load_settings(data_dir: &Path) -> AppSettings {

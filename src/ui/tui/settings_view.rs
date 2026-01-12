@@ -36,6 +36,14 @@ pub(super) fn draw_settings(
             "歌词 offset: {}",
             fmt_offset(state.lyrics_offset_ms)
         ))),
+        ListItem::new(Line::from(format!(
+            "淡入淡出: {}",
+            if state.crossfade_ms == 0 {
+                "关闭".to_owned()
+            } else {
+                format!("{}ms", state.crossfade_ms)
+            }
+        ))),
         ListItem::new(Line::from("清除音频缓存".to_owned())),
         ListItem::new(Line::from(if logged_in {
             "退出登录".to_owned()

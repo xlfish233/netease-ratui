@@ -10,6 +10,7 @@ pub enum AudioCommand {
     Stop,
     SeekToMs(u64),
     SetVolume(f32),
+    SetCrossfadeMs(u64),
     ClearCache,
     /// 设置“仅保留当前音质(br)”的缓存策略
     SetCacheBr(i64),

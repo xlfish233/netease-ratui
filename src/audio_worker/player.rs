@@ -11,16 +11,20 @@ use tokio::sync::mpsc;
 
 use super::messages::AudioEvent;
 
+struct ActiveSink {
+    sink: Arc<Sink>,
+    end_cancel: Arc<AtomicBool>,
+}
+
 pub struct PlayerState {
     mixer: Mixer,
     #[allow(dead_code)]
     stream: OutputStream,
-    pub(super) sink: Option<Arc<Sink>>,
-    pub(super) path: Option<PathBuf>,
-    end_cancel: Option<Arc<AtomicBool>>,
+    current: Option<ActiveSink>,
+    path: Option<PathBuf>,
     play_id: u64,
-    pub(super) paused: bool,
-    pub(super) volume: f32,
+    paused: bool,
+    volume: f32,
 }
 
 impl PlayerState {
@@ -28,67 +32,110 @@ impl PlayerState {
         Self {
             mixer,
             stream,
-            sink: None,
+            current: None,
             path: None,
-            end_cancel: None,
             play_id: 0,
             paused: false,
             volume: 1.0,
         }
     }
 
+    pub fn play_id(&self) -> u64 {
+        self.play_id
+    }
+
+    pub fn next_play_id(&mut self) -> u64 {
+        self.play_id = self.play_id.wrapping_add(1).max(1);
+        self.play_id
+    }
+
     pub fn stop(&mut self) {
-        self.play_id = self.play_id.wrapping_add(1);
-        if let Some(c) = self.end_cancel.take() {
-            c.store(true, Ordering::Relaxed);
-        }
-        if let Some(s) = self.sink.take() {
-            s.stop();
-        }
+        self.play_id = self.play_id.wrapping_add(1).max(1);
+        self.stop_current();
         self.path = None;
     }
 
-    fn restart_keep_play_id(&mut self) {
-        if let Some(c) = self.end_cancel.take() {
-            c.store(true, Ordering::Relaxed);
-        }
-        if let Some(s) = self.sink.take() {
-            s.stop();
+    pub fn stop_keep_play_id(&mut self) {
+        self.stop_current();
+    }
+
+    fn stop_current(&mut self) {
+        if let Some(cur) = self.current.take() {
+            cur.end_cancel.store(true, Ordering::Relaxed);
+            cur.sink.stop();
         }
     }
-}
 
-pub(super) fn play_path(
-    tx_evt: &mpsc::Sender<AudioEvent>,
-    state: &mut PlayerState,
-    title: &str,
-    path: &Path,
-) -> Result<(u64, Option<u64>), String> {
-    state.path = Some(path.to_path_buf());
-
-    let (sink, duration_ms) = build_sink_from_path(&state.mixer, path, None, title)?;
-    sink.set_volume(state.volume);
-    if state.paused {
-        sink.pause();
-    } else {
-        sink.play();
-    }
-    let sink = Arc::new(sink);
-
-    let play_id = state.play_id;
-    let tx_end = tx_evt.clone();
-    let cancel = Arc::new(AtomicBool::new(false));
-    state.end_cancel = Some(Arc::clone(&cancel));
-    let sink_end = Arc::clone(&sink);
-    thread::spawn(move || {
-        sink_end.sleep_until_end();
-        if !cancel.load(Ordering::Relaxed) {
-            let _ = tx_end.blocking_send(AudioEvent::Ended { play_id });
+    pub fn cancel_current_end(&mut self) {
+        if let Some(cur) = self.current.as_ref() {
+            cur.end_cancel.store(true, Ordering::Relaxed);
         }
-    });
+    }
 
-    state.sink = Some(sink);
-    Ok((play_id, duration_ms))
+    pub fn take_current_for_fade(&mut self) -> Option<Arc<Sink>> {
+        if let Some(cur) = self.current.take() {
+            cur.end_cancel.store(true, Ordering::Relaxed);
+            Some(cur.sink)
+        } else {
+            None
+        }
+    }
+
+    pub fn current_sink(&self) -> Option<Arc<Sink>> {
+        self.current.as_ref().map(|cur| Arc::clone(&cur.sink))
+    }
+
+    pub fn set_path(&mut self, path: PathBuf) {
+        self.path = Some(path);
+    }
+
+    pub fn path(&self) -> Option<PathBuf> {
+        self.path.clone()
+    }
+
+    pub fn set_paused(&mut self, paused: bool) {
+        self.paused = paused;
+    }
+
+    pub fn paused(&self) -> bool {
+        self.paused
+    }
+
+    pub fn set_volume(&mut self, volume: f32) {
+        self.volume = volume;
+    }
+
+    pub fn volume(&self) -> f32 {
+        self.volume
+    }
+
+    pub fn attach_sink(&mut self, tx_evt: &mpsc::Sender<AudioEvent>, sink: Arc<Sink>) {
+        let play_id = self.play_id;
+        let tx_end = tx_evt.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let sink_end = Arc::clone(&sink);
+        let cancel_end = Arc::clone(&cancel);
+        thread::spawn(move || {
+            sink_end.sleep_until_end();
+            if !cancel_end.load(Ordering::Relaxed) {
+                let _ = tx_end.blocking_send(AudioEvent::Ended { play_id });
+            }
+        });
+
+        self.current = Some(ActiveSink {
+            sink,
+            end_cancel: cancel,
+        });
+    }
+
+    pub fn build_sink(
+        &self,
+        path: &Path,
+        seek: Option<Duration>,
+        title: &str,
+    ) -> Result<(Sink, Option<u64>), String> {
+        build_sink_from_path(&self.mixer, path, seek, title)
+    }
 }
 
 pub(super) fn seek_to_ms(
@@ -96,35 +143,23 @@ pub(super) fn seek_to_ms(
     state: &mut PlayerState,
     position_ms: u64,
 ) -> Result<(), String> {
-    let Some(path) = state.path.clone() else {
+    let Some(path) = state.path() else {
         return Ok(());
     };
 
-    state.restart_keep_play_id();
+    state.stop_keep_play_id();
 
     let seek = Duration::from_millis(position_ms);
-    let (sink, _duration_ms) = build_sink_from_path(&state.mixer, &path, Some(seek), "seek")?;
-    sink.set_volume(state.volume);
-    if state.paused {
+    let (sink, _duration_ms) = state.build_sink(&path, Some(seek), "seek")?;
+    let sink = Arc::new(sink);
+    sink.set_volume(state.volume());
+    if state.paused() {
         sink.pause();
     } else {
         sink.play();
     }
-    let sink = Arc::new(sink);
 
-    let play_id = state.play_id;
-    let tx_end = tx_evt.clone();
-    let cancel = Arc::new(AtomicBool::new(false));
-    state.end_cancel = Some(Arc::clone(&cancel));
-    let sink_end = Arc::clone(&sink);
-    thread::spawn(move || {
-        sink_end.sleep_until_end();
-        if !cancel.load(Ordering::Relaxed) {
-            let _ = tx_end.blocking_send(AudioEvent::Ended { play_id });
-        }
-    });
-
-    state.sink = Some(sink);
+    state.attach_sink(tx_evt, Arc::clone(&sink));
     Ok(())
 }
 

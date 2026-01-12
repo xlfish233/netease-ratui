@@ -30,6 +30,10 @@ pub struct Cli {
     /// 覆盖网易 api_domain（默认 https://interface.music.163.com）
     #[arg(long, env = "NETEASE_API_DOMAIN")]
     pub api_domain: Option<String>,
+
+    /// 禁用音频输出（无声模式/CI 可用，亦支持 NETEASE_NO_AUDIO=1）
+    #[arg(long)]
+    pub no_audio: bool,
 }
 
 #[derive(Debug, Subcommand)]

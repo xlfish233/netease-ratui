@@ -11,6 +11,7 @@ mod settings;
 mod ui;
 
 use app::{App, AppSnapshot};
+use audio_worker::AudioBackend;
 use clap::Parser;
 use error::AppError;
 use netease::{NeteaseClient, NeteaseClientConfig};
@@ -31,6 +32,16 @@ async fn main() -> Result<(), AppError> {
     if let Some(v) = cli.api_domain.clone() {
         cfg.api_domain = v;
     }
+
+    let no_audio_env = env::var("NETEASE_NO_AUDIO")
+        .ok()
+        .map(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false);
+    let audio_backend = if cli.no_audio || no_audio_env {
+        AudioBackend::Null
+    } else {
+        AudioBackend::Real
+    };
 
     let _log_guard = logging::init(
         &cfg.data_dir,
@@ -70,7 +81,7 @@ async fn main() -> Result<(), AppError> {
 
     match cli.command.unwrap_or(Command::Tui) {
         Command::Tui => {
-            let (tx, rx) = core::spawn_app_actor(cfg);
+            let (tx, rx) = core::spawn_app_actor(cfg, audio_backend);
             run_tui(AppSnapshot::from_app(&App::default()), tx, rx).await?;
             Ok(())
         }

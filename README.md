@@ -63,6 +63,9 @@ sudo apt-get install -y libasound2-dev
 # 运行 TUI（默认）
 cargo run
 
+# 无声模式（禁用音频输出）
+cargo run -- --no-audio
+
 # 无交互快速自测（匿名搜索）
 cargo run -- skip-login "周杰伦" --limit 5
 
@@ -101,6 +104,7 @@ cargo run -- qr-key
   "br": 999000,
   "play_mode": "ListLoop",
   "lyrics_offset_ms": 0,
+  "crossfade_ms": 300,
   "preload_count": 5,
   "audio_cache_max_mb": 2048,
   "download_concurrency": null,
@@ -120,6 +124,7 @@ cargo run -- qr-key
 - `RUST_LOG`：日志级别（如 `debug`）
 - `NETEASE_DOMAIN`：覆盖网易域名（默认 `https://music.163.com`）
 - `NETEASE_API_DOMAIN`：覆盖 API 域名（默认 `https://interface.music.163.com`）
+- `NETEASE_NO_AUDIO=1`：禁用音频输出（无声模式）
 
 ## 快捷键
 

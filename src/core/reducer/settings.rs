@@ -180,7 +180,7 @@ mod tests {
         let mut effects = crate::core::effects::CoreEffects::default();
 
         state.app.view = View::Settings;
-        state.app.settings_selected = 4;
+        state.app.settings_selected = 5;
 
         let outcome = handle_ui(
             &AppCommand::SettingsActivate,

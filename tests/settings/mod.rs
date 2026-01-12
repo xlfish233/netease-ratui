@@ -11,6 +11,7 @@ fn settings_roundtrip() {
         br: 320_000,
         play_mode: "Shuffle".to_owned(),
         lyrics_offset_ms: -200,
+        crossfade_ms: 350,
 
         // 新增字段
         preload_count: 10,
@@ -29,6 +30,7 @@ fn settings_roundtrip() {
     assert_eq!(loaded.br, 320_000);
     assert_eq!(loaded.play_mode, "Shuffle");
     assert_eq!(loaded.lyrics_offset_ms, -200);
+    assert_eq!(loaded.crossfade_ms, 350);
 
     // 验证新增字段
     assert_eq!(loaded.preload_count, 10);
@@ -54,6 +56,7 @@ fn settings_default_values() {
     assert_eq!(loaded.br, 999_000);
     assert_eq!(loaded.play_mode, "ListLoop");
     assert_eq!(loaded.lyrics_offset_ms, 0);
+    assert_eq!(loaded.crossfade_ms, 300);
 
     // 新增字段默认值
     assert_eq!(loaded.preload_count, 5);

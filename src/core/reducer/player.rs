@@ -176,6 +176,6 @@ mod tests {
         assert!(handled_fresh);
         assert_eq!(state.app.play_song_id, Some(1));
         assert_eq!(state.app.play_status, "开始播放...");
-        assert!(state.song_request_titles.get(&1).is_none());
+        assert!(!state.song_request_titles.contains_key(&1));
     }
 }

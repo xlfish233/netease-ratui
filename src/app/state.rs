@@ -134,6 +134,7 @@ pub struct App {
     pub play_song_id: Option<i64>,
     pub play_error_count: u32,
     pub play_br: i64,
+    pub crossfade_ms: u64,
 
     pub account_uid: Option<i64>,
     pub account_nickname: Option<String>,
@@ -188,6 +189,7 @@ impl Default for App {
             play_song_id: None,
             play_error_count: 0,
             play_br: 999_000,
+            crossfade_ms: 300,
             account_uid: None,
             account_nickname: None,
             playlists: Vec::new(),
@@ -285,6 +287,7 @@ pub struct SettingsSnapshot {
     pub settings_selected: usize,
     pub settings_status: String,
     pub lyrics_offset_ms: i64,
+    pub crossfade_ms: u64,
 }
 
 impl AppSnapshot {
@@ -343,6 +346,7 @@ impl AppSnapshot {
                 settings_selected: app.settings_selected,
                 settings_status: app.settings_status.clone(),
                 lyrics_offset_ms: app.lyrics_offset_ms,
+                crossfade_ms: app.crossfade_ms,
             }),
         };
 

@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::audio_worker::{AudioCommand, AudioEvent};
+use crate::audio_worker::{AudioBackend, AudioCommand, AudioEvent, AudioSettings};
 use crate::messages::app::{AppCommand, AppEvent};
 use crate::netease::NeteaseClientConfig;
 use crate::netease::actor::NeteaseEvent;
@@ -139,6 +139,7 @@ async fn reduce(
 
 pub fn spawn_app_actor(
     cfg: NeteaseClientConfig,
+    audio_backend: AudioBackend,
 ) -> (mpsc::Sender<AppCommand>, mpsc::Receiver<AppEvent>) {
     let (tx_cmd, mut rx_cmd) = mpsc::channel::<AppCommand>(64);
     let (tx_evt, rx_evt) = mpsc::channel::<AppEvent>(64);
@@ -161,8 +162,15 @@ pub fn spawn_app_actor(
         download_retry_backoff_max_ms: settings.download_retry_backoff_max_ms,
         audio_cache_max_mb: settings.audio_cache_max_mb,
     };
-    let (tx_audio, mut rx_audio_evt) =
-        crate::audio_worker::spawn_audio_worker_with_config(data_dir.clone(), transfer_config);
+    let audio_settings = AudioSettings {
+        crossfade_ms: settings.crossfade_ms,
+    };
+    let (tx_audio, mut rx_audio_evt) = crate::audio_worker::spawn_audio_worker(
+        audio_backend,
+        data_dir.clone(),
+        transfer_config,
+        audio_settings,
+    );
 
     tokio::spawn(async move {
         let mut state = CoreState::new_with_settings(&data_dir, settings);
@@ -170,6 +178,12 @@ pub fn spawn_app_actor(
         settings_handlers::apply_settings_to_app(&mut state.app, &state.settings);
         let _ = tx_audio
             .send(AudioCommand::SetCacheBr(state.app.play_br))
+            .await;
+        let _ = tx_audio
+            .send(AudioCommand::SetVolume(state.app.volume))
+            .await;
+        let _ = tx_audio
+            .send(AudioCommand::SetCrossfadeMs(state.app.crossfade_ms))
             .await;
 
         let mut qr_poll = tokio::time::interval(Duration::from_secs(2));
