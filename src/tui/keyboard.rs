@@ -1,9 +1,14 @@
 use crate::app::{App, PlaylistMode, View};
 use crate::messages::app::AppCommand;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tokio::sync::mpsc;
 
 pub(super) async fn handle_key(app: &App, key: KeyEvent, tx: &mpsc::Sender<AppCommand>) -> bool {
+    // Some terminals/platforms may report both press and release events; we only act on press/repeat.
+    if matches!(key.kind, KeyEventKind::Release) {
+        return false;
+    }
+
     match key {
         KeyEvent {
             code: KeyCode::Char('q'),
@@ -204,4 +209,44 @@ pub(super) async fn handle_key(app: &App, key: KeyEvent, tx: &mpsc::Sender<AppCo
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn tab_release_is_ignored() {
+        let app = App::default();
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&app, key, &tx).await;
+        assert!(!should_quit);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn tab_press_sends_tabnext_once() {
+        let app = App::default();
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&app, key, &tx).await;
+        assert!(!should_quit);
+        assert!(matches!(rx.try_recv(), Ok(AppCommand::TabNext)));
+        assert!(rx.try_recv().is_err());
+    }
 }
