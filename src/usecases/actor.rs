@@ -206,16 +206,19 @@ pub fn spawn_app_actor(
                             | AppCommand::PlayerNext
                             | AppCommand::PlayerSeekBackwardMs { .. }
                             | AppCommand::PlayerSeekForwardMs { .. }) => {
+                            let mut ctx = player_control::PlayerControlCtx {
+                                req_id: &mut req_id,
+                                pending_song_url: &mut pending_song_url,
+                                tx_audio: &tx_audio,
+                                tx_netease_hi: &tx_netease_hi,
+                                tx_netease_lo: &tx_netease_lo,
+                                tx_evt: &tx_evt,
+                                next_song_cache: &mut next_song_cache,
+                            };
                             player_control::handle_player_control_command(
                                 cmd,
                                 &mut app,
-                                &mut req_id,
-                                &mut pending_song_url,
-                                &tx_audio,
-                                &tx_netease_hi,
-                                &tx_evt,
-                                &mut next_song_cache,
-                                &tx_netease_lo,
+                                &mut ctx,
                             )
                             .await;
                         }
@@ -514,18 +517,16 @@ pub fn spawn_app_actor(
                     // 在移动 evt 之前检查事件类型，用于重置预缓存
                     let is_stopped = matches!(evt, AudioEvent::Stopped);
 
-                    audio_handler::handle_audio_event(
-                        &mut app,
-                        evt,
-                        &tx_netease_hi,
-                        &tx_audio,
-                        &mut pending_song_url,
-                        &mut pending_lyric,
-                        &mut req_id,
-                        &mut next_song_cache,
-                        &tx_netease_lo,
-                    )
-                    .await;
+                    let mut ctx = audio_handler::AudioEventCtx {
+                        tx_netease_hi: &tx_netease_hi,
+                        tx_netease_lo: &tx_netease_lo,
+                        tx_audio: &tx_audio,
+                        pending_song_url: &mut pending_song_url,
+                        pending_lyric: &mut pending_lyric,
+                        req_id: &mut req_id,
+                        next_song_cache: &mut next_song_cache,
+                    };
+                    audio_handler::handle_audio_event(&mut app, evt, &mut ctx).await;
 
                     // 播放停止时失效预缓存
                     if is_stopped {

@@ -7,61 +7,65 @@ use crate::usecases::actor::playback;
 use super::utils;
 use tokio::sync::mpsc;
 
+pub(super) struct PlayerControlCtx<'a> {
+    pub req_id: &'a mut u64,
+    pub pending_song_url: &'a mut Option<(u64, String)>,
+    pub tx_audio: &'a std::sync::mpsc::Sender<AudioCommand>,
+    pub tx_netease_hi: &'a mpsc::Sender<NeteaseCommand>,
+    pub tx_netease_lo: &'a mpsc::Sender<NeteaseCommand>,
+    pub tx_evt: &'a mpsc::Sender<AppEvent>,
+    pub next_song_cache: &'a mut super::next_song_cache::NextSongCacheManager,
+}
+
 /// 处理播放器控制相关的 AppCommand（不涉及设置持久化）
 /// 返回 true 表示命令已处理，false 表示未处理
 pub(super) async fn handle_player_control_command(
     cmd: AppCommand,
     app: &mut App,
-    req_id: &mut u64,
-    pending_song_url: &mut Option<(u64, String)>,
-    tx_audio: &std::sync::mpsc::Sender<AudioCommand>,
-    tx_netease_hi: &mpsc::Sender<NeteaseCommand>,
-    tx_evt: &mpsc::Sender<AppEvent>,
-    next_song_cache: &mut super::next_song_cache::NextSongCacheManager,
-    tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
+    ctx: &mut PlayerControlCtx<'_>,
 ) -> bool {
     match cmd {
         AppCommand::PlayerTogglePause => {
-            if tx_audio.send(AudioCommand::TogglePause).is_err() {
+            if ctx.tx_audio.send(AudioCommand::TogglePause).is_err() {
                 tracing::warn!("AudioWorker 通道已关闭：TogglePause 发送失败");
             }
         }
         AppCommand::PlayerStop => {
-            if tx_audio.send(AudioCommand::Stop).is_err() {
+            if ctx.tx_audio.send(AudioCommand::Stop).is_err() {
                 tracing::warn!("AudioWorker 通道已关闭：Stop 发送失败");
             }
         }
         AppCommand::PlayerPrev => {
             playback::play_prev(
                 app,
-                tx_netease_hi,
-                pending_song_url,
-                req_id,
-                next_song_cache,
-                tx_netease_lo,
+                ctx.tx_netease_hi,
+                ctx.pending_song_url,
+                ctx.req_id,
+                ctx.next_song_cache,
+                ctx.tx_netease_lo,
             )
             .await;
-            utils::push_state(tx_evt, app).await;
+            utils::push_state(ctx.tx_evt, app).await;
         }
         AppCommand::PlayerNext => {
             playback::play_next(
                 app,
-                tx_netease_hi,
-                pending_song_url,
-                req_id,
-                next_song_cache,
-                tx_netease_lo,
+                ctx.tx_netease_hi,
+                ctx.pending_song_url,
+                ctx.req_id,
+                ctx.next_song_cache,
+                ctx.tx_netease_lo,
             )
             .await;
-            utils::push_state(tx_evt, app).await;
+            utils::push_state(ctx.tx_evt, app).await;
         }
         AppCommand::PlayerSeekBackwardMs { ms } => {
-            playback::seek_relative(app, tx_audio, -(ms as i64));
-            utils::push_state(tx_evt, app).await;
+            playback::seek_relative(app, ctx.tx_audio, -(ms as i64));
+            utils::push_state(ctx.tx_evt, app).await;
         }
         AppCommand::PlayerSeekForwardMs { ms } => {
-            playback::seek_relative(app, tx_audio, ms as i64);
-            utils::push_state(tx_evt, app).await;
+            playback::seek_relative(app, ctx.tx_audio, ms as i64);
+            utils::push_state(ctx.tx_evt, app).await;
         }
         _ => return false,
     }

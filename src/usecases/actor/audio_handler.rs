@@ -6,17 +6,21 @@ use crate::usecases::actor::playback;
 use super::utils;
 use tokio::sync::mpsc;
 
+pub(super) struct AudioEventCtx<'a> {
+    pub tx_netease_hi: &'a mpsc::Sender<NeteaseCommand>,
+    pub tx_netease_lo: &'a mpsc::Sender<NeteaseCommand>,
+    pub tx_audio: &'a std::sync::mpsc::Sender<AudioCommand>,
+    pub pending_song_url: &'a mut Option<(u64, String)>,
+    pub pending_lyric: &'a mut Option<(u64, i64)>,
+    pub req_id: &'a mut u64,
+    pub next_song_cache: &'a mut super::next_song_cache::NextSongCacheManager,
+}
+
 /// 处理音频事件
 pub(super) async fn handle_audio_event(
     app: &mut App,
     evt: crate::audio_worker::AudioEvent,
-    tx_netease: &mpsc::Sender<NeteaseCommand>,
-    tx_audio: &std::sync::mpsc::Sender<AudioCommand>,
-    pending_song_url: &mut Option<(u64, String)>,
-    pending_lyric: &mut Option<(u64, i64)>,
-    req_id: &mut u64,
-    next_song_cache: &mut super::next_song_cache::NextSongCacheManager,
-    tx_netease_lo: &mpsc::Sender<NeteaseCommand>,
+    ctx: &mut AudioEventCtx<'_>,
 ) {
     match evt {
         crate::audio_worker::AudioEvent::NowPlaying {
@@ -35,16 +39,21 @@ pub(super) async fn handle_audio_event(
             app.play_id = Some(play_id);
             app.play_song_id = Some(song_id);
             app.play_error_count = 0;
-            if tx_audio.send(AudioCommand::SetVolume(app.volume)).is_err() {
+            if ctx
+                .tx_audio
+                .send(AudioCommand::SetVolume(app.volume))
+                .is_err()
+            {
                 tracing::warn!("AudioWorker 通道已关闭：SetVolume 发送失败");
             }
 
             app.lyrics_song_id = None;
             app.lyrics.clear();
             app.lyrics_status = "加载歌词...".to_owned();
-            let id = utils::next_id(req_id);
-            *pending_lyric = Some((id, song_id));
-            if let Err(e) = tx_netease
+            let id = utils::next_id(ctx.req_id);
+            *ctx.pending_lyric = Some((id, song_id));
+            if let Err(e) = ctx
+                .tx_netease_hi
                 .send(NeteaseCommand::Lyric {
                     req_id: id,
                     song_id,
@@ -90,11 +99,11 @@ pub(super) async fn handle_audio_event(
             }
             playback::play_next(
                 app,
-                tx_netease,
-                pending_song_url,
-                req_id,
-                next_song_cache,
-                tx_netease_lo,
+                ctx.tx_netease_hi,
+                ctx.pending_song_url,
+                ctx.req_id,
+                ctx.next_song_cache,
+                ctx.tx_netease_lo,
             )
             .await;
         }
@@ -118,9 +127,10 @@ pub(super) async fn handle_audio_event(
                         .or_else(|| app.now_playing.clone())
                         .unwrap_or_else(|| "未知歌曲".to_owned());
                     app.play_status = format!("播放失败，正在重试({}/2)...", app.play_error_count);
-                    let id = utils::next_id(req_id);
-                    *pending_song_url = Some((id, title));
-                    let _ = tx_netease
+                    let id = utils::next_id(ctx.req_id);
+                    *ctx.pending_song_url = Some((id, title));
+                    let _ = ctx
+                        .tx_netease_hi
                         .send(NeteaseCommand::SongUrl {
                             req_id: id,
                             id: song_id,

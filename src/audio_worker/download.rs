@@ -110,10 +110,10 @@ pub(super) async fn download_to_path(
             }
         }
 
-        if failed.is_none() {
-            if let Err(e) = file.flush().await {
-                failed = Some(format!("写入临时文件失败({title}): {e}"));
-            }
+        if failed.is_none()
+            && let Err(e) = file.flush().await
+        {
+            failed = Some(format!("写入临时文件失败({title}): {e}"));
         }
 
         if let Some(err) = failed {
@@ -148,7 +148,7 @@ async fn sleep_backoff(attempt: u32, base_ms: u64, max_ms: u64) {
     let mut ms = exp.min(max_ms);
 
     // Tiny jitter (0..=250ms) without pulling in RNG deps.
-    let jitter = (now_ms() % 251) as u64;
+    let jitter = now_ms() % 251;
     ms = ms.saturating_add(jitter).min(max_ms);
 
     tokio::time::sleep(std::time::Duration::from_millis(ms)).await;

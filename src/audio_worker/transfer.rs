@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
+use tokio::sync::mpsc;
 
 use super::cache::AudioCache;
 use super::download::{download_to_path, now_ms};
@@ -295,7 +295,12 @@ pub fn spawn_transfer_actor(data_dir: PathBuf) -> (TransferSender, TransferRecei
                     jobs.remove(&key);
                     drop(permit);
                     for token in waiters.into_iter().filter(|t| *t != 0) {
-                        let _ = tx_evt.send(TransferEvent::Error { token, message: message.clone() }).await;
+                        let _ = tx_evt
+                            .send(TransferEvent::Error {
+                                token,
+                                message: message.clone(),
+                            })
+                            .await;
                     }
                     continue;
                 };

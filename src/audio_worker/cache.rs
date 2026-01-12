@@ -100,8 +100,16 @@ impl AudioCache {
         Some(path)
     }
 
-    pub fn commit_tmp_file(&mut self, song_id: i64, br: i64, tmp_path: &Path) -> Result<PathBuf, String> {
-        let dir = self.dir.as_ref().ok_or_else(|| "缓存目录不可用".to_owned())?;
+    pub fn commit_tmp_file(
+        &mut self,
+        song_id: i64,
+        br: i64,
+        tmp_path: &Path,
+    ) -> Result<PathBuf, String> {
+        let dir = self
+            .dir
+            .as_ref()
+            .ok_or_else(|| "缓存目录不可用".to_owned())?;
 
         let key = cache_key(song_id, br);
         let file_name = format!("{key}.bin");
@@ -111,8 +119,7 @@ impl AudioCache {
             let _ = fs::remove_file(&final_path);
         }
 
-        fs::rename(tmp_path, &final_path)
-            .map_err(|e| format!("写入缓存文件失败: {e}"))?;
+        fs::rename(tmp_path, &final_path).map_err(|e| format!("写入缓存文件失败: {e}"))?;
 
         self.touch(&key, &file_name, &final_path);
         self.cleanup(Some(&final_path));

@@ -49,7 +49,8 @@ pub fn spawn_audio_worker(
                 match rx_transfer.try_recv() {
                     Ok(evt) => match evt {
                         TransferEvent::Ready { token, key, path } => {
-                            let Some(mut p) = pending_play.take().filter(|p| p.token == token) else {
+                            let Some(mut p) = pending_play.take().filter(|p| p.token == token)
+                            else {
                                 continue;
                             };
 
@@ -67,14 +68,17 @@ pub fn spawn_audio_worker(
                                     if p.retries < 1 {
                                         p.retries += 1;
                                         state.stop();
-                                        let _ = tx_transfer.blocking_send(TransferCommand::Invalidate { key });
-                                        let _ = tx_transfer.blocking_send(TransferCommand::EnsureCached {
-                                            token: p.token,
-                                            key: p.key,
-                                            url: p.url.clone(),
-                                            title: p.title.clone(),
-                                            priority: Priority::High,
-                                        });
+                                        let _ = tx_transfer
+                                            .blocking_send(TransferCommand::Invalidate { key });
+                                        let _ = tx_transfer.blocking_send(
+                                            TransferCommand::EnsureCached {
+                                                token: p.token,
+                                                key: p.key,
+                                                url: p.url.clone(),
+                                                title: p.title.clone(),
+                                                priority: Priority::High,
+                                            },
+                                        );
                                         pending_play = Some(p);
                                         continue;
                                     }
