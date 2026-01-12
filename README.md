@@ -76,12 +76,12 @@ sudo apt-get install -y libasound2-dev
 
 ## 架构
 
-整体仍采用“**Actor + 消息驱动 + 单一状态源**”的约定：UI 只发 `AppCommand`，由 `core::spawn_app_actor` 维护唯一的 `App` 状态，并通过 `AppEvent` 通知 UI 。`core::reducer` 在 tokio 任务中循环处理来自 UI / Netease / Audio / 定时器的 `CoreMsg`，通过 `features` 模块完成业务逻辑，再将 `CoreEffects` 中收集的状态推送、toast、错误、`NeteaseCommand`、`AudioCommand` 一并下发。`core::infra` 提供 `RequestTracker`、`PreloadManager`、`NextSongCacheManager` 等基础设施，`core::prelude` 把常见类型导出给每个 feature。`settings` 在 actor 启动时从 `src/settings/store.rs` 读取并应用，音频工作线程通过 std mpsc 与 tokio 任务互通。
+整体仍采用“**Actor + 消息驱动 + 单一状态源**”的约定：UI 只发 `AppCommand`，由 `core::spawn_app_actor` 维护唯一的 `App` 状态，并通过 `AppEvent` 通知 UI 。`core::reducer` 在 tokio 任务中循环处理来自 UI / Netease / Audio / 定时器的 `CoreMsg`，`reducer.rs` 只做路由与调度，具体处理拆到 `core/reducer/*` 子模块（login/search/playlists/player/lyrics/settings），再通过 `features` 模块完成业务逻辑；最终把 `CoreEffects` 中收集的状态推送、toast、错误、`NeteaseCommand`、`AudioCommand` 一并下发。`core::infra` 提供 `RequestTracker`、`PreloadManager`、`NextSongCacheManager` 等基础设施，`core::prelude` 把常见类型导出给每个 feature。`settings` 在 actor 启动时从 `src/settings/store.rs` 读取并应用，音频工作线程通过 std mpsc 与 tokio 任务互通。
 
 ### 分层与职责
 
 - **UI 层（`src/ui`）**：`cli.rs` 负责命令行参数、`run_tui` 运行 ratatui 界面。`src/ui/tui/` 包含事件循环、生命周期 guard、键盘/鼠标处理、视图管理、播放器状态面板、歌词/歌单/搜索/设置界面、组件、工具函数等；只渲染 `AppEvent::State`，所有用户输入都翻译为 `AppCommand`。
-- **Core 层（`src/core`）**：`spawn_app_actor` 启动 `NeteaseActor`（高/低优先级通道）、音频工作线程并运行 `core::reducer`，`CoreState` 持有 `App`、`settings`、`RequestTracker`、`PreloadManager`、`NextSongCacheManager`、待处理请求等信息；`CoreEffects` 统一管理 `EmitState`/`Toast`/`Error` 和命令；`core::infra` 提供预加载、预取、请求跟踪能力。
+- **Core 层（`src/core`）**：`spawn_app_actor` 启动 `NeteaseActor`（高/低优先级通道）、音频工作线程并运行 `core::reducer`；`reducer.rs` 只做消息路由，`core/reducer/*` 子模块拆分各领域的 UI/事件调度；`CoreState` 持有 `App`、`settings`、`RequestTracker`、`PreloadManager`、`NextSongCacheManager`、待处理请求等信息；`CoreEffects` 统一管理 `EmitState`/`Toast`/`Error` 和命令；`core::infra` 提供预加载、预取、请求跟踪能力。
 - **Features（`src/features`）**：按业务拆分为 login/logout/lyrics/player/playlists/search/settings，提供命令与事件处理函数。每个 handler 接收 `AppCommand`/`NeteaseEvent`/`AudioEvent`、操作 `App`、调度 `CoreEffects`，特定模块之间只通过 `App` 状态、`PreloadManager`、`NextSongCacheManager` 等共享上下文。
 - **状态与消息**：`src/app/state.rs` 定义 `App`、`View`、`TabConfig`、播放/歌单/歌词状态，`src/app/parsers.rs` 保留搜索/歌单解析工具；`src/messages/app.rs` 定义 `AppCommand`/`AppEvent`，`core::prelude` 把 `App`、`NeteaseCommand/Event`、`AudioCommand/Event` 等再导出一次。
 - **Domain / 网关 / 音频**：`src/domain` 提供 `Song`/`Playlist`/`LyricLine` 等稳定模型；`src/netease` 包含 `NeteaseClient`（config/cookie/error/types/crypto 等）、`NeteaseActor`；`src/audio_worker` 负责播放线程（`messages`/`worker`/`player`/`cache`/`download`/`transfer`），通过 std mpsc 与 `core` 的 tokio 通道互通；`src/settings/store.rs` 实现设置与 cookie 持久化；`src/logging.rs`、`src/error.rs` 分别负责日志与错误边界。
@@ -105,7 +105,7 @@ sudo apt-get install -y libasound2-dev
 - `src/main.rs`：入口；解析 CLI、初始化日志、构造 `NeteaseClientConfig`，通过 `core::spawn_app_actor` 启动 actor 用于 `run_tui`。
 - `src/ui/cli.rs`：命令行参数与子命令（TUI / SkipLogin / QrKey）；`src/ui/tui.rs` 搭建 ratatui 渲染与事件处理。
 - `src/ui/tui/`：纯 UI 组织（event_loop、guard、keyboard、mouse、views、widgets、player_status、login/lyrics/playlists/search/settings 视图、utils）。
-- `src/core`：`spawn_app_actor`、`reducer`、`effects`、`infra`（`RequestTracker`/`PreloadManager`/`NextSongCacheManager`）、`prelude`、`utils`。
+- `src/core`：`spawn_app_actor`、`reducer.rs` + `reducer/` 子模块（login/search/playlists/player/lyrics/settings）、`effects`、`infra`（`RequestTracker`/`PreloadManager`/`NextSongCacheManager`）、`prelude`、`utils`。
 - `src/features`：按功能拆分的 handler 模块（login/logout/lyrics/player/playlists/search/settings），共享 `core::prelude`。
 - `src/app`：`App` 状态、`TabConfig`、搜索/歌单解析函数。
 - `src/messages`：`AppCommand`、`AppEvent`。

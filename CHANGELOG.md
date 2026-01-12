@@ -5,6 +5,7 @@
 ### 核心 + 特性模块化
 
 - `src/core` 重新承担 App Actor 角色：`spawn_app_actor` 启动 `NeteaseActor`（高/低优先级）、音频工作线程与 tokio `CoreMsg` 循环，`core::reducer` 维护 `CoreState`（`App`、`settings`、`RequestTracker`、`PreloadManager`、`NextSongCacheManager` 等）并把状态更新、`NeteaseCommand`、`AudioCommand` 统一交给 `CoreEffects`；`core::prelude` 负责导出常用类型与工具。
+- `core::reducer` 进一步拆分为 `src/core/reducer/` 子模块（login/search/playlists/player/lyrics/settings），`reducer.rs` 仅保留消息路由与调度，业务处理与测试覆盖各子模块关键路径。
 - `src/app/state.rs` 把 `App`、`View`、`TabConfig`、播放/歌词/歌单状态与默认值集中起来，`src/app/parsers.rs` 保留搜索/歌单解析辅助。
 - `src/features` 按业务拆分为 login/logout/lyrics/player/playlists/search/settings，专注命令/事件处理、`App` 维护与 `CoreEffects` 调度，保持 `core::reducer` 业务面向最小。
 - `src/messages/app.rs` 继续定义 `AppCommand`/`AppEvent`；所有功能模块通过 `AppCommand` 触发，`AppEvent::State`/`Toast`/`Error` 推给 UI。
