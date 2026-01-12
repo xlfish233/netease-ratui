@@ -4,6 +4,12 @@
 
 - 暂无
 
+## v0.0.5（2026-01-12）
+
+- 音频模块重构：引入独立线程 + LocalSet 的 AudioEngine，隔离 !Send 音频资源并保持 async 控制流。
+- 全面支持 300ms crossfade（切歌/下一首/上一首/自动切歌），并可在设置中调整或关闭。
+- 新增无声模式：支持 `--no-audio` 与 `NETEASE_NO_AUDIO=1`，CI/无声环境可用。
+
 ## v0.0.4（2026-01-12）
 
 - 音频 worker 改为在独立线程的单线程 tokio runtime 中运行，避免非 Send 资源跨线程导致构建失败，同时保持异步 IO。
