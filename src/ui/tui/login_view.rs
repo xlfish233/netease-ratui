@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::LoginSnapshot;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -7,8 +7,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-pub(super) fn draw_login(f: &mut Frame, area: Rect, app: &App) {
-    if app.login_cookie_input_visible {
+pub(super) fn draw_login(f: &mut Frame, area: Rect, state: &LoginSnapshot, logged_in: bool) {
+    if state.login_cookie_input_visible {
         // Cookie 输入模式
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -23,7 +23,7 @@ pub(super) fn draw_login(f: &mut Frame, area: Rect, app: &App) {
             .block(Block::default().borders(Borders::ALL).title("提示"));
         f.render_widget(hint, chunks[0]);
 
-        let input = Paragraph::new(app.login_cookie_input.as_str()).block(
+        let input = Paragraph::new(state.login_cookie_input.as_str()).block(
             Block::default()
                 .borders(Borders::ALL)
                 .title("MUSIC_U (回车提交，Esc 取消)"),
@@ -46,14 +46,14 @@ pub(super) fn draw_login(f: &mut Frame, area: Rect, app: &App) {
             .constraints([Constraint::Min(8), Constraint::Length(9)])
             .split(area);
 
-        let qr_hint = if app.login_qr_ascii.is_some() {
+        let qr_hint = if state.login_qr_ascii.is_some() {
             ""
         } else {
             "\n\n按 l 生成二维码，或按 c 使用 Cookie 登录"
         };
         let qr_display = format!(
             "{}{}",
-            app.login_qr_ascii.as_deref().unwrap_or("尚未生成二维码"),
+            state.login_qr_ascii.as_deref().unwrap_or("尚未生成二维码"),
             qr_hint
         );
         let qr_block = Paragraph::new(Text::from(qr_display))
@@ -72,13 +72,13 @@ pub(super) fn draw_login(f: &mut Frame, area: Rect, app: &App) {
             \n\
             Cookie 登录：浏览器登录 music.163.com\n\
             后按 c，输入 MUSIC_U 值即可",
-            app.login_status,
-            if app.logged_in {
+            state.login_status,
+            if logged_in {
                 "是"
             } else {
                 "否 (可扫码或 Cookie 登录)"
             },
-            app.login_qr_url.as_deref().unwrap_or("-")
+            state.login_qr_url.as_deref().unwrap_or("-")
         );
         let info_block =
             Paragraph::new(info).block(Block::default().borders(Borders::ALL).title("操作说明"));

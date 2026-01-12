@@ -1,10 +1,14 @@
-use crate::app::{App, tab_configs};
+use crate::app::{AppSnapshot, tab_configs};
 use crate::messages::app::AppCommand;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use tokio::sync::mpsc;
 use unicode_width::UnicodeWidthStr;
 
-pub(super) async fn handle_mouse(app: &App, mouse: MouseEvent, tx: &mpsc::Sender<AppCommand>) {
+pub(super) async fn handle_mouse(
+    app: &AppSnapshot,
+    mouse: MouseEvent,
+    tx: &mpsc::Sender<AppCommand>,
+) {
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
         && mouse.row < 3  // 页签区域高度为 3 行
         && let Some(tab_index) = calculate_tab_index(app, mouse.column)
@@ -13,7 +17,7 @@ pub(super) async fn handle_mouse(app: &App, mouse: MouseEvent, tx: &mpsc::Sender
     }
 }
 
-pub(super) fn calculate_tab_index(app: &App, column: u16) -> Option<usize> {
+pub(super) fn calculate_tab_index(app: &AppSnapshot, column: u16) -> Option<usize> {
     let configs = tab_configs(app.logged_in);
 
     const DIVIDER_WIDTH: u16 = 1;

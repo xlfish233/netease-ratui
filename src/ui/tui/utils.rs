@@ -1,13 +1,13 @@
-use crate::app::{App, PlayMode};
+use crate::app::{PlayMode, PlayerSnapshot};
 use std::time::Instant;
 
-pub(super) fn playback_time_ms(app: &App) -> (u64, Option<u64>) {
-    let Some(started) = app.play_started_at else {
+pub(super) fn playback_time_ms(player: &PlayerSnapshot) -> (u64, Option<u64>) {
+    let Some(started) = player.play_started_at else {
         return (0, None);
     };
 
-    let now = if app.paused {
-        app.play_paused_at.unwrap_or_else(Instant::now)
+    let now = if player.paused {
+        player.play_paused_at.unwrap_or_else(Instant::now)
     } else {
         Instant::now()
     };
@@ -15,8 +15,8 @@ pub(super) fn playback_time_ms(app: &App) -> (u64, Option<u64>) {
     let elapsed = now
         .duration_since(started)
         .as_millis()
-        .saturating_sub(app.play_paused_accum_ms as u128) as u64;
-    (elapsed, app.play_total_ms)
+        .saturating_sub(player.play_paused_accum_ms as u128) as u64;
+    (elapsed, player.play_total_ms)
 }
 
 pub(super) fn current_lyric_index(

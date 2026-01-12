@@ -212,3 +212,145 @@ impl Default for App {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct AppSnapshot {
+    pub view: View,
+    pub logged_in: bool,
+    pub player: PlayerSnapshot,
+    pub view_state: AppViewSnapshot,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayerSnapshot {
+    pub now_playing: Option<String>,
+    pub play_status: String,
+    pub paused: bool,
+    pub play_started_at: Option<Instant>,
+    pub play_total_ms: Option<u64>,
+    pub play_paused_at: Option<Instant>,
+    pub play_paused_accum_ms: u64,
+    pub play_mode: PlayMode,
+    pub volume: f32,
+    pub play_br: i64,
+}
+
+#[derive(Debug, Clone)]
+pub enum AppViewSnapshot {
+    Login(LoginSnapshot),
+    Playlists(PlaylistsSnapshot),
+    Search(SearchSnapshot),
+    Lyrics(LyricsSnapshot),
+    Settings(SettingsSnapshot),
+}
+
+#[derive(Debug, Clone)]
+pub struct LoginSnapshot {
+    pub login_qr_url: Option<String>,
+    pub login_qr_ascii: Option<String>,
+    pub login_status: String,
+    pub login_cookie_input: String,
+    pub login_cookie_input_visible: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SearchSnapshot {
+    pub search_input: String,
+    pub search_results: Vec<Song>,
+    pub search_selected: usize,
+    pub search_status: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlaylistsSnapshot {
+    pub playlist_mode: PlaylistMode,
+    pub playlists: Vec<Playlist>,
+    pub playlists_selected: usize,
+    pub playlist_tracks: Vec<Song>,
+    pub playlist_tracks_selected: usize,
+    pub playlists_status: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LyricsSnapshot {
+    pub lyrics: Vec<LyricLine>,
+    pub lyrics_status: String,
+    pub lyrics_follow: bool,
+    pub lyrics_selected: usize,
+    pub lyrics_offset_ms: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SettingsSnapshot {
+    pub settings_selected: usize,
+    pub settings_status: String,
+    pub lyrics_offset_ms: i64,
+}
+
+impl AppSnapshot {
+    pub fn from_app(app: &App) -> Self {
+        let player = PlayerSnapshot {
+            now_playing: app.now_playing.clone(),
+            play_status: app.play_status.clone(),
+            paused: app.paused,
+            play_started_at: app.play_started_at,
+            play_total_ms: app.play_total_ms,
+            play_paused_at: app.play_paused_at,
+            play_paused_accum_ms: app.play_paused_accum_ms,
+            play_mode: app.play_mode,
+            volume: app.volume,
+            play_br: app.play_br,
+        };
+
+        let view_state = match app.view {
+            View::Login => AppViewSnapshot::Login(LoginSnapshot {
+                login_qr_url: app.login_qr_url.clone(),
+                login_qr_ascii: app.login_qr_ascii.clone(),
+                login_status: app.login_status.clone(),
+                login_cookie_input: app.login_cookie_input.clone(),
+                login_cookie_input_visible: app.login_cookie_input_visible,
+            }),
+            View::Playlists => AppViewSnapshot::Playlists(PlaylistsSnapshot {
+                playlist_mode: app.playlist_mode,
+                playlists: if matches!(app.playlist_mode, PlaylistMode::List) {
+                    app.playlists.clone()
+                } else {
+                    Vec::new()
+                },
+                playlists_selected: app.playlists_selected,
+                playlist_tracks: if matches!(app.playlist_mode, PlaylistMode::Tracks) {
+                    app.playlist_tracks.clone()
+                } else {
+                    Vec::new()
+                },
+                playlist_tracks_selected: app.playlist_tracks_selected,
+                playlists_status: app.playlists_status.clone(),
+            }),
+            View::Search => AppViewSnapshot::Search(SearchSnapshot {
+                search_input: app.search_input.clone(),
+                search_results: app.search_results.clone(),
+                search_selected: app.search_selected,
+                search_status: app.search_status.clone(),
+            }),
+            View::Lyrics => AppViewSnapshot::Lyrics(LyricsSnapshot {
+                lyrics: app.lyrics.clone(),
+                lyrics_status: app.lyrics_status.clone(),
+                lyrics_follow: app.lyrics_follow,
+                lyrics_selected: app.lyrics_selected,
+                lyrics_offset_ms: app.lyrics_offset_ms,
+            }),
+            View::Settings => AppViewSnapshot::Settings(SettingsSnapshot {
+                settings_selected: app.settings_selected,
+                settings_status: app.settings_status.clone(),
+                lyrics_offset_ms: app.lyrics_offset_ms,
+            }),
+        };
+
+        Self {
+            view: app.view,
+            logged_in: app.logged_in,
+            player,
+            view_state,
+        }
+    }
+}

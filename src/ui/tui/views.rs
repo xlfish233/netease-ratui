@@ -3,7 +3,7 @@ use super::lyrics_view::draw_lyrics;
 use super::playlists_view::draw_playlists;
 use super::search_view::draw_search;
 use super::settings_view::draw_settings;
-use crate::app::{App, View, tab_configs, tab_index_for_view};
+use crate::app::{AppSnapshot, AppViewSnapshot, View, tab_configs, tab_index_for_view};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -12,7 +12,7 @@ use ratatui::{
     widgets::{Block, Borders, Tabs},
 };
 
-pub(super) fn draw_ui(f: &mut Frame, app: &App) {
+pub(super) fn draw_ui(f: &mut Frame, app: &AppSnapshot) {
     let size = f.area();
 
     let configs = tab_configs(app.logged_in);
@@ -37,11 +37,22 @@ pub(super) fn draw_ui(f: &mut Frame, app: &App) {
         .split(size);
     f.render_widget(tabs, chunks[0]);
 
-    match app.view {
-        View::Login => draw_login(f, chunks[1], app),
-        View::Playlists => draw_playlists(f, chunks[1], app),
-        View::Search => draw_search(f, chunks[1], app),
-        View::Lyrics => draw_lyrics(f, chunks[1], app),
-        View::Settings => draw_settings(f, chunks[1], app),
+    match (&app.view, &app.view_state) {
+        (View::Login, AppViewSnapshot::Login(state)) => {
+            draw_login(f, chunks[1], state, app.logged_in);
+        }
+        (View::Playlists, AppViewSnapshot::Playlists(state)) => {
+            draw_playlists(f, chunks[1], state, &app.player);
+        }
+        (View::Search, AppViewSnapshot::Search(state)) => {
+            draw_search(f, chunks[1], state, &app.player);
+        }
+        (View::Lyrics, AppViewSnapshot::Lyrics(state)) => {
+            draw_lyrics(f, chunks[1], state, &app.player);
+        }
+        (View::Settings, AppViewSnapshot::Settings(state)) => {
+            draw_settings(f, chunks[1], state, &app.player, app.logged_in);
+        }
+        _ => {}
     }
 }

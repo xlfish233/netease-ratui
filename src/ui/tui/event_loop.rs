@@ -2,7 +2,7 @@ use super::guard::TuiGuard;
 use super::keyboard::handle_key;
 use super::mouse::handle_mouse;
 use super::views::draw_ui;
-use crate::app::{App, View};
+use crate::app::{AppSnapshot, AppViewSnapshot, View};
 use crate::messages::app::{AppCommand, AppEvent};
 use crossterm::event::{self, Event};
 use ratatui::{Terminal, backend::CrosstermBackend};
@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 pub(super) async fn run_tui_internal(
-    mut app: App,
+    mut app: AppSnapshot,
     tx: mpsc::Sender<AppCommand>,
     mut rx: mpsc::Receiver<AppEvent>,
 ) -> io::Result<()> {
@@ -27,21 +27,9 @@ pub(super) async fn run_tui_internal(
     loop {
         while let Ok(evt) = rx.try_recv() {
             match evt {
-                AppEvent::State(s) => app = *s,
-                AppEvent::Toast(s) => match app.view {
-                    View::Login => app.login_status = s,
-                    View::Playlists => app.playlists_status = s,
-                    View::Search => app.search_status = s,
-                    View::Lyrics => app.lyrics_status = s,
-                    View::Settings => app.settings_status = s,
-                },
-                AppEvent::Error(e) => match app.view {
-                    View::Login => app.login_status = format!("错误: {e}"),
-                    View::Playlists => app.playlists_status = format!("错误: {e}"),
-                    View::Search => app.search_status = format!("错误: {e}"),
-                    View::Lyrics => app.lyrics_status = format!("错误: {e}"),
-                    View::Settings => app.settings_status = format!("错误: {e}"),
-                },
+                AppEvent::State(s) => app = s,
+                AppEvent::Toast(s) => apply_status_message(&mut app, s),
+                AppEvent::Error(e) => apply_status_message(&mut app, format!("错误: {e}")),
             }
         }
 
@@ -68,4 +56,15 @@ pub(super) async fn run_tui_internal(
     }
 
     Ok(())
+}
+
+fn apply_status_message(app: &mut AppSnapshot, message: String) {
+    match (&app.view, &mut app.view_state) {
+        (View::Login, AppViewSnapshot::Login(state)) => state.login_status = message,
+        (View::Playlists, AppViewSnapshot::Playlists(state)) => state.playlists_status = message,
+        (View::Search, AppViewSnapshot::Search(state)) => state.search_status = message,
+        (View::Lyrics, AppViewSnapshot::Lyrics(state)) => state.lyrics_status = message,
+        (View::Settings, AppViewSnapshot::Settings(state)) => state.settings_status = message,
+        _ => {}
+    }
 }

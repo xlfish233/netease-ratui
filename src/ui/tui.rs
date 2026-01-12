@@ -13,14 +13,14 @@ mod utils;
 mod views;
 mod widgets;
 
-use crate::app::App;
+use crate::app::AppSnapshot;
 use crate::messages::app::{AppCommand, AppEvent};
 use std::io;
 use tokio::sync::mpsc;
 
 /// 主 TUI 入口点 - 从 main.rs 调用
 pub async fn run_tui(
-    app: App,
+    app: AppSnapshot,
     tx: mpsc::Sender<AppCommand>,
     rx: mpsc::Receiver<AppEvent>,
 ) -> io::Result<()> {

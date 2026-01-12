@@ -1,5 +1,5 @@
 use super::player_status::draw_player_status;
-use crate::app::{App, PlaylistMode};
+use crate::app::{PlaylistsSnapshot, PlayerSnapshot, PlaylistMode};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -11,18 +11,23 @@ use ratatui::{
 
 const PLAYER_PANEL_HEIGHT: u16 = 12;
 
-pub(super) fn draw_playlists(f: &mut Frame, area: Rect, app: &App) {
+pub(super) fn draw_playlists(
+    f: &mut Frame,
+    area: Rect,
+    state: &PlaylistsSnapshot,
+    player: &PlayerSnapshot,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(8), Constraint::Length(PLAYER_PANEL_HEIGHT)])
         .split(area);
 
-    let title = match app.playlist_mode {
+    let title = match state.playlist_mode {
         PlaylistMode::List => "歌单(↑↓选择 回车打开)",
         PlaylistMode::Tracks => "歌曲(↑↓选择 p 播放 b 返回)",
     };
-    let items: Vec<ListItem> = match app.playlist_mode {
-        PlaylistMode::List => app
+    let items: Vec<ListItem> = match state.playlist_mode {
+        PlaylistMode::List => state
             .playlists
             .iter()
             .enumerate()
@@ -41,7 +46,7 @@ pub(super) fn draw_playlists(f: &mut Frame, area: Rect, app: &App) {
                 )))
             })
             .collect(),
-        PlaylistMode::Tracks => app
+        PlaylistMode::Tracks => state
             .playlist_tracks
             .iter()
             .enumerate()
@@ -56,9 +61,9 @@ pub(super) fn draw_playlists(f: &mut Frame, area: Rect, app: &App) {
         .highlight_style(Style::default().fg(Color::Yellow));
 
     let mut st = ratatui::widgets::ListState::default();
-    let sel = match app.playlist_mode {
-        PlaylistMode::List => app.playlists_selected,
-        PlaylistMode::Tracks => app.playlist_tracks_selected,
+    let sel = match state.playlist_mode {
+        PlaylistMode::List => state.playlists_selected,
+        PlaylistMode::Tracks => state.playlist_tracks_selected,
     };
     st.select(Some(sel));
     f.render_stateful_widget(list, chunks[0], &mut st);
@@ -66,9 +71,9 @@ pub(super) fn draw_playlists(f: &mut Frame, area: Rect, app: &App) {
     draw_player_status(
         f,
         chunks[1],
-        app,
+        player,
         "状态",
         "歌单",
-        app.playlists_status.as_str(),
+        state.playlists_status.as_str(),
     );
 }

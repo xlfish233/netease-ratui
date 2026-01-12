@@ -1,6 +1,6 @@
 use super::player_status::draw_player_status;
 use super::widgets::list_state;
-use crate::app::App;
+use crate::app::{PlayerSnapshot, SearchSnapshot};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -12,7 +12,12 @@ use ratatui::{
 
 const PLAYER_PANEL_HEIGHT: u16 = 12;
 
-pub(super) fn draw_search(f: &mut Frame, area: Rect, app: &App) {
+pub(super) fn draw_search(
+    f: &mut Frame,
+    area: Rect,
+    state: &SearchSnapshot,
+    player: &PlayerSnapshot,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -22,14 +27,14 @@ pub(super) fn draw_search(f: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    let input = Paragraph::new(app.search_input.as_str()).block(
+    let input = Paragraph::new(state.search_input.as_str()).block(
         Block::default()
             .borders(Borders::ALL)
             .title("关键词(回车搜索)"),
     );
     f.render_widget(input, chunks[0]);
 
-    let items = app
+    let items = state
         .search_results
         .iter()
         .enumerate()
@@ -42,14 +47,14 @@ pub(super) fn draw_search(f: &mut Frame, area: Rect, app: &App) {
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title("结果(↑↓选择)"))
         .highlight_style(Style::default().fg(Color::Yellow));
-    f.render_stateful_widget(list, chunks[1], &mut list_state(app.search_selected));
+    f.render_stateful_widget(list, chunks[1], &mut list_state(state.search_selected));
 
     draw_player_status(
         f,
         chunks[2],
-        app,
+        player,
         "状态",
         "搜索",
-        app.search_status.as_str(),
+        state.search_status.as_str(),
     );
 }

@@ -1,6 +1,6 @@
 use super::utils::{br_label, fmt_mmss, playback_time_ms};
 use super::widgets::progress_bar_text;
-use crate::app::{App, PlayMode};
+use crate::app::{PlayMode, PlayerSnapshot};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -12,7 +12,7 @@ use ratatui::{
 pub(super) fn draw_player_status(
     f: &mut Frame,
     area: Rect,
-    app: &App,
+    player: &PlayerSnapshot,
     title: &str,
     context_label: &str,
     context_value: &str,
@@ -27,16 +27,16 @@ pub(super) fn draw_player_status(
         .constraints([Constraint::Length(status_height), Constraint::Min(0)])
         .split(area);
 
-    let now = app.now_playing.as_deref().unwrap_or("-");
-    let (elapsed_ms, total_ms) = playback_time_ms(app);
+    let now = player.now_playing.as_deref().unwrap_or("-");
+    let (elapsed_ms, total_ms) = playback_time_ms(player);
     let progress = progress_bar_text(elapsed_ms, total_ms, 24);
     let time_text = format!(
         "{} / {}{}",
         fmt_mmss(elapsed_ms),
         total_ms.map(fmt_mmss).unwrap_or_else(|| "--:--".to_owned()),
-        if app.paused { " (暂停)" } else { "" }
+        if player.paused { " (暂停)" } else { "" }
     );
-    let mode_text = match app.play_mode {
+    let mode_text = match player.play_mode {
         PlayMode::Sequential => "顺序",
         PlayMode::ListLoop => "列表循环",
         PlayMode::SingleLoop => "单曲循环",
@@ -45,13 +45,13 @@ pub(super) fn draw_player_status(
 
     let status_lines = vec![
         Line::from(format!("{context_label}: {context_value}")),
-        Line::from(format!("播放: {} | Now: {}", app.play_status, now)),
+        Line::from(format!("播放: {} | Now: {}", player.play_status, now)),
         Line::from(format!(
             "时间: {} | 模式: {} | 音量: {:.0}% | 音质: {}",
             time_text,
             mode_text,
-            (app.volume.clamp(0.0, 2.0) * 100.0),
-            br_label(app.play_br),
+            (player.volume.clamp(0.0, 2.0) * 100.0),
+            br_label(player.play_br),
         )),
         Line::from(progress),
     ];

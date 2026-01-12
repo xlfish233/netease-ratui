@@ -10,7 +10,7 @@ mod netease;
 mod settings;
 mod ui;
 
-use app::App;
+use app::{App, AppSnapshot};
 use clap::Parser;
 use error::AppError;
 use netease::{NeteaseClient, NeteaseClientConfig};
@@ -71,7 +71,7 @@ async fn main() -> Result<(), AppError> {
     match cli.command.unwrap_or(Command::Tui) {
         Command::Tui => {
             let (tx, rx) = core::spawn_app_actor(cfg);
-            run_tui(App::default(), tx, rx).await?;
+            run_tui(AppSnapshot::from_app(&App::default()), tx, rx).await?;
             Ok(())
         }
         Command::SkipLogin { keywords, limit } => {

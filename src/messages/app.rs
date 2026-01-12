@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::AppSnapshot;
 
 #[derive(Debug)]
 pub enum AppCommand {
@@ -47,7 +47,7 @@ pub enum AppCommand {
 
 #[derive(Debug)]
 pub enum AppEvent {
-    State(Box<App>),
+    State(AppSnapshot),
     #[allow(dead_code)]
     Toast(String),
     #[allow(dead_code)]

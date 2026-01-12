@@ -1,5 +1,6 @@
 ﻿use crate::app::App;
 use crate::audio_worker::AudioCommand;
+use crate::app::AppSnapshot;
 use crate::messages::app::AppEvent;
 use crate::netease::actor::NeteaseCommand;
 use tokio::sync::mpsc;
@@ -11,7 +12,7 @@ pub struct CoreEffects {
 
 #[derive(Debug)]
 pub enum CoreEffect {
-    EmitState(Box<App>),
+    EmitState(AppSnapshot),
     EmitToast(String),
     EmitError(String),
     SendNeteaseHi {
@@ -31,7 +32,7 @@ pub enum CoreEffect {
 impl CoreEffects {
     pub fn emit_state(&mut self, app: &App) {
         self.actions
-            .push(CoreEffect::EmitState(Box::new(app.clone())));
+            .push(CoreEffect::EmitState(AppSnapshot::from_app(app)));
     }
 
     pub fn send_netease_hi(&mut self, cmd: NeteaseCommand) {
