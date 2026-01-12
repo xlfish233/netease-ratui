@@ -5,7 +5,6 @@ use crate::netease::NeteaseClientConfig;
 use crate::netease::actor::NeteaseEvent;
 use crate::settings as app_settings;
 
-use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -134,20 +133,13 @@ pub fn spawn_app_actor(
     let (tx_netease_hi, tx_netease_lo, mut rx_netease) =
         crate::netease::actor::spawn_netease_actor(cfg);
 
-    // Audio worker is blocking thread + std mpsc. Bridge it to tokio mpsc.
-    let (tx_audio, rx_audio) = crate::audio_worker::spawn_audio_worker(data_dir.clone());
-    let (tx_audio_evt, mut rx_audio_evt) = mpsc::channel::<AudioEvent>(64);
-    thread::spawn(move || {
-        while let Ok(evt) = rx_audio.recv() {
-            let _ = tx_audio_evt.blocking_send(evt);
-        }
-    });
+    let (tx_audio, mut rx_audio_evt) = crate::audio_worker::spawn_audio_worker(data_dir.clone());
 
     tokio::spawn(async move {
         let mut state = CoreState::new(&data_dir);
 
         settings_handlers::apply_settings_to_app(&mut state.app, &state.settings);
-        let _ = tx_audio.send(AudioCommand::SetCacheBr(state.app.play_br));
+        let _ = tx_audio.send(AudioCommand::SetCacheBr(state.app.play_br)).await;
 
         let mut qr_poll = tokio::time::interval(Duration::from_secs(2));
         let dispatch = CoreDispatch {

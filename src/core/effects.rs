@@ -83,7 +83,7 @@ impl CoreEffects {
 pub struct CoreDispatch<'a> {
     pub(super) tx_netease_hi: &'a mpsc::Sender<NeteaseCommand>,
     pub(super) tx_netease_lo: &'a mpsc::Sender<NeteaseCommand>,
-    pub(super) tx_audio: &'a std::sync::mpsc::Sender<AudioCommand>,
+    pub(super) tx_audio: &'a mpsc::Sender<AudioCommand>,
     pub(super) tx_evt: &'a mpsc::Sender<AppEvent>,
 }
 
@@ -114,10 +114,10 @@ pub async fn run_effects(effects: CoreEffects, dispatch: &CoreDispatch<'_>) {
                 }
             }
             CoreEffect::SendAudio { cmd, warn } => {
-                if dispatch.tx_audio.send(cmd).is_err()
+                if let Err(e) = dispatch.tx_audio.send(cmd).await
                     && let Some(ctx) = warn
                 {
-                    tracing::warn!("{ctx}");
+                    tracing::warn!(err = %e, "{ctx}");
                 }
             }
         }

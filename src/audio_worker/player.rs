@@ -5,9 +5,9 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use tokio::sync::mpsc;
 
 use super::messages::AudioEvent;
 
@@ -83,7 +83,7 @@ pub(super) fn play_path(
     thread::spawn(move || {
         sink_end.sleep_until_end();
         if !cancel.load(Ordering::Relaxed) {
-            let _ = tx_end.send(AudioEvent::Ended { play_id });
+            let _ = tx_end.blocking_send(AudioEvent::Ended { play_id });
         }
     });
 
@@ -120,7 +120,7 @@ pub(super) fn seek_to_ms(
     thread::spawn(move || {
         sink_end.sleep_until_end();
         if !cancel.load(Ordering::Relaxed) {
-            let _ = tx_end.send(AudioEvent::Ended { play_id });
+            let _ = tx_end.blocking_send(AudioEvent::Ended { play_id });
         }
     });
 
