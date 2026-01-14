@@ -374,7 +374,10 @@ mod tests {
 
         // persist_index_if_dirty should persist and clear dirty flag
         cache.persist_index_if_dirty();
-        assert!(!cache.dirty, "persist_index_if_dirty should clear dirty flag");
+        assert!(
+            !cache.dirty,
+            "persist_index_if_dirty should clear dirty flag"
+        );
     }
 
     #[test]
@@ -407,7 +410,10 @@ mod tests {
         assert!(result.is_ok(), "commit_tmp_file should succeed");
 
         // Dirty flag should be cleared after persist
-        assert!(!cache.dirty, "commit_tmp_file should persist and clear dirty flag");
+        assert!(
+            !cache.dirty,
+            "commit_tmp_file should persist and clear dirty flag"
+        );
 
         // File should exist
         let cache_dir = cache.cache_dir().unwrap();
@@ -432,7 +438,10 @@ mod tests {
         cache.invalidate(123, 456);
 
         // Dirty flag should be cleared after persist
-        assert!(!cache.dirty, "invalidate should persist and clear dirty flag");
+        assert!(
+            !cache.dirty,
+            "invalidate should persist and clear dirty flag"
+        );
 
         // File should be removed
         assert!(!test_file.exists(), "cached file should be removed");
@@ -455,7 +464,10 @@ mod tests {
         cache.clear_all(None);
 
         // Dirty flag should be cleared after persist
-        assert!(!cache.dirty, "clear_all should persist and clear dirty flag");
+        assert!(
+            !cache.dirty,
+            "clear_all should persist and clear dirty flag"
+        );
 
         // File should be removed
         assert!(!test_file.exists(), "cached file should be removed");
@@ -484,7 +496,10 @@ mod tests {
         }
 
         // dirty should still be true (not cleared yet)
-        assert!(cache.dirty, "dirty flag should still be true after multiple lookups");
+        assert!(
+            cache.dirty,
+            "dirty flag should still be true after multiple lookups"
+        );
 
         // Now persist
         cache.persist_index_if_dirty();

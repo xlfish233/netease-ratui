@@ -281,12 +281,14 @@ pub fn spawn_transfer_actor_with_config(
                             };
 
                             // Enforce "only keep current br" policy (best-effort).
-                            if active_br != 0 && key.br == active_br {
-                                cache.purge_song_other_brs(key.song_id, key.br, None);
-                            } else if active_br != 0 && key.br != active_br {
-                                cache.purge_not_br(active_br, None);
-                            } else {
-                                cache.purge_song_other_brs(key.song_id, key.br, None);
+                            if active_br != 0 {
+                                if key.br == active_br {
+                                    // 下载的是保留音质，仅清理这首歌的其他音质
+                                    cache.purge_song_other_brs(key.song_id, key.br, None);
+                                } else {
+                                    // 下载的不是保留音质，全局清理所有非保留音质的文件
+                                    cache.purge_not_br(active_br, None);
+                                }
                             }
 
                             if let Some(st) = jobs.remove(&key) {

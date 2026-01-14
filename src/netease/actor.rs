@@ -1,6 +1,6 @@
 use crate::domain::model::{Account, LoginStatus, LyricLine, Playlist, Song, SongUrl};
-use crate::netease::models::{convert, dto};
 use crate::netease::models::convert::ModelError;
+use crate::netease::models::{convert, dto};
 use crate::netease::{NeteaseClient, NeteaseClientConfig};
 
 use serde_json::Value;
@@ -332,7 +332,11 @@ pub fn spawn_netease_actor(
                                 }
                                 Err(ModelError::MissingField("data[0].url")) => {
                                     // 歌曲无可用 URL（版权限制等），发送特殊事件
-                                    tracing::warn!(req_id, song_id = id, "歌曲无可用播放链接，自动跳过");
+                                    tracing::warn!(
+                                        req_id,
+                                        song_id = id,
+                                        "歌曲无可用播放链接，自动跳过"
+                                    );
                                     let _ = tx_evt
                                         .send(NeteaseEvent::SongUrlUnavailable { req_id, id })
                                         .await;
