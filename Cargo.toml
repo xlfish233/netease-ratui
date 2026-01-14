@@ -34,3 +34,6 @@ tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 clap = { version = "4.5.54", features = ["derive", "env"] }
 unicode-width = "0.2"
+
+[dev-dependencies]
+mockito = "1.6"

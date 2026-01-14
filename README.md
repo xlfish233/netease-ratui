@@ -168,6 +168,15 @@ cargo run -- qr-key
 ```bash
 # 运行测试
 cargo test
+
+# 运行所有检查（格式 + clippy + 测试）
+make check
+
+# 代码覆盖率检查
+make coverage
+
+# 安装 pre-commit hooks
+make install-hooks
 ```
 
 ## 路线图

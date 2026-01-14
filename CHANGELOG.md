@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **测试基础设施**：添加代码覆盖率工具（tarpaulin）、pre-commit hooks、Makefile，CI 集成覆盖率检查
+- **DTO 转换测试**：为 `src/netease/models/convert.rs` 添加 15 个单元测试，覆盖登录状态、歌词解析、歌单转换、歌曲 URL 等核心功能
+- **改进 .gitignore**：添加覆盖率报告、测试临时文件、编辑器配置等常见忽略项
+- **总测试数量**：从 28 个增加到 43 个（+53%）
+
 - **自动跳过版权限制歌曲**：添加 `NeteaseEvent::SongUrlUnavailable` 事件类型，当歌曲无可用播放链接时（版权限制、VIP 专享等）自动跳转到下一首，改善用户体验。
 - **音频缓存优化**：`AudioCache` 引入 `dirty` 标志实现延迟持久化，显著减少频繁切歌场景下的磁盘 I/O（从每次 lookup 都持久化优化为仅在程序退出时持久化）。
 - **音频线程验证**：添加 `attach_sink` 线程创建/退出的调试日志，验证 `stop()` 能立即终止 `sleep_until_end()`，确认当前架构无线程泄漏问题。

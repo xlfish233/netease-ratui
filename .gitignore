@@ -1,3 +1,29 @@
 /target
 /.idea/*
 !/.idea/.gitignore
+
+# Test coverage
+tarpaulin-report.html
+cobertura.xml
+*.profraw
+
+# Test artifacts
+*.profdata
+*.log
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data (for development)
+netease_state.json
+settings.json
+audio_cache/
+logs/

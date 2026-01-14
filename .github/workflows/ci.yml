@@ -47,3 +47,17 @@ jobs:
 
       - name: Test
         run: cargo test --target ${{ matrix.target }}
+
+      - name: Coverage (Linux only)
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          cargo install cargo-tarpaulin
+          cargo tarpaulin --out Xml --output-dir coverage --timeout 300 -- --test-threads=1
+
+      - name: Upload coverage to Codecov
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage/cobertura.xml
+          fail_ci_if_error: false
+          verbose: true

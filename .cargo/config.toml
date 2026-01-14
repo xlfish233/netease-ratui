@@ -1,0 +1,10 @@
+[build]
+target-dir = "target"
+
+[profile.dev]
+# 优化依赖项的编译速度
+opt-level = 0
+
+[profile.test]
+# 测试时也启用一些优化以提高性能
+opt-level = 1
