@@ -6,6 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 
+use crate::error::DownloadError;
+
 pub(super) fn clear_dir_files(dir: &Path, keep: Option<&Path>) -> (usize, u64) {
     let mut removed_files = 0usize;
     let mut removed_bytes = 0u64;
@@ -46,7 +48,7 @@ pub async fn download_to_path_with_config(
     retries: u32,
     backoff_ms: u64,
     backoff_max_ms: u64,
-) -> Result<(), String> {
+) -> Result<(), DownloadError> {
     for attempt in 0..=retries {
         // Ensure each attempt starts from a clean file.
         let _ = tokio::fs::remove_file(out_path).await;
@@ -58,7 +60,7 @@ pub async fn download_to_path_with_config(
                     sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
                     continue;
                 }
-                return Err(format!("下载音频失败({title}): {e}"));
+                return Err(DownloadError::Http(e));
             }
         };
 
@@ -68,7 +70,10 @@ pub async fn download_to_path_with_config(
                 sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
                 continue;
             }
-            return Err(format!("下载音频失败({title}): HTTP {status}"));
+            return Err(DownloadError::StatusCode {
+                status,
+                url: url.to_string(),
+            });
         }
 
         let mut file = match tokio::fs::File::create(out_path).await {
@@ -78,22 +83,28 @@ pub async fn download_to_path_with_config(
                     sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
                     continue;
                 }
-                return Err(format!("创建临时文件失败({title}): {e}"));
+                return Err(DownloadError::CreateFile {
+                    path: out_path.to_path_buf(),
+                    source: e,
+                });
             }
         };
 
         let mut stream = resp.bytes_stream();
-        let mut failed = None::<String>;
+        let mut failed = None::<DownloadError>;
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(bytes) => {
                     if let Err(e) = file.write_all(&bytes).await {
-                        failed = Some(format!("写入临时文件失败({title}): {e}"));
+                        failed = Some(DownloadError::Write {
+                            title: title.to_string(),
+                            source: e,
+                        });
                         break;
                     }
                 }
                 Err(e) => {
-                    failed = Some(format!("下载音频失败({title}): {e}"));
+                    failed = Some(DownloadError::Http(e));
                     break;
                 }
             }
@@ -102,7 +113,10 @@ pub async fn download_to_path_with_config(
         if failed.is_none()
             && let Err(e) = file.flush().await
         {
-            failed = Some(format!("写入临时文件失败({title}): {e}"));
+            failed = Some(DownloadError::Write {
+                title: title.to_string(),
+                source: e,
+            });
         }
 
         if let Some(err) = failed {

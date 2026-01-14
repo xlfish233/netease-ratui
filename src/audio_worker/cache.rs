@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
 use super::download::{clear_dir_files, now_ms};
+use crate::error::CacheError;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub(super) struct CacheIndex {
@@ -102,11 +103,8 @@ impl AudioCache {
         song_id: i64,
         br: i64,
         tmp_path: &Path,
-    ) -> Result<PathBuf, String> {
-        let dir = self
-            .dir
-            .as_ref()
-            .ok_or_else(|| "缓存目录不可用".to_owned())?;
+    ) -> Result<PathBuf, CacheError> {
+        let dir = self.dir.as_ref().ok_or(CacheError::DirUnavailable)?;
 
         let key = cache_key(song_id, br);
         let file_name = format!("{key}.bin");
@@ -116,7 +114,8 @@ impl AudioCache {
             let _ = fs::remove_file(&final_path);
         }
 
-        fs::rename(tmp_path, &final_path).map_err(|e| format!("写入缓存文件失败: {e}"))?;
+        fs::rename(tmp_path, &final_path)
+            .map_err(|e| CacheError::CommitTmp(format!("重命名临时文件失败: {e}")))?;
 
         self.touch(&key, &file_name, &final_path);
         self.cleanup(Some(&final_path));

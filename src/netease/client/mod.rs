@@ -295,7 +295,7 @@ impl NeteaseClient {
                     .ok_or(NeteaseError::BadInput("data 必须是 JSON object"))?
                     .insert("csrf_token".to_owned(), Value::String(csrf));
 
-                let f = crypto::weapi(&data).map_err(NeteaseError::Crypto)?;
+                let f = crypto::weapi(&data).map_err(|e| NeteaseError::Crypto(format!("{e}")))?;
                 cookie.insert("os".to_owned(), "pc".to_owned());
 
                 let url = format!(
@@ -317,7 +317,8 @@ impl NeteaseClient {
                     "url": format!("{}{}", self.cfg.domain.trim_end_matches('/'), uri),
                     "params": data,
                 });
-                let f = crypto::linuxapi(&linux_obj).map_err(NeteaseError::Crypto)?;
+                let f = crypto::linuxapi(&linux_obj)
+                    .map_err(|e| NeteaseError::Crypto(format!("{e}")))?;
                 let form = vec![("eparams", f.eparams)];
                 (url, form, false)
             }
@@ -336,7 +337,8 @@ impl NeteaseClient {
                     cookie.get("os").cloned().unwrap_or_else(|| "pc".to_owned()),
                 );
 
-                let f = crypto::eapi(uri, &data).map_err(NeteaseError::Crypto)?;
+                let f =
+                    crypto::eapi(uri, &data).map_err(|e| NeteaseError::Crypto(format!("{e}")))?;
                 let url = format!(
                     "{}/eapi/{}",
                     self.cfg.api_domain.trim_end_matches('/'),

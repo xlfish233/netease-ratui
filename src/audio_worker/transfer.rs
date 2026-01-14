@@ -11,6 +11,7 @@ use tokio::sync::mpsc;
 
 use super::cache::AudioCache;
 use super::download::{download_to_path_with_config, now_ms};
+use crate::error::DownloadError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CacheKey {
@@ -114,8 +115,14 @@ struct JobState {
 
 #[derive(Debug)]
 enum JobResult {
-    Ok { key: CacheKey, tmp_path: PathBuf },
-    Err { key: CacheKey, message: String },
+    Ok {
+        key: CacheKey,
+        tmp_path: PathBuf,
+    },
+    Err {
+        key: CacheKey,
+        message: DownloadError,
+    },
 }
 
 pub type TransferSender = mpsc::Sender<TransferCommand>;
@@ -273,7 +280,7 @@ pub fn spawn_transfer_actor_with_config(
                                     // Fan out errors to waiters.
                                     if let Some(st) = jobs.remove(&key) {
                                         for token in st.waiters.into_iter().filter(|t| *t != 0) {
-                                            let _ = tx_evt.send(TransferEvent::Error { token, message: e.clone() }).await;
+                                            let _ = tx_evt.send(TransferEvent::Error { token, message: e.to_string() }).await;
                                         }
                                     }
                                     continue;
@@ -300,7 +307,7 @@ pub fn spawn_transfer_actor_with_config(
                         JobResult::Err { key, message } => {
                             if let Some(st) = jobs.remove(&key) {
                                 for token in st.waiters.into_iter().filter(|t| *t != 0) {
-                                    let _ = tx_evt.send(TransferEvent::Error { token, message: message.clone() }).await;
+                                    let _ = tx_evt.send(TransferEvent::Error { token, message: message.to_string() }).await;
                                 }
                             }
                         }
