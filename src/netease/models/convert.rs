@@ -207,3 +207,196 @@ fn parse_lrc_timestamp_ms(tag: &str) -> Option<u64> {
     };
     Some(mm * 60_000 + ss * 1_000 + frac_ms)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_unikey_from_top_level() {
+        let resp = LoginQrKeyResp {
+            unikey: Some("test-unikey-123".to_owned()),
+            data: None,
+        };
+        assert_eq!(extract_unikey(resp).unwrap(), "test-unikey-123");
+    }
+
+    #[test]
+    fn test_extract_unikey_from_data_field() {
+        let resp = LoginQrKeyResp {
+            unikey: None,
+            data: Some(crate::netease::models::dto::LoginQrKeyData {
+                unikey: "data-unikey-456".to_owned(),
+            }),
+        };
+        assert_eq!(extract_unikey(resp).unwrap(), "data-unikey-456");
+    }
+
+    #[test]
+    fn test_extract_unikey_missing() {
+        let resp = LoginQrKeyResp {
+            unikey: None,
+            data: None,
+        };
+        assert!(matches!(
+            extract_unikey(resp),
+            Err(ModelError::MissingField("unikey"))
+        ));
+    }
+
+    #[test]
+    fn test_to_login_status_success() {
+        let resp = LoginQrCheckResp {
+            code: 803,
+            message: "二维码扫描成功".to_owned(),
+        };
+        let status = to_login_status(resp);
+        assert_eq!(status.code, 803);
+        assert!(status.logged_in);
+        assert_eq!(status.message, "二维码扫描成功".to_owned());
+    }
+
+    #[test]
+    fn test_to_login_status_pending() {
+        let resp = LoginQrCheckResp {
+            code: 801,
+            message: "等待扫码".to_owned(),
+        };
+        let status = to_login_status(resp);
+        assert_eq!(status.code, 801);
+        assert!(!status.logged_in);
+    }
+
+    #[test]
+    fn test_parse_lrc_timestamp_ms() {
+        assert_eq!(parse_lrc_timestamp_ms("01:23.45"), Some(83_450));
+        assert_eq!(parse_lrc_timestamp_ms("00:00.00"), Some(0));
+        assert_eq!(parse_lrc_timestamp_ms("00:00.123"), Some(123));
+        assert_eq!(parse_lrc_timestamp_ms("01:00.00"), Some(60_000));
+        assert_eq!(parse_lrc_timestamp_ms("invalid"), None);
+        assert_eq!(parse_lrc_timestamp_ms("01:23"), Some(83_000));
+    }
+
+    #[test]
+    fn test_parse_lrc_text_single_line() {
+        let text = "[01:23.45]Hello World";
+        let result = parse_lrc_text(text, false);
+        assert_eq!(result, vec![(83_450, "Hello World".to_owned())]);
+    }
+
+    #[test]
+    fn test_parse_lrc_text_multiple_times() {
+        let text = "[01:23.45][01:24.00]Repeated";
+        let result = parse_lrc_text(text, false);
+        assert_eq!(
+            result,
+            vec![
+                (83_450, "Repeated".to_owned()),
+                (84_000, "Repeated".to_owned())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_lrc_text_empty_lines() {
+        let text = "[01:23.45]Line 1\n\n[01:24.00]Line 2";
+        let result = parse_lrc_text(text, false);
+        assert_eq!(
+            result,
+            vec![(83_450, "Line 1".to_owned()), (84_000, "Line 2".to_owned())]
+        );
+    }
+
+    #[test]
+    fn test_to_lyrics_with_translation() {
+        let resp = LyricResp {
+            lrc: Some(crate::netease::models::dto::LyricBlock {
+                lyric: "[00:01.00]Original line\n[00:02.00]Second line".to_owned(),
+            }),
+            tlyric: Some(crate::netease::models::dto::LyricBlock {
+                lyric: "[00:01.00]Translated line\n[00:03.00]Only translation".to_owned(),
+            }),
+        };
+        let lyrics = to_lyrics(resp);
+        assert_eq!(lyrics.len(), 2);
+        assert_eq!(lyrics[0].time_ms, 1000);
+        assert_eq!(lyrics[0].text, "Original line");
+        assert_eq!(lyrics[0].translation, Some("Translated line".to_owned()));
+        assert_eq!(lyrics[1].time_ms, 2000);
+        assert_eq!(lyrics[1].text, "Second line");
+        assert_eq!(lyrics[1].translation, None);
+    }
+
+    #[test]
+    fn test_to_lyrics_original_only() {
+        let resp = LyricResp {
+            lrc: Some(crate::netease::models::dto::LyricBlock {
+                lyric: "[00:01.00]Original line".to_owned(),
+            }),
+            tlyric: None,
+        };
+        let lyrics = to_lyrics(resp);
+        assert_eq!(lyrics.len(), 1);
+        assert_eq!(lyrics[0].text, "Original line");
+        assert_eq!(lyrics[0].translation, None);
+    }
+
+    #[test]
+    fn test_to_song_url_success() {
+        let resp = SongUrlResp {
+            data: vec![crate::netease::models::dto::SongUrlItem {
+                id: 12345,
+                url: Some("https://example.com/song.mp3".to_owned()),
+            }],
+        };
+        let song_url = to_song_url(resp).unwrap();
+        assert_eq!(song_url.id, 12345);
+        assert_eq!(song_url.url, "https://example.com/song.mp3");
+    }
+
+    #[test]
+    fn test_to_song_url_empty() {
+        let resp = SongUrlResp { data: vec![] };
+        assert!(matches!(to_song_url(resp), Err(ModelError::Empty)));
+    }
+
+    #[test]
+    fn test_to_song_url_missing_url() {
+        let resp = SongUrlResp {
+            data: vec![crate::netease::models::dto::SongUrlItem {
+                id: 12345,
+                url: None,
+            }],
+        };
+        assert!(matches!(
+            to_song_url(resp),
+            Err(ModelError::MissingField("data[0].url"))
+        ));
+    }
+
+    #[test]
+    fn test_to_playlists() {
+        let resp = UserPlaylistResp {
+            playlist: vec![
+                crate::netease::models::dto::PlaylistInfo {
+                    id: 1,
+                    name: "Favorite".to_owned(),
+                    track_count: 100,
+                    special_type: 0,
+                },
+                crate::netease::models::dto::PlaylistInfo {
+                    id: 2,
+                    name: "Liked".to_owned(),
+                    track_count: 50,
+                    special_type: 1,
+                },
+            ],
+        };
+        let playlists = to_playlists(resp);
+        assert_eq!(playlists.len(), 2);
+        assert_eq!(playlists[0].id, 1);
+        assert_eq!(playlists[0].name, "Favorite");
+        assert_eq!(playlists[0].track_count, 100);
+        assert_eq!(playlists[1].special_type, 1);
+    }
+}
