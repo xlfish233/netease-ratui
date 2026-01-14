@@ -61,6 +61,7 @@ impl PlayerState {
 
     fn stop_current(&mut self) {
         if let Some(cur) = self.current.take() {
+            tracing::debug!(play_id = self.play_id, "Stopping current sink, signaling end check thread to cancel");
             cur.end_cancel.store(true, Ordering::Relaxed);
             cur.sink.stop();
         }
@@ -115,12 +116,29 @@ impl PlayerState {
         let cancel = Arc::new(AtomicBool::new(false));
         let sink_end = Arc::clone(&sink);
         let cancel_end = Arc::clone(&cancel);
-        thread::spawn(move || {
+
+        let thread_name = format!("audio-end-check-{}", play_id);
+        tracing::debug!(play_id, "Spawning end check thread");
+        thread::Builder::new().name(thread_name).spawn(move || {
+            let start = std::time::Instant::now();
             sink_end.sleep_until_end();
+            let elapsed = start.elapsed();
+
             if !cancel_end.load(Ordering::Relaxed) {
+                tracing::debug!(
+                    play_id,
+                    elapsed_ms = elapsed.as_millis(),
+                    "End check thread exiting naturally"
+                );
                 let _ = tx_end.blocking_send(AudioEvent::Ended { play_id });
+            } else {
+                tracing::debug!(
+                    play_id,
+                    elapsed_ms = elapsed.as_millis(),
+                    "End check thread was cancelled"
+                );
             }
-        });
+        }).expect("failed to spawn end check thread");
 
         self.current = Some(ActiveSink {
             sink,

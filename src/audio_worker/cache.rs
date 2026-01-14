@@ -26,6 +26,7 @@ pub struct AudioCache {
     index_path: Option<PathBuf>,
     index: CacheIndex,
     max_bytes: u64,
+    dirty: bool,
 }
 
 impl AudioCache {
@@ -42,6 +43,7 @@ impl AudioCache {
                 index_path: None,
                 index: CacheIndex::default(),
                 max_bytes,
+                dirty: false,
             };
         }
 
@@ -69,6 +71,7 @@ impl AudioCache {
             index_path: Some(index_path),
             index,
             max_bytes,
+            dirty: false,
         }
     }
 
@@ -85,12 +88,12 @@ impl AudioCache {
 
         if !path.exists() {
             self.index.entries.remove(&key);
-            self.persist_index();
+            self.dirty = true;
             return None;
         }
 
         self.touch(&key, &file_name, &path);
-        self.persist_index();
+        self.dirty = true;
         Some(path)
     }
 
@@ -117,7 +120,8 @@ impl AudioCache {
 
         self.touch(&key, &file_name, &final_path);
         self.cleanup(Some(&final_path));
-        self.persist_index();
+        self.dirty = true;
+        self.persist_index_if_dirty();
 
         Ok(final_path)
     }
@@ -196,6 +200,13 @@ impl AudioCache {
         let _ = tmp.persist(index_path);
     }
 
+    fn persist_index_if_dirty(&mut self) {
+        if self.dirty {
+            self.persist_index();
+            self.dirty = false;
+        }
+    }
+
     pub fn invalidate(&mut self, song_id: i64, br: i64) {
         let Some(dir) = self.dir.as_ref() else {
             return;
@@ -206,7 +217,8 @@ impl AudioCache {
         } else {
             let _ = fs::remove_file(dir.join(format!("{key}.bin")));
         }
-        self.persist_index();
+        self.dirty = true;
+        self.persist_index_if_dirty();
     }
 
     pub fn clear_all(&mut self, keep: Option<&Path>) -> (usize, u64) {
@@ -216,7 +228,8 @@ impl AudioCache {
 
         let (files, bytes) = clear_dir_files(dir, keep);
         self.index.entries.clear();
-        self.persist_index();
+        self.dirty = true;
+        self.persist_index_if_dirty();
         (files, bytes)
     }
 
@@ -248,7 +261,8 @@ impl AudioCache {
         }
 
         self.cleanup(keep.as_deref());
-        self.persist_index();
+        self.dirty = true;
+        self.persist_index_if_dirty();
     }
 
     pub fn purge_song_other_brs(&mut self, song_id: i64, keep_br: i64, keep: Option<&Path>) {
@@ -279,7 +293,18 @@ impl AudioCache {
         }
 
         self.cleanup(keep.as_deref());
-        self.persist_index();
+        self.dirty = true;
+        self.persist_index_if_dirty();
+    }
+}
+
+impl Drop for AudioCache {
+    fn drop(&mut self) {
+        if self.dirty {
+            tracing::debug!("AudioCache dropped with dirty index, persisting...");
+            self.persist_index();
+            tracing::debug!("AudioCache index persisted on drop");
+        }
     }
 }
 
@@ -290,4 +315,179 @@ fn cache_key(song_id: i64, br: i64) -> String {
 fn parse_cache_key(key: &str) -> Option<(i64, i64)> {
     let (a, b) = key.split_once('_')?;
     Some((a.parse().ok()?, b.parse().ok()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_cache_new_with_dirty_flag() {
+        let temp_dir = TempDir::new().unwrap();
+        let cache = AudioCache::new_with_config(temp_dir.path(), 100);
+
+        assert!(!cache.dirty, "new cache should not be dirty");
+    }
+
+    #[test]
+    fn test_lookup_path_sets_dirty_on_hit() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut cache = AudioCache::new_with_config(temp_dir.path(), 100);
+
+        // Create a test cache file
+        let cache_dir = cache.cache_dir().unwrap();
+        let test_file = cache_dir.join("123_456.bin");
+        fs::write(&test_file, b"test data").unwrap();
+
+        // Reset dirty flag (from file creation)
+        cache.dirty = false;
+
+        // Lookup should set dirty flag
+        let result = cache.lookup_path(123, 456);
+        assert!(result.is_some(), "lookup should find the file");
+        assert!(cache.dirty, "lookup_path should set dirty flag on hit");
+    }
+
+    #[test]
+    fn test_lookup_path_sets_dirty_on_miss() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut cache = AudioCache::new_with_config(temp_dir.path(), 100);
+
+        // Reset dirty flag
+        cache.dirty = false;
+
+        // Lookup miss should also set dirty flag (entry removed from index)
+        let result = cache.lookup_path(999, 999);
+        assert!(result.is_none(), "lookup should not find the file");
+        assert!(cache.dirty, "lookup_path should set dirty flag on miss");
+    }
+
+    #[test]
+    fn test_persist_index_if_dirty() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut cache = AudioCache::new_with_config(temp_dir.path(), 100);
+
+        // Set dirty flag
+        cache.dirty = true;
+
+        // persist_index_if_dirty should persist and clear dirty flag
+        cache.persist_index_if_dirty();
+        assert!(!cache.dirty, "persist_index_if_dirty should clear dirty flag");
+    }
+
+    #[test]
+    fn test_persist_index_if_dirty_when_not_dirty() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut cache = AudioCache::new_with_config(temp_dir.path(), 100);
+
+        // Don't set dirty flag
+        assert!(!cache.dirty);
+
+        // persist_index_if_dirty should do nothing (not crash)
+        cache.persist_index_if_dirty();
+        assert!(!cache.dirty, "dirty flag should remain false");
+    }
+
+    #[test]
+    fn test_commit_tmp_file_persists_immediately() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut cache = AudioCache::new_with_config(temp_dir.path(), 100);
+
+        // Create a temp file
+        let tmp_file = temp_dir.path().join("tmp.bin");
+        fs::write(&tmp_file, b"test data").unwrap();
+
+        // Reset dirty flag
+        cache.dirty = false;
+
+        // commit_tmp_file should set dirty and persist
+        let result = cache.commit_tmp_file(123, 456, &tmp_file);
+        assert!(result.is_ok(), "commit_tmp_file should succeed");
+
+        // Dirty flag should be cleared after persist
+        assert!(!cache.dirty, "commit_tmp_file should persist and clear dirty flag");
+
+        // File should exist
+        let cache_dir = cache.cache_dir().unwrap();
+        let final_file = cache_dir.join("123_456.bin");
+        assert!(final_file.exists(), "cached file should exist");
+    }
+
+    #[test]
+    fn test_invalidate_persists_immediately() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut cache = AudioCache::new_with_config(temp_dir.path(), 100);
+
+        // Create a test cache file
+        let cache_dir = cache.cache_dir().unwrap();
+        let test_file = cache_dir.join("123_456.bin");
+        fs::write(&test_file, b"test data").unwrap();
+
+        // Reset dirty flag
+        cache.dirty = false;
+
+        // invalidate should set dirty and persist
+        cache.invalidate(123, 456);
+
+        // Dirty flag should be cleared after persist
+        assert!(!cache.dirty, "invalidate should persist and clear dirty flag");
+
+        // File should be removed
+        assert!(!test_file.exists(), "cached file should be removed");
+    }
+
+    #[test]
+    fn test_clear_all_persists_immediately() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut cache = AudioCache::new_with_config(temp_dir.path(), 100);
+
+        // Create a test cache file
+        let cache_dir = cache.cache_dir().unwrap();
+        let test_file = cache_dir.join("123_456.bin");
+        fs::write(&test_file, b"test data").unwrap();
+
+        // Reset dirty flag
+        cache.dirty = false;
+
+        // clear_all should set dirty and persist
+        cache.clear_all(None);
+
+        // Dirty flag should be cleared after persist
+        assert!(!cache.dirty, "clear_all should persist and clear dirty flag");
+
+        // File should be removed
+        assert!(!test_file.exists(), "cached file should be removed");
+    }
+
+    #[test]
+    fn test_multiple_lookups_before_persist() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut cache = AudioCache::new_with_config(temp_dir.path(), 100);
+
+        // Create multiple test cache files
+        let cache_dir = cache.cache_dir().unwrap();
+        for i in 1..=3 {
+            let test_file = cache_dir.join(format!("{}_{i}.bin", 100 + i));
+            fs::write(&test_file, b"test data").unwrap();
+        }
+
+        // Reset dirty flag
+        cache.dirty = false;
+
+        // Multiple lookups should all set dirty flag
+        for i in 1..=3 {
+            let result = cache.lookup_path(100 + i, i);
+            assert!(result.is_some(), "lookup should find the file");
+            assert!(cache.dirty, "lookup should set dirty flag");
+        }
+
+        // dirty should still be true (not cleared yet)
+        assert!(cache.dirty, "dirty flag should still be true after multiple lookups");
+
+        // Now persist
+        cache.persist_index_if_dirty();
+        assert!(!cache.dirty, "dirty flag should be cleared after persist");
+    }
 }
