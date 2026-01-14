@@ -132,7 +132,7 @@ pub(super) async fn request_play_at_index(
     next_song_cache.prefetch_next(app, effects, req_id).await;
 }
 
-pub(super) async fn play_next(
+pub async fn play_next(
     app: &mut App,
     request_tracker: &mut RequestTracker<RequestKey>,
     song_request_titles: &mut std::collections::HashMap<i64, String>,

@@ -39,6 +39,46 @@ pub async fn handle_netease_event(
     effects: &mut CoreEffects,
 ) -> bool {
     match evt {
+        NeteaseEvent::SongUrlUnavailable { req_id, id } => {
+            // 检查是否为预缓存请求
+            if state.next_song_cache.owns_req(*req_id) {
+                // 预缓存失败，静默忽略
+                tracing::debug!(req_id, song_id = id, "预缓存歌曲无可用链接");
+                return true;
+            }
+
+            // 检查 req_id 是否过期
+            if !state.request_tracker.accept(&RequestKey::SongUrl, *req_id) {
+                return false;
+            }
+
+            // 自动播放下一首
+            tracing::info!(song_id = id, "歌曲无可用播放链接，自动跳转到下一首");
+            state.app.play_status = "歌曲不可播放，自动跳过...".to_owned();
+
+            // 清理该歌曲的请求标题（如果有）
+            state.song_request_titles.remove(id);
+
+            // 自动播放下一首
+            let ctx = player::audio::AudioEventCtx {
+                request_tracker: &mut state.request_tracker,
+                song_request_titles: &mut state.song_request_titles,
+                req_id: &mut state.req_id,
+                next_song_cache: &mut state.next_song_cache,
+            };
+            player::playback::play_next(
+                &mut state.app,
+                ctx.request_tracker,
+                ctx.song_request_titles,
+                ctx.req_id,
+                ctx.next_song_cache,
+                effects,
+            )
+            .await;
+
+            effects.emit_state(&state.app);
+            true
+        }
         NeteaseEvent::SongUrl { req_id, song_url } => {
             if state.next_song_cache.owns_req(*req_id) {
                 state
