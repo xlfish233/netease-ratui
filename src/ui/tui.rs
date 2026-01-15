@@ -1,14 +1,19 @@
 // TUI 子模块
 mod event_loop;
 mod guard;
+mod header;
 mod keyboard;
+mod layout;
 mod login_view;
 mod lyrics_view;
 mod mouse;
+mod overlays;
 mod player_status;
+mod panels;
 mod playlists_view;
 mod search_view;
 mod settings_view;
+mod styles;
 mod utils;
 mod views;
 mod widgets;

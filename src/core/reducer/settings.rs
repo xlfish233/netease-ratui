@@ -1,5 +1,5 @@
 use super::{CoreState, UiAction};
-use crate::app::{View, tab_configs};
+use crate::app::{UiFocus, View, tab_configs};
 use crate::audio_worker::AudioCommand;
 use crate::core::effects::CoreEffects;
 use crate::core::utils;
@@ -35,12 +35,22 @@ pub async fn handle_ui(
                 .unwrap_or(0);
             let next_view = configs[(current_idx + 1) % configs.len()].view;
             state.app.view = next_view;
+            state.app.ui_focus = if matches!(next_view, View::Search) {
+                UiFocus::HeaderSearch
+            } else {
+                UiFocus::BodyCenter
+            };
             effects.emit_state(&state.app);
             return UiAction::Handled;
         }
         AppCommand::TabTo { index } => {
             if let Some(&cfg) = tab_configs(state.app.logged_in).get(*index) {
                 state.app.view = cfg.view;
+                state.app.ui_focus = if matches!(cfg.view, View::Search) {
+                    UiFocus::HeaderSearch
+                } else {
+                    UiFocus::BodyCenter
+                };
                 effects.emit_state(&state.app);
             }
             return UiAction::Handled;

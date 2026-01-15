@@ -14,6 +14,14 @@ pub enum View {
     Settings,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiFocus {
+    HeaderSearch,
+    BodyLeft,
+    BodyCenter,
+    BodyRight,
+}
+
 /// 标签页配置：统一管理标题与对应的 View
 #[derive(Debug, Clone, Copy)]
 pub struct TabConfig {
@@ -105,6 +113,8 @@ pub enum PlayMode {
 #[derive(Debug, Clone)]
 pub struct App {
     pub view: View,
+    pub ui_focus: UiFocus,
+    pub help_visible: bool,
 
     pub login_qr_url: Option<String>,
     pub login_qr_ascii: Option<String>,
@@ -163,10 +173,12 @@ impl Default for App {
     fn default() -> Self {
         Self {
             view: View::Login,
+            ui_focus: UiFocus::BodyCenter,
+            help_visible: false,
             login_qr_url: None,
             login_qr_ascii: None,
             login_unikey: None,
-            login_status: "按 l 生成二维码；q 退出；Tab 切换页面".to_owned(),
+            login_status: "按 l 生成二维码；q 退出；Ctrl+Tab 切换页面".to_owned(),
             logged_in: false,
             login_cookie_input: String::new(),
             login_cookie_input_visible: false,
@@ -210,7 +222,7 @@ impl Default for App {
             lyrics_offset_ms: 0,
 
             settings_selected: 0,
-            settings_status: "←→ 调整 | Enter 操作 | Tab 切换".to_owned(),
+            settings_status: "←→ 调整 | Enter 操作 | Ctrl+Tab 切换".to_owned(),
         }
     }
 }
@@ -219,7 +231,12 @@ impl Default for App {
 pub struct AppSnapshot {
     pub view: View,
     pub logged_in: bool,
+    pub ui_focus: UiFocus,
+    pub help_visible: bool,
+    pub search_input: String,
     pub player: PlayerSnapshot,
+    pub queue: Vec<Song>,
+    pub queue_pos: Option<usize>,
     pub view_state: AppViewSnapshot,
 }
 
@@ -257,7 +274,6 @@ pub struct LoginSnapshot {
 
 #[derive(Debug, Clone)]
 pub struct SearchSnapshot {
-    pub search_input: String,
     pub search_results: Vec<Song>,
     pub search_selected: usize,
     pub search_status: String,
@@ -330,7 +346,6 @@ impl AppSnapshot {
                 playlists_status: app.playlists_status.clone(),
             }),
             View::Search => AppViewSnapshot::Search(SearchSnapshot {
-                search_input: app.search_input.clone(),
                 search_results: app.search_results.clone(),
                 search_selected: app.search_selected,
                 search_status: app.search_status.clone(),
@@ -353,7 +368,12 @@ impl AppSnapshot {
         Self {
             view: app.view,
             logged_in: app.logged_in,
+            ui_focus: app.ui_focus,
+            help_visible: app.help_visible,
+            search_input: app.search_input.clone(),
             player,
+            queue: app.queue.clone(),
+            queue_pos: app.queue_pos,
             view_state,
         }
     }

@@ -19,6 +19,7 @@ mod player;
 mod playlists;
 mod search;
 mod settings;
+mod ui;
 
 enum CoreMsg {
     Ui(AppCommand),
@@ -75,6 +76,11 @@ async fn reduce(
         CoreMsg::QrPoll => login::handle_qr_poll(state, effects),
         CoreMsg::Ui(cmd) => {
             match settings::handle_ui(&cmd, state, effects, data_dir).await {
+                UiAction::Quit => return true,
+                UiAction::Handled => return false,
+                UiAction::NotHandled => {}
+            }
+            match ui::handle_ui(&cmd, state, effects).await {
                 UiAction::Quit => return true,
                 UiAction::Handled => return false,
                 UiAction::NotHandled => {}

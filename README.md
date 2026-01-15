@@ -73,6 +73,8 @@ cargo run -- skip-login "周杰伦" --limit 5
 cargo run -- qr-key
 ```
 
+运行时终端最小画布为 `128x36`，尺寸更大时会居中显示，尺寸更小时会提示放大。
+
 也可以通过环境变量走兼容入口：
 
 - `NETEASE_SKIP_LOGIN=1`：等价于 `skip-login`
@@ -130,7 +132,7 @@ cargo run -- qr-key
 
 全局：
 
-- `Tab` 切换页签；`q` 退出
+- `Ctrl+Tab` 切换页签；`Tab` 切换焦点；`q` 退出；`?` 帮助
 - `Space` 播放/暂停；`[`/`]` 上一首/下一首
 - `Ctrl+S` 停止；`Ctrl+←/→` Seek（±5s）
 - `Alt+↑/↓` 音量；`M` 切换播放模式
