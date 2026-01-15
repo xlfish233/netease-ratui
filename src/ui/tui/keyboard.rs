@@ -44,10 +44,13 @@ pub(super) async fn handle_key(
             ..
         } => {
             if modifiers.contains(KeyModifiers::CONTROL) {
+                tracing::debug!("Ctrl+Tab 按下，切换页签");
                 let _ = tx.send(AppCommand::TabNext).await;
             } else {
+                tracing::debug!("Tab 按下，切换焦点");
                 let _ = tx.send(AppCommand::UiFocusNext).await;
             }
+            return false;
         }
         KeyEvent {
             code: KeyCode::BackTab,
@@ -60,6 +63,16 @@ pub(super) async fn handle_key(
 
     // Global player controls (avoid interfering with text input as much as possible)
     match (key.code, key.modifiers) {
+        // Tab switching with number keys (1-4), but not when typing in search
+        (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) && ('1'..='4').contains(&c) => {
+            if matches!(app.view, View::Search) && matches!(app.ui_focus, UiFocus::HeaderSearch) {
+                // Let search input handle the number character
+            } else {
+                let index = c as usize - '1' as usize;
+                let _ = tx.send(AppCommand::TabTo { index }).await;
+                return false;
+            }
+        }
         (KeyCode::Char(' '), _) => {
             let _ = tx.send(AppCommand::PlayerTogglePause).await;
             return false;

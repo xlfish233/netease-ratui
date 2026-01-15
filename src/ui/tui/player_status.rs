@@ -33,7 +33,7 @@ pub(super) fn draw_footer(f: &mut Frame, area: Rect, player: &PlayerSnapshot, vi
             br_label(player.play_br),
         )),
         Line::from(
-            "Ctrl+Tab 切换页 | Tab 焦点 | q 退出 | ? 帮助 | 空格 播放/暂停 | [/] 上一首/下一首 | Ctrl+Left/Right Seek | Alt+Up/Down 音量 | M 模式",
+            "1-4 切换页 | Tab 焦点 | q 退出 | ? 帮助 | 空格 播放/暂停 | [/] 上一首/下一首 | Ctrl+Left/Right Seek | Alt+Up/Down 音量 | M 模式",
         ),
     ];
 
