@@ -44,6 +44,11 @@ pub enum TransferCommand {
         title: String,
         priority: Priority,
     },
+    /// Cancel a pending waiter for this key/token (best-effort).
+    Cancel {
+        token: u64,
+        key: CacheKey,
+    },
     /// Remove a specific cached entry.
     Invalidate {
         key: CacheKey,
@@ -269,6 +274,32 @@ pub fn spawn_transfer_actor_with_config(
                             if !st.in_flight {
                                 heap.push(HeapItem { prio: st.prio, seq, key });
                                 seq = seq.wrapping_add(1);
+                            }
+                        }
+                        TransferCommand::Cancel { token, key } => {
+                            if token == 0 {
+                                continue;
+                            }
+                            let mut removed = false;
+                            let mut in_flight = false;
+                            let mut empty = false;
+                            if let Some(st) = jobs.get_mut(&key) {
+                                let before = st.waiters.len();
+                                st.waiters.retain(|t| *t != token);
+                                removed = st.waiters.len() != before;
+                                in_flight = st.in_flight;
+                                empty = st.waiters.is_empty();
+                            }
+                            if removed {
+                                tracing::debug!(
+                                    song_id = key.song_id,
+                                    br = key.br,
+                                    token,
+                                    "cancel cache waiter"
+                                );
+                            }
+                            if removed && empty && !in_flight {
+                                jobs.remove(&key);
                             }
                         }
                         TransferCommand::Invalidate { key } => {

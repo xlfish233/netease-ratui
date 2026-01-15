@@ -182,7 +182,21 @@ impl AudioEngine {
         match cmd {
             AudioCommand::PlayTrack { id, br, url, title } => {
                 tracing::info!(song_id = id, br, title = %title, "开始播放请求");
-                self.pending_play = None;
+                if let Some(old_pending) = self.pending_play.take() {
+                    tracing::debug!(
+                        old_token = old_pending.token,
+                        song_id = old_pending.key.song_id,
+                        br = old_pending.key.br,
+                        "取消旧播放请求"
+                    );
+                    let _ = self
+                        .tx_transfer
+                        .send(TransferCommand::Cancel {
+                            token: old_pending.token,
+                            key: old_pending.key,
+                        })
+                        .await;
+                }
                 self.clear_fade();
                 self.state.cancel_current_end();
 
