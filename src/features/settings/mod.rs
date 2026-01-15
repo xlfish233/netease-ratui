@@ -112,7 +112,7 @@ pub async fn handle_settings_activate_command(
             Some(false) // 由调用者处理登出逻辑
         }
     } else {
-        Some(false)
+        Some(true)
     }
 }
 
