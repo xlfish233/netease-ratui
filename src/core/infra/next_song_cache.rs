@@ -1,6 +1,6 @@
 //! 下一首歌预缓存管理器
 
-use crate::app::{App, PlayMode};
+use crate::app::App;
 use crate::domain::model::SongUrl;
 
 use crate::core::prelude::{
@@ -39,26 +39,19 @@ impl NextSongCacheManager {
     /// 触发预缓存下一首
     pub async fn prefetch_next(&mut self, app: &App, effects: &mut CoreEffects, req_id: &mut u64) {
         // 边界检查
-        if app.queue.is_empty() || app.queue_pos.is_none() {
+        if app.play_queue.is_empty() || app.play_queue.current_index().is_none() {
             return;
         }
 
-        // Shuffle 模式不预缓存（不可预测）
-        if matches!(app.play_mode, PlayMode::Shuffle) {
+        let current_idx = app.play_queue.current_index();
+        let Some(next_idx) = app.play_queue.peek_next_index() else {
             return;
-        }
-
-        // SingleLoop 模式不预缓存（下一首是当前，已缓存）
-        if matches!(app.play_mode, PlayMode::SingleLoop) {
-            return;
-        }
-
-        // 计算下一首索引
-        let Some(next_idx) = crate::features::player::playback::calculate_next_index(app) else {
-            return; // Sequential 到末尾，无下一首
         };
+        if current_idx == Some(next_idx) {
+            return;
+        }
 
-        let Some(next_song) = app.queue.get(next_idx) else {
+        let Some(next_song) = app.play_queue.songs().get(next_idx) else {
             return;
         };
 

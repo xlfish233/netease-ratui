@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use super::PlayQueue;
 use crate::domain::model::LyricLine;
 
 pub use crate::domain::model::{Playlist, Song};
@@ -137,8 +138,7 @@ pub struct App {
     pub play_paused_at: Option<Instant>,
     pub play_paused_accum_ms: u64,
     pub play_id: Option<u64>,
-    pub queue: Vec<Song>,
-    pub queue_pos: Option<usize>,
+    pub play_queue: PlayQueue,
     pub play_mode: PlayMode,
     pub volume: f32,
     pub play_song_id: Option<i64>,
@@ -194,8 +194,7 @@ impl Default for App {
             play_paused_at: None,
             play_paused_accum_ms: 0,
             play_id: None,
-            queue: Vec::new(),
-            queue_pos: None,
+            play_queue: PlayQueue::new(PlayMode::ListLoop),
             play_mode: PlayMode::ListLoop,
             volume: 1.0,
             play_song_id: None,
@@ -372,8 +371,8 @@ impl AppSnapshot {
             help_visible: app.help_visible,
             search_input: app.search_input.clone(),
             player,
-            queue: app.queue.clone(),
-            queue_pos: app.queue_pos,
+            queue: app.play_queue.ordered_songs(),
+            queue_pos: app.play_queue.cursor_pos(),
             view_state,
         }
     }

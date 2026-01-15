@@ -46,24 +46,25 @@ pub(super) fn draw_playlist_list(
 
     let mut st = ratatui::widgets::ListState::default();
     if !state.playlists.is_empty() {
-        st.select(Some(state.playlists_selected.min(state.playlists.len().saturating_sub(1))));
+        st.select(Some(
+            state
+                .playlists_selected
+                .min(state.playlists.len().saturating_sub(1)),
+        ));
     }
     f.render_stateful_widget(list, area, &mut st);
 }
 
-pub(super) fn draw_playlists(
-    f: &mut Frame,
-    area: Rect,
-    state: &PlaylistsSnapshot,
-    active: bool,
-) {
+pub(super) fn draw_playlists(f: &mut Frame, area: Rect, state: &PlaylistsSnapshot, active: bool) {
     let border = focus_style(active);
     if matches!(state.playlist_mode, PlaylistMode::Tracks) {
         let items: Vec<ListItem> = state
             .playlist_tracks
             .iter()
             .enumerate()
-            .map(|(i, s)| ListItem::new(Line::from(format!("{}  {} - {}", i + 1, s.name, s.artists))))
+            .map(|(i, s)| {
+                ListItem::new(Line::from(format!("{}  {} - {}", i + 1, s.name, s.artists)))
+            })
             .collect();
         let list = List::new(items)
             .block(

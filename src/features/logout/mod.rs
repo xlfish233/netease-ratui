@@ -25,8 +25,7 @@ pub fn reset_app_after_logout(app: &mut App) {
     app.search_selected = 0;
     app.search_status = "输入关键词，回车搜索".to_owned();
 
-    app.queue.clear();
-    app.queue_pos = None;
+    app.play_queue.clear();
     app.now_playing = None;
     app.play_status = "未播放".to_owned();
     app.paused = false;

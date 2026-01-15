@@ -8,7 +8,7 @@ use super::player_status::draw_footer;
 use super::playlists_view::draw_playlists;
 use super::search_view::draw_search;
 use super::settings_view::draw_settings;
-use super::utils::{canvas_rect, MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH};
+use super::utils::{MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, canvas_rect};
 use crate::app::{AppSnapshot, AppViewSnapshot, UiFocus, View};
 use ratatui::{
     Frame,

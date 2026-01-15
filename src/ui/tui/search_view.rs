@@ -9,12 +9,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem},
 };
 
-pub(super) fn draw_search(
-    f: &mut Frame,
-    area: Rect,
-    state: &SearchSnapshot,
-    active: bool,
-) {
+pub(super) fn draw_search(f: &mut Frame, area: Rect, state: &SearchSnapshot, active: bool) {
     let border = focus_style(active);
     let items = state
         .search_results

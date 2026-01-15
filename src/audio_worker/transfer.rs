@@ -227,12 +227,26 @@ pub fn spawn_transfer_actor_with_config(
                         TransferCommand::EnsureCached { token, key, url, title, priority } => {
                             // Fast path: cache hit.
                             if let Some(path) = cache.lookup_path(key.song_id, key.br) {
+                                tracing::info!(
+                                    song_id = key.song_id,
+                                    br = key.br,
+                                    token,
+                                    path = %path.display(),
+                                    "cache hit"
+                                );
                                 if token != 0 {
                                     let _ = tx_evt.send(TransferEvent::Ready { token, key, path }).await;
                                 }
                                 continue;
                             }
 
+                            tracing::info!(
+                                song_id = key.song_id,
+                                br = key.br,
+                                token,
+                                prio = priority.as_u8(),
+                                "cache miss, enqueue download"
+                            );
                             let st = jobs.entry(key).or_insert(JobState {
                                 waiters: Vec::new(),
                                 url: url.clone(),
@@ -251,13 +265,16 @@ pub fn spawn_transfer_actor_with_config(
                             }
                         }
                         TransferCommand::Invalidate { key } => {
+                            tracing::info!(song_id = key.song_id, br = key.br, "cache invalidate");
                             cache.invalidate(key.song_id, key.br);
                         }
                         TransferCommand::ClearAll { keep } => {
+                            tracing::info!("cache clear all requested");
                             let (files, bytes) = cache.clear_all(keep.as_deref());
                             let _ = tx_evt.send(TransferEvent::CacheCleared { files, bytes }).await;
                         }
                         TransferCommand::PurgeNotBr { br, keep } => {
+                            tracing::info!(br, "cache purge other bitrates");
                             active_br = br;
                             cache.purge_not_br(br, keep.as_deref());
                         }
@@ -270,6 +287,12 @@ pub fn spawn_transfer_actor_with_config(
                                 Ok(p) => p,
                                 Err(e) => {
                                     let _ = tokio::fs::remove_file(&tmp_path).await;
+                                    tracing::warn!(
+                                        song_id = key.song_id,
+                                        br = key.br,
+                                        err = %e,
+                                        "cache commit failed"
+                                    );
                                     // Fan out errors to waiters.
                                     if let Some(st) = jobs.remove(&key) {
                                         for token in st.waiters.into_iter().filter(|t| *t != 0) {
@@ -279,6 +302,12 @@ pub fn spawn_transfer_actor_with_config(
                                     continue;
                                 }
                             };
+                            tracing::info!(
+                                song_id = key.song_id,
+                                br = key.br,
+                                path = %final_path.display(),
+                                "download complete"
+                            );
 
                             // Enforce "only keep current br" policy (best-effort).
                             if active_br != 0 {
@@ -298,6 +327,12 @@ pub fn spawn_transfer_actor_with_config(
                             }
                         }
                         JobResult::Err { key, message } => {
+                            tracing::warn!(
+                                song_id = key.song_id,
+                                br = key.br,
+                                err = %message,
+                                "download failed"
+                            );
                             if let Some(st) = jobs.remove(&key) {
                                 for token in st.waiters.into_iter().filter(|t| *t != 0) {
                                     let _ = tx_evt.send(TransferEvent::Error { token, message: message.clone() }).await;
@@ -345,6 +380,12 @@ pub fn spawn_transfer_actor_with_config(
                 let Some(dir) = cache_dir.as_ref() else {
                     st.in_flight = false;
                     let message = "缓存目录不可用".to_owned();
+                    tracing::warn!(
+                        song_id = key.song_id,
+                        br = key.br,
+                        err = %message,
+                        "cache directory unavailable"
+                    );
                     let waiters = st.waiters.clone();
                     jobs.remove(&key);
                     drop(permit);
@@ -372,6 +413,12 @@ pub fn spawn_transfer_actor_with_config(
 
                 tokio::spawn(async move {
                     let _permit = permit;
+                    tracing::info!(
+                        song_id = key.song_id,
+                        br = key.br,
+                        title = %title,
+                        "download start"
+                    );
                     let res = download_to_path_with_config(
                         &http,
                         &tmp_path,

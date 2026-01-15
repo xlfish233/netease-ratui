@@ -43,10 +43,7 @@ pub(super) fn draw_header(f: &mut Frame, layout: &HeaderLayout, app: &AppSnapsho
     };
     let status = format!(
         "View: {} | Focus: {} | Login: {} | Help: {}",
-        configs
-            .get(selected)
-            .map(|c| c.title)
-            .unwrap_or(""),
+        configs.get(selected).map(|c| c.title).unwrap_or(""),
         focus_label,
         if app.logged_in { "Yes" } else { "No" },
         if app.help_visible { "On" } else { "Off" }

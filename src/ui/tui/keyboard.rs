@@ -216,31 +216,29 @@ pub(super) async fn handle_key(
                 _ => {}
             }
         }
-        View::Search => {
-            match (focus, key.code) {
-                (UiFocus::HeaderSearch, KeyCode::Enter) => {
-                    let _ = tx.send(AppCommand::SearchSubmit).await;
-                }
-                (UiFocus::HeaderSearch, KeyCode::Backspace) => {
-                    let _ = tx.send(AppCommand::SearchInputBackspace).await;
-                }
-                (UiFocus::HeaderSearch, KeyCode::Char(c)) => {
-                    if !key.modifiers.contains(KeyModifiers::CONTROL) {
-                        let _ = tx.send(AppCommand::SearchInputChar { c }).await;
-                    }
-                }
-                (UiFocus::BodyCenter, KeyCode::Char('p')) => {
-                    let _ = tx.send(AppCommand::SearchPlaySelected).await;
-                }
-                (UiFocus::BodyCenter, KeyCode::Up) => {
-                    let _ = tx.send(AppCommand::SearchMoveUp).await;
-                }
-                (UiFocus::BodyCenter, KeyCode::Down) => {
-                    let _ = tx.send(AppCommand::SearchMoveDown).await;
-                }
-                _ => {}
+        View::Search => match (focus, key.code) {
+            (UiFocus::HeaderSearch, KeyCode::Enter) => {
+                let _ = tx.send(AppCommand::SearchSubmit).await;
             }
-        }
+            (UiFocus::HeaderSearch, KeyCode::Backspace) => {
+                let _ = tx.send(AppCommand::SearchInputBackspace).await;
+            }
+            (UiFocus::HeaderSearch, KeyCode::Char(c)) => {
+                if !key.modifiers.contains(KeyModifiers::CONTROL) {
+                    let _ = tx.send(AppCommand::SearchInputChar { c }).await;
+                }
+            }
+            (UiFocus::BodyCenter, KeyCode::Char('p')) => {
+                let _ = tx.send(AppCommand::SearchPlaySelected).await;
+            }
+            (UiFocus::BodyCenter, KeyCode::Up) => {
+                let _ = tx.send(AppCommand::SearchMoveUp).await;
+            }
+            (UiFocus::BodyCenter, KeyCode::Down) => {
+                let _ = tx.send(AppCommand::SearchMoveDown).await;
+            }
+            _ => {}
+        },
         View::Lyrics => {
             if focus != UiFocus::BodyCenter {
                 return false;

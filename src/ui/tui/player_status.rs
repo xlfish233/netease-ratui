@@ -8,12 +8,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-pub(super) fn draw_footer(
-    f: &mut Frame,
-    area: Rect,
-    player: &PlayerSnapshot,
-    view_status: &str,
-) {
+pub(super) fn draw_footer(f: &mut Frame, area: Rect, player: &PlayerSnapshot, view_status: &str) {
     let now = player.now_playing.as_deref().unwrap_or("-");
     let (elapsed_ms, total_ms) = playback_time_ms(player);
     let progress = progress_bar_text(elapsed_ms, total_ms, 24);

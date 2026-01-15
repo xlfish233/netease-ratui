@@ -50,6 +50,7 @@ flowchart LR
 ## 状态与快照
 
 - `App`：全量业务状态（登录、播放、歌词、歌单、设置等）
+- `PlayQueue`：统一播放顺序/随机顺序与游标位置，UI 队列按播放顺序展示
 - `AppSnapshot`：UI 渲染用轻量快照（减少 UI 线程负担）
 - `CoreState`：持有 `App` + settings + 请求/预加载相关上下文
 
@@ -61,7 +62,7 @@ flowchart LR
 ## 预加载与缓存
 
 - `PreloadManager`：歌单预加载状态管理
-- `NextSongCacheManager`：下一首音频预取
+- `NextSongCacheManager`：基于 `PlayQueue` 计算下一首音频预取（含随机模式）
 - `TransferActor`：下载并发控制、重试与缓存管理
 
 ## 配置与持久化

@@ -52,8 +52,8 @@ pub async fn handle_playlists_command(
                     app.playlist_tracks = preload.songs.clone();
                     app.playlist_tracks_selected = 0;
                     app.playlist_mode = PlaylistMode::Tracks;
-                    app.queue = app.playlist_tracks.clone();
-                    app.queue_pos = Some(0);
+                    app.play_queue
+                        .set_songs(app.playlist_tracks.clone(), Some(0));
                     next_song_cache.reset(); // 失效预缓存
                     app.playlists_status =
                         format!("歌曲: {} 首（已缓存，p 播放）", app.playlist_tracks.len());
@@ -94,8 +94,10 @@ pub async fn handle_playlists_command(
                 && let Some(s) = app.playlist_tracks.get(app.playlist_tracks_selected)
             {
                 app.play_status = "获取播放链接...".to_owned();
-                app.queue = app.playlist_tracks.clone();
-                app.queue_pos = Some(app.playlist_tracks_selected);
+                app.play_queue.set_songs(
+                    app.playlist_tracks.clone(),
+                    Some(app.playlist_tracks_selected),
+                );
                 next_song_cache.reset(); // 失效预缓存
                 let title = format!("{} - {}", s.name, s.artists);
                 effects.emit_state(app);
@@ -268,8 +270,8 @@ pub async fn handle_songs_event(
         app.playlist_tracks = songs;
         app.playlist_tracks_selected = 0;
         app.playlist_mode = PlaylistMode::Tracks;
-        app.queue = app.playlist_tracks.clone();
-        app.queue_pos = Some(0);
+        app.play_queue
+            .set_songs(app.playlist_tracks.clone(), Some(0));
         app.playlists_status = format!("歌曲: {} 首（p 播放）", app.playlist_tracks.len());
         effects.emit_state(app);
         Some(true)

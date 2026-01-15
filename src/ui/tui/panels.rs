@@ -1,6 +1,8 @@
 use super::playlists_view::draw_playlist_list;
 use super::styles::focus_style;
-use super::utils::{apply_lyrics_offset, br_label, current_lyric_index, fmt_offset, playback_time_ms};
+use super::utils::{
+    apply_lyrics_offset, br_label, current_lyric_index, fmt_offset, playback_time_ms,
+};
 use crate::app::{
     AppSnapshot, AppViewSnapshot, PlayerSnapshot, UiFocus, tab_configs, tab_index_for_view,
 };
@@ -37,7 +39,11 @@ pub(super) fn draw_left_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
                 vec![
                     Line::from(format!(
                         "模式: {}",
-                        if state.lyrics_follow { "跟随" } else { "锁定" }
+                        if state.lyrics_follow {
+                            "跟随"
+                        } else {
+                            "锁定"
+                        }
                     )),
                     Line::from(format!("offset: {}", fmt_offset(state.lyrics_offset_ms))),
                     Line::from(format!("行数: {}", state.lyrics.len())),
@@ -46,7 +52,12 @@ pub(super) fn draw_left_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
             );
         }
         AppViewSnapshot::Settings(state) => {
-            let categories = vec![("播放", 0..=2), ("歌词", 3..=3), ("缓存", 4..=5), ("账号", 6..=6)];
+            let categories = vec![
+                ("播放", 0..=2),
+                ("歌词", 3..=3),
+                ("缓存", 4..=5),
+                ("账号", 6..=6),
+            ];
             let mut lines = Vec::new();
             for (label, range) in categories {
                 let mark = if range.contains(&state.settings_selected) {
@@ -83,7 +94,12 @@ pub(super) fn draw_left_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
 fn draw_left_info(f: &mut Frame, area: Rect, title: &str, lines: Vec<Line>, active: bool) {
     let style = focus_style(active);
     let panel = Paragraph::new(Text::from(lines))
-        .block(Block::default().borders(Borders::ALL).title(title).style(style))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .style(style),
+        )
         .style(style);
     f.render_widget(panel, area);
 }
@@ -106,7 +122,12 @@ pub(super) fn draw_nav_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
 
     let style = focus_style(app.ui_focus == UiFocus::BodyLeft);
     let panel = Paragraph::new(Text::from(lines))
-        .block(Block::default().borders(Borders::ALL).title("导航").style(style))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("导航")
+                .style(style),
+        )
         .style(style);
     f.render_widget(panel, area);
 }
@@ -129,7 +150,12 @@ pub(super) fn draw_now_panel(f: &mut Frame, area: Rect, player: &PlayerSnapshot,
 
     let style = focus_style(focus == UiFocus::BodyRight);
     let panel = Paragraph::new(Text::from(lines))
-        .block(Block::default().borders(Borders::ALL).title("Now").style(style))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Now")
+                .style(style),
+        )
         .style(style);
     f.render_widget(panel, area);
 }
@@ -141,16 +167,17 @@ pub(super) fn draw_context_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
             "登录",
             vec![
                 Line::from(state.login_status.as_str()),
-                Line::from(format!("已登录: {}", if app.logged_in { "是" } else { "否" })),
+                Line::from(format!(
+                    "已登录: {}",
+                    if app.logged_in { "是" } else { "否" }
+                )),
             ],
         ),
         AppViewSnapshot::Playlists(state) => {
             let (mode, total, selected) = match state.playlist_mode {
-                crate::app::PlaylistMode::List => (
-                    "歌单",
-                    state.playlists.len(),
-                    state.playlists_selected,
-                ),
+                crate::app::PlaylistMode::List => {
+                    ("歌单", state.playlists.len(), state.playlists_selected)
+                }
                 crate::app::PlaylistMode::Tracks => (
                     "歌曲",
                     state.playlist_tracks.len(),
@@ -205,7 +232,11 @@ pub(super) fn draw_context_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
                 Line::from(state.lyrics_status.as_str()),
                 Line::from(format!(
                     "模式: {}",
-                    if state.lyrics_follow { "跟随" } else { "锁定" }
+                    if state.lyrics_follow {
+                        "跟随"
+                    } else {
+                        "锁定"
+                    }
                 )),
                 Line::from(format!("offset: {}", fmt_offset(state.lyrics_offset_ms))),
                 Line::from(format!("行数: {}", state.lyrics.len())),
@@ -247,7 +278,12 @@ pub(super) fn draw_context_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
 
     let style = focus_style(app.ui_focus == UiFocus::BodyRight);
     let panel = Paragraph::new(Text::from(lines))
-        .block(Block::default().borders(Borders::ALL).title(title).style(style))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .style(style),
+        )
         .style(style);
     f.render_widget(panel, area);
 }
