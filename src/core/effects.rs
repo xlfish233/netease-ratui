@@ -12,7 +12,7 @@ pub struct CoreEffects {
 
 #[derive(Debug)]
 pub enum CoreEffect {
-    EmitState(AppSnapshot),
+    EmitState(Box<AppSnapshot>),
     EmitToast(String),
     EmitError(String),
     SendNeteaseHi {
@@ -32,7 +32,7 @@ pub enum CoreEffect {
 impl CoreEffects {
     pub fn emit_state(&mut self, app: &App) {
         self.actions
-            .push(CoreEffect::EmitState(AppSnapshot::from_app(app)));
+            .push(CoreEffect::EmitState(Box::new(AppSnapshot::from_app(app))));
     }
 
     pub fn send_netease_hi(&mut self, cmd: NeteaseCommand) {
@@ -91,7 +91,7 @@ pub async fn run_effects(effects: CoreEffects, dispatch: &CoreDispatch<'_>) {
     for effect in effects.actions {
         match effect {
             CoreEffect::EmitState(app) => {
-                let _ = dispatch.tx_evt.send(AppEvent::State(Box::new(app))).await;
+                let _ = dispatch.tx_evt.send(AppEvent::State(app)).await;
             }
             CoreEffect::EmitToast(msg) => {
                 let _ = dispatch.tx_evt.send(AppEvent::Toast(msg)).await;

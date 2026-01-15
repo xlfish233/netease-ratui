@@ -105,10 +105,26 @@ impl AudioEngine {
     async fn handle_transfer_event(&mut self, evt: TransferEvent) {
         match evt {
             TransferEvent::Ready { token, key, path } => {
+                if let Some(pending) = self.pending_play.as_ref()
+                    && pending.token != token
+                {
+                    tracing::debug!(
+                        token,
+                        pending_token = pending.token,
+                        song_id = key.song_id,
+                        "cache ready token mismatch"
+                    );
+                }
                 let Some(mut p) = self.pending_play.take().filter(|p| p.token == token) else {
                     return;
                 };
 
+                tracing::info!(
+                    song_id = key.song_id,
+                    br = key.br,
+                    path = %path.display(),
+                    "cache ready"
+                );
                 match self.start_playback(&key, &path, &p.title) {
                     Ok(duration_ms) => {
                         let _ = self
@@ -147,6 +163,7 @@ impl AudioEngine {
                 }
             }
             TransferEvent::Error { token, message } => {
+                tracing::warn!(token, err = %message, "cache error");
                 if self.pending_play.as_ref().is_some_and(|p| p.token == token) {
                     self.pending_play = None;
                     let _ = self.tx_evt.send(AudioEvent::Error(message)).await;
@@ -181,6 +198,7 @@ impl AudioEngine {
                     retries: 0,
                 });
 
+                tracing::info!(song_id = id, br, token, "request cache");
                 let _ = self
                     .tx_transfer
                     .send(TransferCommand::EnsureCached {
@@ -317,7 +335,7 @@ impl AudioEngine {
             self.state.attach_sink(&self.tx_evt, Arc::clone(&sink));
         }
 
-        tracing::debug!(song_id = key.song_id, "开始播放");
+        tracing::debug!(song_id = key.song_id, path = %path.display(), "start playback");
         Ok(duration_ms)
     }
 }

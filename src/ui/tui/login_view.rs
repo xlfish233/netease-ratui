@@ -68,7 +68,7 @@ pub(super) fn draw_login(f: &mut Frame, area: Rect, state: &LoginSnapshot, logge
             \n\
             快捷键:\n\
             l - 生成二维码 | c - Cookie 登录\n\
-            Tab - 切换页面 | q - 退出\n\
+            Ctrl+Tab - 切换页面 | q - 退出\n\
             \n\
             Cookie 登录：浏览器登录 music.163.com\n\
             后按 c，输入 MUSIC_U 值即可",

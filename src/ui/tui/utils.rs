@@ -1,5 +1,24 @@
 use crate::app::{PlayMode, PlayerSnapshot};
+use ratatui::layout::Rect;
 use std::time::Instant;
+
+pub(super) const MIN_CANVAS_WIDTH: u16 = 128;
+pub(super) const MIN_CANVAS_HEIGHT: u16 = 36;
+
+pub(super) fn canvas_rect(area: Rect) -> Option<Rect> {
+    if area.width < MIN_CANVAS_WIDTH || area.height < MIN_CANVAS_HEIGHT {
+        return None;
+    }
+
+    let x = area.x + (area.width - MIN_CANVAS_WIDTH) / 2;
+    let y = area.y + (area.height - MIN_CANVAS_HEIGHT) / 2;
+    Some(Rect {
+        x,
+        y,
+        width: MIN_CANVAS_WIDTH,
+        height: MIN_CANVAS_HEIGHT,
+    })
+}
 
 pub(super) fn playback_time_ms(player: &PlayerSnapshot) -> (u64, Option<u64>) {
     let Some(started) = player.play_started_at else {

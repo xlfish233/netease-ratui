@@ -112,7 +112,7 @@ pub async fn handle_settings_activate_command(
             Some(false) // 由调用者处理登出逻辑
         }
     } else {
-        Some(false)
+        Some(true)
     }
 }
 
@@ -153,6 +153,7 @@ pub async fn handle_player_settings_command(
         }
         AppCommand::PlayerCycleMode => {
             app.play_mode = crate::features::player::playback::next_play_mode(app.play_mode);
+            app.play_queue.set_mode(app.play_mode);
             app.play_status = format!(
                 "播放模式: {}",
                 crate::features::player::playback::play_mode_label(app.play_mode)
@@ -174,6 +175,7 @@ pub fn apply_settings_to_app(app: &mut App, s: &settings::AppSettings) {
     app.volume = s.volume.clamp(0.0, 2.0);
     app.play_br = s.br;
     app.play_mode = settings::play_mode_from_string(&s.play_mode);
+    app.play_queue.set_mode(app.play_mode);
     app.lyrics_offset_ms = s.lyrics_offset_ms;
     app.crossfade_ms = s.crossfade_ms;
 }
@@ -221,6 +223,7 @@ fn apply_settings_adjust(app: &mut App, dir: i32, next_song_cache: &mut NextSong
             } else {
                 crate::features::player::playback::prev_play_mode(app.play_mode)
             };
+            app.play_queue.set_mode(app.play_mode);
             app.settings_status = format!(
                 "播放模式: {}",
                 crate::features::player::playback::play_mode_label(app.play_mode)

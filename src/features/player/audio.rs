@@ -108,16 +108,11 @@ pub async fn handle_audio_event(
             let retryable = e.contains("下载音频失败");
             if retryable {
                 app.play_error_count = app.play_error_count.saturating_add(1);
+                let current_song = app.play_queue.current();
                 if app.play_error_count <= 2
-                    && let Some(song_id) = app.play_song_id.or_else(|| {
-                        app.queue_pos
-                            .and_then(|pos| app.queue.get(pos))
-                            .map(|s| s.id)
-                    })
+                    && let Some(song_id) = app.play_song_id.or_else(|| current_song.map(|s| s.id))
                 {
-                    let title = app
-                        .queue_pos
-                        .and_then(|pos| app.queue.get(pos))
+                    let title = current_song
                         .map(|s| format!("{} - {}", s.name, s.artists))
                         .or_else(|| app.now_playing.clone())
                         .unwrap_or_else(|| "未知歌曲".to_owned());

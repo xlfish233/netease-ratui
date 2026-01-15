@@ -1,17 +1,14 @@
-use super::player_status::draw_player_status;
+use super::styles::focus_style;
 use super::utils::{br_label, fmt_offset, play_mode_label};
 use super::widgets::list_state;
 use crate::app::{PlayerSnapshot, SettingsSnapshot};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
     prelude::Rect,
     style::{Color, Style},
     text::Line,
     widgets::{Block, Borders, List, ListItem},
 };
-
-const PLAYER_PANEL_HEIGHT: u16 = 12;
 
 pub(super) fn draw_settings(
     f: &mut Frame,
@@ -19,12 +16,9 @@ pub(super) fn draw_settings(
     state: &SettingsSnapshot,
     player: &PlayerSnapshot,
     logged_in: bool,
+    active: bool,
 ) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(8), Constraint::Length(PLAYER_PANEL_HEIGHT)])
-        .split(area);
-
+    let border = focus_style(active);
     let items = vec![
         ListItem::new(Line::from(format!("音质: {}", br_label(player.play_br)))),
         ListItem::new(Line::from(format!("音量: {:.0}%", player.volume * 100.0))),
@@ -56,18 +50,10 @@ pub(super) fn draw_settings(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("设置（↑↓选择，←→调整，Enter 操作）"),
+                .title("设置（↑↓选择，←→调整，Enter 操作）")
+                .border_style(border),
         )
         .highlight_style(Style::default().fg(Color::Yellow));
 
-    f.render_stateful_widget(list, chunks[0], &mut list_state(state.settings_selected));
-
-    draw_player_status(
-        f,
-        chunks[1],
-        player,
-        "状态",
-        "设置",
-        state.settings_status.as_str(),
-    );
+    f.render_stateful_widget(list, area, &mut list_state(state.settings_selected));
 }

@@ -1,4 +1,4 @@
-use crate::app::{AppSnapshot, AppViewSnapshot, PlaylistMode, View};
+use crate::app::{AppSnapshot, AppViewSnapshot, PlaylistMode, UiFocus, View};
 use crate::messages::app::AppCommand;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tokio::sync::mpsc;
@@ -13,6 +13,16 @@ pub(super) async fn handle_key(
         return false;
     }
 
+    if app.help_visible {
+        match key.code {
+            KeyCode::Char('?') | KeyCode::Esc => {
+                let _ = tx.send(AppCommand::UiToggleHelp).await;
+            }
+            _ => {}
+        }
+        return false;
+    }
+
     match key {
         KeyEvent {
             code: KeyCode::Char('q'),
@@ -22,9 +32,28 @@ pub(super) async fn handle_key(
             return true;
         }
         KeyEvent {
-            code: KeyCode::Tab, ..
+            code: KeyCode::Char('?'),
+            ..
         } => {
-            let _ = tx.send(AppCommand::TabNext).await;
+            let _ = tx.send(AppCommand::UiToggleHelp).await;
+            return false;
+        }
+        KeyEvent {
+            code: KeyCode::Tab,
+            modifiers,
+            ..
+        } => {
+            if modifiers.contains(KeyModifiers::CONTROL) {
+                let _ = tx.send(AppCommand::TabNext).await;
+            } else {
+                let _ = tx.send(AppCommand::UiFocusNext).await;
+            }
+        }
+        KeyEvent {
+            code: KeyCode::BackTab,
+            ..
+        } => {
+            let _ = tx.send(AppCommand::UiFocusPrev).await;
         }
         _ => {}
     }
@@ -92,14 +121,18 @@ pub(super) async fn handle_key(
         _ => {}
     }
 
+    let focus = app.ui_focus;
     match app.view {
         View::Login => {
+            if focus != UiFocus::BodyCenter {
+                return false;
+            }
             let login_cookie_input_visible = match &app.view_state {
                 AppViewSnapshot::Login(state) => state.login_cookie_input_visible,
                 _ => false,
             };
             if login_cookie_input_visible {
-                // Cookie 输入模式
+                // Cookie input mode
                 match key.code {
                     KeyCode::Esc => {
                         let _ = tx.send(AppCommand::LoginToggleCookieInput).await;
@@ -118,7 +151,7 @@ pub(super) async fn handle_key(
                     _ => {}
                 }
             } else {
-                // 二维码登录模式
+                // QR login mode
                 match key.code {
                     KeyCode::Char('l') => {
                         let _ = tx.send(AppCommand::LoginGenerateQr).await;
@@ -130,102 +163,125 @@ pub(super) async fn handle_key(
                 }
             }
         }
-        View::Playlists => match key.code {
-            KeyCode::Char('b') => {
+        View::Playlists => {
+            let playlist_mode = match &app.view_state {
+                AppViewSnapshot::Playlists(state) => state.playlist_mode,
+                _ => PlaylistMode::List,
+            };
+            if matches!(key.code, KeyCode::Char('b')) {
                 let _ = tx.send(AppCommand::Back).await;
+                return false;
             }
-            KeyCode::Enter => {
-                let _ = tx.send(AppCommand::PlaylistsOpenSelected).await;
-            }
-            KeyCode::Char('p') => {
-                let _ = tx.send(AppCommand::PlaylistTracksPlaySelected).await;
-            }
-            KeyCode::Up => {
-                let playlist_mode = match &app.view_state {
-                    AppViewSnapshot::Playlists(state) => state.playlist_mode,
-                    _ => PlaylistMode::List,
-                };
-                match playlist_mode {
-                    PlaylistMode::List => {
+            match focus {
+                UiFocus::BodyLeft => match key.code {
+                    KeyCode::Up => {
                         let _ = tx.send(AppCommand::PlaylistsMoveUp).await;
                     }
-                    PlaylistMode::Tracks => {
-                        let _ = tx.send(AppCommand::PlaylistTracksMoveUp).await;
-                    }
-                }
-            }
-            KeyCode::Down => {
-                let playlist_mode = match &app.view_state {
-                    AppViewSnapshot::Playlists(state) => state.playlist_mode,
-                    _ => PlaylistMode::List,
-                };
-                match playlist_mode {
-                    PlaylistMode::List => {
+                    KeyCode::Down => {
                         let _ = tx.send(AppCommand::PlaylistsMoveDown).await;
                     }
-                    PlaylistMode::Tracks => {
-                        let _ = tx.send(AppCommand::PlaylistTracksMoveDown).await;
+                    KeyCode::Enter => {
+                        if matches!(playlist_mode, PlaylistMode::Tracks) {
+                            let _ = tx.send(AppCommand::Back).await;
+                        }
+                        let _ = tx.send(AppCommand::PlaylistsOpenSelected).await;
                     }
-                }
+                    _ => {}
+                },
+                UiFocus::BodyCenter => match key.code {
+                    KeyCode::Enter if matches!(playlist_mode, PlaylistMode::List) => {
+                        let _ = tx.send(AppCommand::PlaylistsOpenSelected).await;
+                    }
+                    KeyCode::Char('p') if matches!(playlist_mode, PlaylistMode::Tracks) => {
+                        let _ = tx.send(AppCommand::PlaylistTracksPlaySelected).await;
+                    }
+                    KeyCode::Up => match playlist_mode {
+                        PlaylistMode::List => {
+                            let _ = tx.send(AppCommand::PlaylistsMoveUp).await;
+                        }
+                        PlaylistMode::Tracks => {
+                            let _ = tx.send(AppCommand::PlaylistTracksMoveUp).await;
+                        }
+                    },
+                    KeyCode::Down => match playlist_mode {
+                        PlaylistMode::List => {
+                            let _ = tx.send(AppCommand::PlaylistsMoveDown).await;
+                        }
+                        PlaylistMode::Tracks => {
+                            let _ = tx.send(AppCommand::PlaylistTracksMoveDown).await;
+                        }
+                    },
+                    _ => {}
+                },
+                _ => {}
             }
-            _ => {}
-        },
-        View::Search => match key.code {
-            KeyCode::Char('p') => {
-                let _ = tx.send(AppCommand::SearchPlaySelected).await;
-            }
-            KeyCode::Enter => {
+        }
+        View::Search => match (focus, key.code) {
+            (UiFocus::HeaderSearch, KeyCode::Enter) => {
                 let _ = tx.send(AppCommand::SearchSubmit).await;
             }
-            KeyCode::Backspace => {
+            (UiFocus::HeaderSearch, KeyCode::Backspace) => {
                 let _ = tx.send(AppCommand::SearchInputBackspace).await;
             }
-            KeyCode::Char(c) => {
+            (UiFocus::HeaderSearch, KeyCode::Char(c)) => {
                 if !key.modifiers.contains(KeyModifiers::CONTROL) {
                     let _ = tx.send(AppCommand::SearchInputChar { c }).await;
                 }
             }
-            KeyCode::Up => {
+            (UiFocus::BodyCenter, KeyCode::Char('p')) => {
+                let _ = tx.send(AppCommand::SearchPlaySelected).await;
+            }
+            (UiFocus::BodyCenter, KeyCode::Up) => {
                 let _ = tx.send(AppCommand::SearchMoveUp).await;
             }
-            KeyCode::Down => {
+            (UiFocus::BodyCenter, KeyCode::Down) => {
                 let _ = tx.send(AppCommand::SearchMoveDown).await;
             }
             _ => {}
         },
-        View::Lyrics => match key.code {
-            KeyCode::Char('o') => {
-                let _ = tx.send(AppCommand::LyricsToggleFollow).await;
+        View::Lyrics => {
+            if focus != UiFocus::BodyCenter {
+                return false;
             }
-            KeyCode::Char('g') => {
-                let _ = tx.send(AppCommand::LyricsGotoCurrent).await;
+            match key.code {
+                KeyCode::Char('o') => {
+                    let _ = tx.send(AppCommand::LyricsToggleFollow).await;
+                }
+                KeyCode::Char('g') => {
+                    let _ = tx.send(AppCommand::LyricsGotoCurrent).await;
+                }
+                KeyCode::Up => {
+                    let _ = tx.send(AppCommand::LyricsMoveUp).await;
+                }
+                KeyCode::Down => {
+                    let _ = tx.send(AppCommand::LyricsMoveDown).await;
+                }
+                _ => {}
             }
-            KeyCode::Up => {
-                let _ = tx.send(AppCommand::LyricsMoveUp).await;
+        }
+        View::Settings => {
+            if focus != UiFocus::BodyCenter {
+                return false;
             }
-            KeyCode::Down => {
-                let _ = tx.send(AppCommand::LyricsMoveDown).await;
+            match key.code {
+                KeyCode::Up => {
+                    let _ = tx.send(AppCommand::SettingsMoveUp).await;
+                }
+                KeyCode::Down => {
+                    let _ = tx.send(AppCommand::SettingsMoveDown).await;
+                }
+                KeyCode::Left => {
+                    let _ = tx.send(AppCommand::SettingsDecrease).await;
+                }
+                KeyCode::Right => {
+                    let _ = tx.send(AppCommand::SettingsIncrease).await;
+                }
+                KeyCode::Enter => {
+                    let _ = tx.send(AppCommand::SettingsActivate).await;
+                }
+                _ => {}
             }
-            _ => {}
-        },
-        View::Settings => match key.code {
-            KeyCode::Up => {
-                let _ = tx.send(AppCommand::SettingsMoveUp).await;
-            }
-            KeyCode::Down => {
-                let _ = tx.send(AppCommand::SettingsMoveDown).await;
-            }
-            KeyCode::Left => {
-                let _ = tx.send(AppCommand::SettingsDecrease).await;
-            }
-            KeyCode::Right => {
-                let _ = tx.send(AppCommand::SettingsIncrease).await;
-            }
-            KeyCode::Enter => {
-                let _ = tx.send(AppCommand::SettingsActivate).await;
-            }
-            _ => {}
-        },
+        }
     }
 
     false
@@ -254,7 +310,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tab_press_sends_tabnext_once() {
+    async fn tab_press_sends_focus_next_once() {
         let app = AppSnapshot::from_app(&App::default());
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
 
@@ -267,7 +323,7 @@ mod tests {
 
         let should_quit = handle_key(&app, key, &tx).await;
         assert!(!should_quit);
-        assert!(matches!(rx.try_recv(), Ok(AppCommand::TabNext)));
+        assert!(matches!(rx.try_recv(), Ok(AppCommand::UiFocusNext)));
         assert!(rx.try_recv().is_err());
     }
 }

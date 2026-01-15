@@ -1,5 +1,4 @@
 use crate::app::{PlaylistMode, View};
-use rand::Rng;
 use std::time::Duration;
 
 use crate::core::prelude::{
@@ -76,31 +75,6 @@ pub fn seek_relative(app: &mut App, effects: &mut CoreEffects, delta_ms: i64) {
     effects.send_audio(AudioCommand::SeekToMs(next));
 }
 
-/// 计算下一首的索引（仅计算，不触发播放）
-/// 返回 Some(idx) 表示有下一首，None 表示无下一首（如 Sequential 到末尾）
-pub fn calculate_next_index(app: &App) -> Option<usize> {
-    use crate::app::PlayMode;
-
-    let pos = app.queue_pos?;
-    if app.queue.is_empty() {
-        return None;
-    }
-
-    match app.play_mode {
-        PlayMode::SingleLoop => Some(pos), // 下一首是当前
-        PlayMode::Shuffle => None,         // 随机模式不预测
-        PlayMode::Sequential => {
-            let n = pos + 1;
-            if n >= app.queue.len() {
-                None // 到末尾，无下一首
-            } else {
-                Some(n)
-            }
-        }
-        PlayMode::ListLoop => Some((pos + 1) % app.queue.len()),
-    }
-}
-
 pub(super) async fn request_play_at_index(
     app: &mut App,
     request_tracker: &mut RequestTracker<RequestKey>,
@@ -110,10 +84,12 @@ pub(super) async fn request_play_at_index(
     next_song_cache: &mut NextSongCacheManager,
     effects: &mut CoreEffects,
 ) {
-    let Some(s) = app.queue.get(idx) else {
+    if !app.play_queue.set_current_index(idx) {
+        return;
+    }
+    let Some(s) = app.play_queue.songs().get(idx) else {
         return;
     };
-    app.queue_pos = Some(idx);
     if matches!(app.view, View::Playlists) && matches!(app.playlist_mode, PlaylistMode::Tracks) {
         app.playlist_tracks_selected = idx.min(app.playlist_tracks.len().saturating_sub(1));
     }
@@ -140,42 +116,29 @@ pub async fn play_next(
     next_song_cache: &mut NextSongCacheManager,
     effects: &mut CoreEffects,
 ) {
-    use crate::app::PlayMode;
-
-    let Some(pos) = app.queue_pos else {
+    let Some(current_idx) = app.play_queue.current_index() else {
         return;
     };
-    if app.queue.is_empty() {
+    if app.play_queue.is_empty() {
         return;
     }
 
-    let next_idx = match app.play_mode {
-        PlayMode::SingleLoop => pos,
-        PlayMode::Shuffle => {
-            if app.queue.len() == 1 {
-                pos
-            } else {
-                let mut rng = rand::thread_rng();
-                loop {
-                    let idx = rng.gen_range(0..app.queue.len());
-                    if idx != pos {
-                        break idx;
-                    }
-                }
-            }
+    let Some(peek_idx) = app.play_queue.peek_next_index() else {
+        if matches!(app.play_mode, crate::app::PlayMode::Sequential) {
+            app.play_status = "播放结束".to_owned();
+            app.play_queue.clear_cursor();
         }
-        PlayMode::Sequential => {
-            let n = pos + 1;
-            if n >= app.queue.len() {
-                app.play_status = "播放结束".to_owned();
-                app.queue_pos = None;
-                return;
-            }
-            n
-        }
-        PlayMode::ListLoop => (pos + 1) % app.queue.len(),
+        return;
     };
+    if peek_idx == current_idx && matches!(app.play_mode, crate::app::PlayMode::Sequential) {
+        app.play_status = "播放结束".to_owned();
+        app.play_queue.clear_cursor();
+        return;
+    }
 
+    let Some(next_idx) = app.play_queue.next_index() else {
+        return;
+    };
     request_play_at_index(
         app,
         request_tracker,
@@ -196,40 +159,12 @@ pub(super) async fn play_prev(
     next_song_cache: &mut NextSongCacheManager,
     effects: &mut CoreEffects,
 ) {
-    use crate::app::PlayMode;
-
-    let Some(pos) = app.queue_pos else {
-        return;
-    };
-    if app.queue.is_empty() {
+    if app.play_queue.is_empty() || app.play_queue.current_index().is_none() {
         return;
     }
-
-    let prev_idx = match app.play_mode {
-        PlayMode::SingleLoop => pos,
-        PlayMode::Shuffle => {
-            if app.queue.len() == 1 {
-                pos
-            } else {
-                let mut rng = rand::thread_rng();
-                loop {
-                    let idx = rng.gen_range(0..app.queue.len());
-                    if idx != pos {
-                        break idx;
-                    }
-                }
-            }
-        }
-        PlayMode::Sequential => pos.saturating_sub(1),
-        PlayMode::ListLoop => {
-            if pos == 0 {
-                app.queue.len() - 1
-            } else {
-                pos - 1
-            }
-        }
+    let Some(prev_idx) = app.play_queue.prev_index() else {
+        return;
     };
-
     request_play_at_index(
         app,
         request_tracker,
