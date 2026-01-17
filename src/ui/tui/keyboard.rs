@@ -385,7 +385,9 @@ mod tests {
 
             let should_quit = handle_key(&app, key, &tx).await;
             assert!(!should_quit);
-            assert!(matches!(rx.try_recv(), Ok(AppCommand::TabTo { index }) if index == (f_key as usize) - 1));
+            assert!(
+                matches!(rx.try_recv(), Ok(AppCommand::TabTo { index }) if index == (f_key as usize) - 1)
+            );
             assert!(rx.try_recv().is_err());
         }
     }
@@ -416,7 +418,9 @@ mod tests {
 
             let should_quit = handle_key(&app_snapshot, key, &tx).await;
             assert!(!should_quit);
-            assert!(matches!(rx.try_recv(), Ok(AppCommand::UiFocusSet { focus }) if focus == expected_focus));
+            assert!(
+                matches!(rx.try_recv(), Ok(AppCommand::UiFocusSet { focus }) if focus == expected_focus)
+            );
             assert!(rx.try_recv().is_err());
         }
     }
@@ -441,7 +445,9 @@ mod tests {
             let should_quit = handle_key(&app_snapshot, key, &tx).await;
             assert!(!should_quit);
             // In search input, number keys should send SearchInputChar, not UiFocusSet
-            assert!(matches!(rx.try_recv(), Ok(AppCommand::SearchInputChar { c }) if c == key_char));
+            assert!(
+                matches!(rx.try_recv(), Ok(AppCommand::SearchInputChar { c }) if c == key_char)
+            );
             assert!(rx.try_recv().is_err());
         }
     }
@@ -472,7 +478,12 @@ mod tests {
         app.ui_focus = UiFocus::HeaderSearch;
         let app_snapshot = AppSnapshot::from_app(&app);
 
-        for (key_char, expected_focus) in [('1', UiFocus::HeaderSearch), ('2', UiFocus::BodyLeft), ('3', UiFocus::BodyCenter), ('4', UiFocus::BodyRight)] {
+        for (key_char, expected_focus) in [
+            ('1', UiFocus::HeaderSearch),
+            ('2', UiFocus::BodyLeft),
+            ('3', UiFocus::BodyCenter),
+            ('4', UiFocus::BodyRight),
+        ] {
             let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
 
             let key = KeyEvent {
@@ -484,7 +495,9 @@ mod tests {
 
             let should_quit = handle_key(&app_snapshot, key, &tx).await;
             assert!(!should_quit);
-            assert!(matches!(rx.try_recv(), Ok(AppCommand::UiFocusSet { focus }) if focus == expected_focus));
+            assert!(
+                matches!(rx.try_recv(), Ok(AppCommand::UiFocusSet { focus }) if focus == expected_focus)
+            );
             assert!(rx.try_recv().is_err());
         }
     }

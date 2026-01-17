@@ -89,10 +89,10 @@ mod tests {
 
         // Test the full cycle starting from BodyCenter
         let expected_sequence = vec![
-            UiFocus::BodyRight,     // BodyCenter -> BodyRight
-            UiFocus::HeaderSearch,  // BodyRight -> HeaderSearch
-            UiFocus::BodyLeft,      // HeaderSearch -> BodyLeft
-            UiFocus::BodyCenter,    // BodyLeft -> BodyCenter
+            UiFocus::BodyRight,    // BodyCenter -> BodyRight
+            UiFocus::HeaderSearch, // BodyRight -> HeaderSearch
+            UiFocus::BodyLeft,     // HeaderSearch -> BodyLeft
+            UiFocus::BodyCenter,   // BodyLeft -> BodyCenter
         ];
 
         for expected_focus in expected_sequence {
@@ -113,10 +113,10 @@ mod tests {
 
         // Test the full cycle in reverse starting from BodyCenter
         let expected_sequence = vec![
-            UiFocus::BodyLeft,      // BodyCenter -> BodyLeft
-            UiFocus::HeaderSearch,  // BodyLeft -> HeaderSearch
-            UiFocus::BodyRight,     // HeaderSearch -> BodyRight
-            UiFocus::BodyCenter,    // BodyRight -> BodyCenter
+            UiFocus::BodyLeft,     // BodyCenter -> BodyLeft
+            UiFocus::HeaderSearch, // BodyLeft -> HeaderSearch
+            UiFocus::BodyRight,    // HeaderSearch -> BodyRight
+            UiFocus::BodyCenter,   // BodyRight -> BodyCenter
         ];
 
         for expected_focus in expected_sequence {

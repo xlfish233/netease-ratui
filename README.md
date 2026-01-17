@@ -31,6 +31,7 @@
 - 播放能力：暂停/继续、上一首/下一首、Seek、音量与播放模式切换
 - 预加载与缓存：歌单预加载、音频缓存与下一首预取
 - 设置持久化：音质/音量/播放模式/歌词 offset 等写入 `settings.json`
+- **播放状态持久化：自动保存播放队列、播放进度、音量设置，重启后精确恢复**
 - 日志体系：tracing 日志落盘，便于排查问题
 - 直观交互：UI 面板显示快捷键提示（F1-F4 切换视图，1-4 切换焦点，Alt+1-4 搜索中切换）
 
@@ -94,9 +95,72 @@ cargo run -- qr-key
 目录内主要文件：
 
 - `settings.json`：UI 设置与下载/缓存参数
+- `player_state.json`：播放状态持久化（播放队列、播放进度、音量等）
 - `netease_state.json`：Cookie 与设备信息
 - `audio_cache/`：音频缓存
 - `logs/netease-ratui.log.YYYY-MM-DD`：运行日志
+
+### 播放状态持久化
+
+应用会自动保存和恢复播放状态：
+
+- **保存时机**：
+  - 应用退出时（按 `q`）
+  - 每 30 秒自动保存（防止意外关闭丢失数据）
+- **恢复时机**：
+  - 应用启动时自动恢复
+  - 默认恢复为暂停状态，不会自动播放
+- **保存内容**：
+  - 播放队列（歌曲列表和顺序）
+  - 播放进度（精确到毫秒）
+  - 播放模式（顺序/列表循环/单曲循环/随机）
+  - 音量设置
+  - 音质设置
+  - Crossfade 时长
+  - 歌单列表
+
+### player_state.json 格式
+
+```json
+{
+  "version": 1,
+  "player": {
+    "version": 1,
+    "play_song_id": 12345,
+    "progress": {
+      "started_at_epoch_ms": 1704067200000,
+      "total_ms": 180000,
+      "paused": true,
+      "paused_at_epoch_ms": 1704067380000,
+      "paused_accum_ms": 5000
+    },
+    "play_queue": {
+      "songs": [
+        {
+          "id": 12345,
+          "name": "歌曲名",
+          "artists": "歌手名"
+        }
+      ],
+      "order": [0, 1, 2],
+      "cursor": 0,
+      "mode": "ListLoop"
+    },
+    "volume": 0.8,
+    "play_br": 320000,
+    "crossfade_ms": 300
+  },
+  "playlists": [
+    {
+      "id": 1,
+      "name": "我的歌单",
+      "track_count": 100
+    }
+  ],
+  "playlists_selected": 0,
+  "saved_at_epoch_ms": 1704067380000
+}
+```
 
 ### settings.json
 

@@ -85,6 +85,15 @@ impl PlayQueue {
         self.cursor = None;
     }
 
+    /// 设置光标位置（在播放队列 order 中的索引）
+    pub fn set_cursor_pos(&mut self, pos: usize) {
+        if pos < self.order.len() {
+            self.cursor = Some(pos);
+        } else {
+            self.cursor = None;
+        }
+    }
+
     pub fn peek_next_index(&self) -> Option<usize> {
         let pos = self.cursor?;
         let len = self.order.len();

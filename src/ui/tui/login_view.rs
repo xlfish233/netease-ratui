@@ -57,7 +57,11 @@ pub(super) fn draw_login(f: &mut Frame, area: Rect, state: &LoginSnapshot, logge
             qr_hint
         );
         let qr_block = Paragraph::new(Text::from(qr_display))
-            .block(Block::default().borders(Borders::ALL).title("二维码登录[3]"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("二维码登录[3]"),
+            )
             .wrap(Wrap { trim: false });
         f.render_widget(qr_block, chunks[0]);
 

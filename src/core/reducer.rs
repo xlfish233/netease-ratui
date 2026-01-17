@@ -181,6 +181,29 @@ pub fn spawn_app_actor(
     tokio::spawn(async move {
         let mut state = CoreState::new_with_settings(&data_dir, settings);
 
+        // ========== 加载保存的状态 ==========
+        match crate::player_state::load_player_state(&data_dir) {
+            Ok(snapshot) => {
+                match crate::player_state::apply_snapshot_to_app(&snapshot, &mut state.app) {
+                    Ok(()) => {
+                        tracing::info!("播放状态已恢复（默认暂停）");
+                    }
+                    Err(e) => {
+                        tracing::warn!("状态恢复失败: {}, 使用默认状态", e);
+                    }
+                }
+            }
+            Err(crate::player_state::PlayerStateError::Io(ref e))
+                if e.kind() == std::io::ErrorKind::NotFound =>
+            {
+                tracing::debug!("首次启动，无历史状态");
+            }
+            Err(e) => {
+                tracing::warn!("加载状态失败: {}, 使用默认状态", e);
+            }
+        }
+        // ========== 加载完成 ==========
+
         settings_handlers::apply_settings_to_app(&mut state.app, &state.settings);
         let _ = tx_audio
             .send(AudioCommand::SetCacheBr(state.app.play_br))
@@ -193,6 +216,8 @@ pub fn spawn_app_actor(
             .await;
 
         let mut qr_poll = tokio::time::interval(Duration::from_secs(2));
+        let mut state_save_timer = tokio::time::interval(Duration::from_secs(30));
+        state_save_timer.tick().await; // 立即消耗第一个周期
         let dispatch = CoreDispatch {
             tx_netease_hi: &tx_netease_hi,
             tx_netease_lo: &tx_netease_lo,
@@ -203,6 +228,13 @@ pub fn spawn_app_actor(
         loop {
             let msg = tokio::select! {
                 _ = qr_poll.tick() => CoreMsg::QrPoll,
+                _ = state_save_timer.tick() => {
+                    // 定时保存状态
+                    if let Err(e) = crate::player_state::save_player_state(&data_dir, &state.app) {
+                        tracing::warn!("定时保存播放状态失败: {}", e);
+                    }
+                    continue; // 继续循环，不生成 CoreMsg
+                }
                 Some(cmd) = rx_cmd.recv() => CoreMsg::Ui(cmd),
                 Some(evt) = rx_netease.recv() => CoreMsg::Netease(evt),
                 Some(evt) = rx_audio_evt.recv() => CoreMsg::Audio(evt),
@@ -212,6 +244,13 @@ pub fn spawn_app_actor(
             let should_quit = reduce(msg, &mut state, &mut effects, &data_dir).await;
             run_effects(effects, &dispatch).await;
             if should_quit {
+                // ========== 保存播放状态 ==========
+                if let Err(e) = crate::player_state::save_player_state(&data_dir, &state.app) {
+                    tracing::error!("保存播放状态失败: {}", e);
+                } else {
+                    tracing::info!("播放状态已保存");
+                }
+                // ========== 保存完成 ==========
                 break;
             }
         }

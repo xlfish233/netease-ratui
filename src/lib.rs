@@ -7,5 +7,6 @@ pub mod features;
 pub mod logging;
 pub mod messages;
 pub mod netease;
+pub mod player_state;
 pub mod settings;
 pub mod ui;

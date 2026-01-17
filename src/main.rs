@@ -7,6 +7,7 @@ mod features;
 mod logging;
 mod messages;
 mod netease;
+mod player_state;
 mod settings;
 mod ui;
 
