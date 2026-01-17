@@ -4,23 +4,13 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
 use std::time::Duration;
-use tokio::sync::mpsc;
-
-use super::messages::AudioEvent;
-
-struct ActiveSink {
-    sink: Arc<Sink>,
-    end_cancel: Arc<AtomicBool>,
-}
 
 pub struct PlayerState {
     mixer: Mixer,
     #[allow(dead_code)]
     stream: OutputStream,
-    current: Option<ActiveSink>,
+    current: Option<Arc<Sink>>,
     path: Option<PathBuf>,
     play_id: u64,
     paused: bool,
@@ -61,32 +51,17 @@ impl PlayerState {
 
     fn stop_current(&mut self) {
         if let Some(cur) = self.current.take() {
-            tracing::debug!(
-                play_id = self.play_id,
-                "Stopping current sink, signaling end check thread to cancel"
-            );
-            cur.end_cancel.store(true, Ordering::Relaxed);
-            cur.sink.stop();
-        }
-    }
-
-    pub fn cancel_current_end(&mut self) {
-        if let Some(cur) = self.current.as_ref() {
-            cur.end_cancel.store(true, Ordering::Relaxed);
+            tracing::debug!(play_id = self.play_id, "Stopping current sink");
+            cur.stop();
         }
     }
 
     pub fn take_current_for_fade(&mut self) -> Option<Arc<Sink>> {
-        if let Some(cur) = self.current.take() {
-            cur.end_cancel.store(true, Ordering::Relaxed);
-            Some(cur.sink)
-        } else {
-            None
-        }
+        self.current.take()
     }
 
     pub fn current_sink(&self) -> Option<Arc<Sink>> {
-        self.current.as_ref().map(|cur| Arc::clone(&cur.sink))
+        self.current.as_ref().map(Arc::clone)
     }
 
     pub fn set_path(&mut self, path: PathBuf) {
@@ -113,65 +88,8 @@ impl PlayerState {
         self.volume
     }
 
-    pub fn attach_sink(&mut self, tx_evt: &mpsc::Sender<AudioEvent>, sink: Arc<Sink>) {
-        let play_id = self.play_id;
-        let tx_end = tx_evt.clone();
-        let cancel = Arc::new(AtomicBool::new(false));
-        let sink_end = Arc::clone(&sink);
-        let cancel_end = Arc::clone(&cancel);
-
-        let thread_name = format!("audio-end-check-{}", play_id);
-        tracing::debug!(play_id, "Spawning end check thread");
-
-        // 启动后台线程监控播放结束
-        //
-        // ## 为何使用 expect()？
-        //
-        // 1. **功能降级而非崩溃**:
-        //    - 如果线程创建失败，`end_cancel` 不会被触发
-        //    - 播放仍可继续，只是无法自动检测歌曲结束
-        //    - 不影响核心播放功能
-        //
-        // 2. **实际风险**:
-        //    - 系统资源严重不足时可能失败
-        //    - 极端情况下，但不应导致整个应用 panic
-        //
-        // 3. **未来改进方向**:
-        //    - 改为返回 `Result<(), AudioError>`
-        //    - 在调用方决定如何处理（降级或报错）
-        //    - 需要修改 `attach_sink` 签名
-        //
-        // ## 当前权衡:
-        // - 简单性: 避免复杂的错误传播
-        // - 影响: 有限，只影响自动切歌
-        thread::Builder::new()
-            .name(thread_name)
-            .spawn(move || {
-                let start = std::time::Instant::now();
-                sink_end.sleep_until_end();
-                let elapsed = start.elapsed();
-
-                if !cancel_end.load(Ordering::Relaxed) {
-                    tracing::debug!(
-                        play_id,
-                        elapsed_ms = elapsed.as_millis(),
-                        "End check thread exiting naturally"
-                    );
-                    let _ = tx_end.blocking_send(AudioEvent::Ended { play_id });
-                } else {
-                    tracing::debug!(
-                        play_id,
-                        elapsed_ms = elapsed.as_millis(),
-                        "End check thread was cancelled"
-                    );
-                }
-            })
-            .expect("failed to spawn end check thread: 系统资源不足");
-
-        self.current = Some(ActiveSink {
-            sink,
-            end_cancel: cancel,
-        });
+    pub fn attach_sink(&mut self, sink: Arc<Sink>) {
+        self.current = Some(sink);
     }
 
     pub fn build_sink(
@@ -185,7 +103,6 @@ impl PlayerState {
 }
 
 pub(super) fn seek_to_ms(
-    tx_evt: &mpsc::Sender<AudioEvent>,
     state: &mut PlayerState,
     position_ms: u64,
 ) -> Result<(), String> {
@@ -205,7 +122,7 @@ pub(super) fn seek_to_ms(
         sink.play();
     }
 
-    state.attach_sink(tx_evt, Arc::clone(&sink));
+    state.attach_sink(Arc::clone(&sink));
     Ok(())
 }
 

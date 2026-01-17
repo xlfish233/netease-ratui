@@ -33,6 +33,7 @@ struct AudioEngine {
     transfer_closed: bool,
     crossfade_ms: u64,
     fade: Option<Crossfade>,
+    ended_reported_play_id: Option<u64>,
 }
 
 impl AudioEngine {
@@ -55,17 +56,22 @@ impl AudioEngine {
             transfer_closed: false,
             crossfade_ms: settings.crossfade_ms,
             fade: None,
+            ended_reported_play_id: None,
         }
     }
 
     async fn run(mut self) {
         let mut fade_tick = tokio::time::interval(Duration::from_millis(20));
+        let mut end_tick = tokio::time::interval(Duration::from_millis(200));
 
         loop {
             select! {
                 biased;
                 _ = fade_tick.tick(), if self.fade.is_some() => {
                     self.tick_fade();
+                }
+                _ = end_tick.tick() => {
+                    self.tick_end().await;
                 }
                 maybe_evt = self.rx_transfer.recv(), if !self.transfer_closed => {
                     match maybe_evt {
@@ -102,6 +108,28 @@ impl AudioEngine {
         }
     }
 
+    async fn tick_end(&mut self) {
+        // Poll for natural end of the *current* sink; avoids spawning an OS thread per track.
+        let Some(sink) = self.state.current_sink() else {
+            return;
+        };
+        let play_id = self.state.play_id();
+        if self.ended_reported_play_id == Some(play_id) {
+            return;
+        }
+
+        // If the user paused, don't emit "ended" while paused (seeks/pauses can transiently stop output).
+        if self.state.paused() {
+            return;
+        }
+
+        if sink.empty() {
+            self.ended_reported_play_id = Some(play_id);
+            tracing::debug!(play_id, "detected sink ended");
+            let _ = self.tx_evt.send(AudioEvent::Ended { play_id }).await;
+        }
+    }
+
     async fn handle_transfer_event(&mut self, evt: TransferEvent) {
         match evt {
             TransferEvent::Ready { token, key, path } => {
@@ -127,6 +155,7 @@ impl AudioEngine {
                 );
                 match self.start_playback(&key, &path, &p.title) {
                     Ok(duration_ms) => {
+                        self.ended_reported_play_id = None;
                         let _ = self
                             .tx_evt
                             .send(AudioEvent::NowPlaying {
@@ -198,7 +227,6 @@ impl AudioEngine {
                         .await;
                 }
                 self.clear_fade();
-                self.state.cancel_current_end();
 
                 let token = self.next_token;
                 self.next_token = self.next_token.wrapping_add(1).max(1);
@@ -275,13 +303,16 @@ impl AudioEngine {
                 self.pending_play = None;
                 self.clear_fade();
                 self.state.stop();
+                self.ended_reported_play_id = None;
                 let _ = self.tx_evt.send(AudioEvent::Stopped).await;
             }
             AudioCommand::SeekToMs(ms) => {
                 self.clear_fade();
-                if let Err(e) = seek_to_ms(&self.tx_evt, &mut self.state, ms) {
+                if let Err(e) = seek_to_ms(&mut self.state, ms) {
                     tracing::warn!(ms, err = %e, "Seek 失败");
                     let _ = self.tx_evt.send(AudioEvent::Error(e)).await;
+                } else {
+                    self.ended_reported_play_id = None;
                 }
             }
             AudioCommand::SetVolume(v) => {
@@ -354,7 +385,7 @@ impl AudioEngine {
             self.state.set_path(path.to_path_buf());
             sink.set_volume(0.0);
             sink.play();
-            self.state.attach_sink(&self.tx_evt, Arc::clone(&sink));
+            self.state.attach_sink(Arc::clone(&sink));
             if let Some(old) = old {
                 old.set_volume(self.state.volume());
                 self.fade = Some(Crossfade::new(old, Arc::clone(&sink), self.crossfade_ms));
@@ -372,7 +403,7 @@ impl AudioEngine {
                 sink.play();
             }
             sink.set_volume(self.state.volume());
-            self.state.attach_sink(&self.tx_evt, Arc::clone(&sink));
+            self.state.attach_sink(Arc::clone(&sink));
         }
 
         tracing::debug!(song_id = key.song_id, path = %path.display(), "start playback");
