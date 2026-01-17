@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **UI 修复**：修复打开歌单后歌单列表消失的问题
+  - `AppSnapshot::from_app()` 中的 `playlists` 字段现在始终克隆歌单列表
+  - 之前在 `PlaylistMode::Tracks` 模式下返回空数组，导致左侧歌单列表消失
+  - 修改文件：`src/app/state.rs`
+
 - **修复**：修复重启后歌单加载问题
   - `PlaylistLite` 添加 `special_type` 字段，保存和恢复时不再丢失此字段
   - 恢复时使用保存的 `special_type`（而非硬编码为 0），确保"我喜欢的音乐"（special_type=5）能正确识别

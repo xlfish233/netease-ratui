@@ -84,13 +84,13 @@ pub enum PlaylistMode {
     Tracks,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaylistPreload {
     pub status: PreloadStatus,
     pub songs: Vec<Song>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum PreloadStatus {
     #[allow(dead_code)]
     NotStarted,
@@ -378,11 +378,7 @@ impl AppSnapshot {
             }),
             View::Playlists => AppViewSnapshot::Playlists(PlaylistsSnapshot {
                 playlist_mode: app.playlist_mode,
-                playlists: if matches!(app.playlist_mode, PlaylistMode::List) {
-                    app.playlists.clone()
-                } else {
-                    Vec::new()
-                },
+                playlists: app.playlists.clone(),
                 playlists_selected: app.playlists_selected,
                 playlist_tracks: if matches!(app.playlist_mode, PlaylistMode::Tracks) {
                     app.playlist_tracks.clone()
