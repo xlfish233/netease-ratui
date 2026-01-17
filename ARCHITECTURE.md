@@ -141,6 +141,21 @@ flowchart LR
 6. 设置 `paused = true`（默认不自动播放）
 7. 应用其他设置到音频 worker
 
+**重启后自动恢复播放（NeedsReload 机制）：**
+当用户重启应用后按空格键时，音频引擎检测到 sink 为 None，会触发自动恢复流程：
+
+1. 用户按空格键 → `AppCommand::PlayerTogglePause`
+2. `AudioEngine::TogglePause` 检测到 `sink = None`
+3. 发送 `AudioEvent::NeedsReload` 事件
+4. `features::player::audio` 处理 `NeedsReload` 事件：
+   - 从 `play_song_id` 或播放队列获取当前歌曲
+   - 清理旧的请求记录
+   - 重新发送 `NeteaseCommand::SongUrl` 请求播放链接
+5. `NeteaseActor` 返回播放链接
+6. `AudioWorker` 开始播放
+
+这样用户无需手动重新选择歌曲，只需按空格键即可自动恢复播放。
+
 **定时保存（每 30 秒）：**
 1. `tokio::time::interval` 触发
 2. 调用 `player_state::save_player_state()`

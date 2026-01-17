@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **修复**：修复重启应用后按空格键无响应的问题
+  - 在 `AudioEvent` 中新增 `NeedsReload` 事件类型
+  - `AudioEngine::TogglePause` 检测到 sink 为 None 时自动发送 `NeedsReload` 事件
+  - `handle_audio_event` 处理 `NeedsReload` 事件，自动重新请求当前歌曲的播放链接
+  - 用户重启应用后按空格键即可自动恢复播放，无需手动重新播放
+  - 修改文件：
+    - `src/audio_worker/messages.rs`：添加 `NeedsReload` 事件
+    - `src/audio_worker/engine.rs`：检测 sink 为 None 并发送事件
+    - `src/features/player/audio.rs`：处理 `NeedsReload` 事件
+- **测试增强**：为 NeedsReload 功能添加 7 个单元测试和集成测试
+  - `src/audio_worker/messages.rs`：3 个单元测试
+  - `tests/player_reload.rs`：4 个集成测试
+- **文档更新**：更新 TESTING.md，记录新增测试
+
 ## v0.0.7（2026-01-17）
 
 - **修复**：解决 CI 中的 clippy 警告（Rust 1.92.0）

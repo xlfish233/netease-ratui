@@ -104,6 +104,7 @@ pub(super) async fn handle_key(
             }
         }
         (KeyCode::Char(' '), _) => {
+            tracing::debug!("🎵 [Keyboard] 检测到空格键，发送 PlayerTogglePause 命令");
             let _ = tx.send(AppCommand::PlayerTogglePause).await;
             return false;
         }

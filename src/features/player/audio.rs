@@ -59,8 +59,20 @@ pub async fn handle_audio_event(
             );
         }
         AudioEvent::Paused(p) => {
+            tracing::info!(
+                paused = p,
+                old_paused = app.paused,
+                "🎵 [PlayerAudio] 收到 Paused 事件"
+            );
+
             app.paused = p;
             app.play_status = (if p { "已暂停" } else { "播放中" }).to_owned();
+
+            tracing::debug!(
+                play_status = %app.play_status,
+                "🎵 [PlayerAudio] 更新播放状态"
+            );
+
             if p {
                 app.play_paused_at = Some(std::time::Instant::now());
             } else if let Some(t) = app.play_paused_at.take() {
@@ -101,6 +113,51 @@ pub async fn handle_audio_event(
                 effects,
             )
             .await;
+        }
+        AudioEvent::NeedsReload => {
+            tracing::info!(
+                play_song_id = ?app.play_song_id,
+                "🎵 [PlayerAudio] 收到 NeedsReload 事件，重新加载音频"
+            );
+
+            // 检查是否有有效的歌曲可以播放
+            let song_id = match app.play_song_id.or_else(|| app.play_queue.current().map(|s| s.id)) {
+                Some(id) => id,
+                None => {
+                    tracing::warn!("🎵 [PlayerAudio] 没有可播放的歌曲");
+                    app.play_status = "无歌曲可播放".to_string();
+                    return;
+                }
+            };
+
+            // 获取歌曲标题用于请求
+            let current_song = app.play_queue.current();
+            let title = current_song
+                .map(|s| format!("{} - {}", s.name, s.artists))
+                .or_else(|| app.now_playing.clone())
+                .unwrap_or_else(|| "未知歌曲".to_string());
+
+            tracing::info!(
+                song_id,
+                title = %title,
+                "🎵 [PlayerAudio] 重新请求播放链接"
+            );
+
+            app.play_status = format!("加载中: {}", title);
+
+            // 清理旧的请求记录并重新请求
+            ctx.song_request_titles.clear();
+            let req_id = ctx.request_tracker.issue(RequestKey::SongUrl, || utils::next_id(ctx.req_id));
+            ctx.song_request_titles.insert(song_id, title.clone());
+
+            effects.send_netease_hi_warn(
+                NeteaseCommand::SongUrl {
+                    req_id,
+                    id: song_id,
+                    br: app.play_br,
+                },
+                "NeteaseActor 通道已关闭：SongUrl 发送失败",
+            );
         }
         AudioEvent::Error(e) => {
             app.play_status = format!("播放错误: {e}");

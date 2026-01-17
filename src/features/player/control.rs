@@ -22,8 +22,27 @@ pub async fn handle_player_control_command(
     app: &mut App,
     ctx: &mut PlayerControlCtx<'_>,
 ) -> bool {
+    tracing::debug!(
+        command = ?cmd,
+        paused = app.paused,
+        play_song_id = ?app.play_song_id,
+        play_queue_empty = app.play_queue.is_empty(),
+        current_index = ?app.play_queue.current_index(),
+        "🎵 [PlayerControl] 接收播放控制命令"
+    );
+
     match cmd {
         AppCommand::PlayerTogglePause => {
+            tracing::info!(
+                paused = app.paused,
+                current_sink_exists = app.play_song_id.is_some(),
+                "🎵 [PlayerControl] 处理播放/暂停切换命令"
+            );
+
+            if app.play_song_id.is_none() {
+                tracing::warn!("🎵 [PlayerControl] play_song_id 为空，无法切换播放状态");
+            }
+
             ctx.effects.send_audio_warn(
                 AudioCommand::TogglePause,
                 "AudioWorker 通道已关闭：TogglePause 发送失败",

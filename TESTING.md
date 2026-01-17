@@ -101,12 +101,16 @@ GitHub Actions CI 会自动运行：
 
 ## 当前测试覆盖
 
-- **总测试数**: 43 个
+- **总测试数**: 50 个
 - **核心模块**:
   - `RequestTracker`: 9 个测试
   - `AudioCache`: 9 个测试
   - `DTO 转换`: 15 个测试
   - Reducer 各模块: 10 个测试
+  - AudioEvent/AudioCommand: 7 个测试（新增）
+- **集成测试**:
+  - `settings`: 3 个测试
+  - `player_reload`: 4 个测试（新增）
 
 ## 贡献测试
 

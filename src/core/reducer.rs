@@ -186,7 +186,28 @@ pub fn spawn_app_actor(
             Ok(snapshot) => {
                 match crate::player_state::apply_snapshot_to_app(&snapshot, &mut state.app) {
                     Ok(()) => {
-                        tracing::info!("播放状态已恢复（默认暂停）");
+                        tracing::info!(
+                            play_song_id = ?state.app.play_song_id,
+                            play_queue_len = state.app.play_queue.songs().len(),
+                            current_index = ?state.app.play_queue.current_index(),
+                            paused = state.app.paused,
+                            volume = state.app.volume,
+                            play_mode = ?state.app.play_mode,
+                            "🎵 [StateRestore] 播放状态已恢复（默认暂停）"
+                        );
+
+                        // 验证状态一致性
+                        if let Some(song_id) = state.app.play_song_id {
+                            let song_exists = state.app.play_queue.songs()
+                                .iter()
+                                .any(|s| s.id == song_id);
+                            if !song_exists {
+                                tracing::warn!(
+                                    song_id,
+                                    "🎵 [StateRestore] 状态不一致：play_song_id 存在但队列中找不到对应歌曲"
+                                );
+                            }
+                        }
                     }
                     Err(e) => {
                         tracing::warn!("状态恢复失败: {}, 使用默认状态", e);

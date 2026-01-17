@@ -225,8 +225,29 @@ impl AudioEngine {
                     .await;
             }
             AudioCommand::TogglePause => {
+                tracing::info!(
+                    current_paused = self.state.paused(),
+                    has_sink = self.state.current_sink().is_some(),
+                    "🎵 [AudioEngine] 收到 TogglePause 命令"
+                );
+
+                // 新增：如果 sink 为 None，发送 NeedsReload 事件
+                if self.state.current_sink().is_none() {
+                    tracing::warn!("🎵 [AudioEngine] sink 为 None，需要重新加载音频");
+                    let _ = self.tx_evt.send(AudioEvent::NeedsReload).await;
+                    return;
+                }
+
                 let next_paused = !self.state.paused();
                 self.state.set_paused(next_paused);
+
+                tracing::debug!(
+                    next_paused,
+                    "🎵 [AudioEngine] 切换暂停状态: {} -> {}",
+                    !next_paused,
+                    next_paused
+                );
+
                 if let Some(fade) = &mut self.fade {
                     if next_paused {
                         fade.pause();
@@ -238,12 +259,20 @@ impl AudioEngine {
                 }
                 if let Some(sink) = self.state.current_sink() {
                     if next_paused {
+                        tracing::debug!("🎵 [AudioEngine] 暂停 sink");
                         sink.pause();
                     } else {
+                        tracing::debug!("🎵 [AudioEngine] 恢复 sink 播放");
                         sink.play();
                     }
+                } else {
+                    tracing::warn!("🎵 [AudioEngine] sink 为 None，无法切换播放状态");
                 }
                 let _ = self.tx_evt.send(AudioEvent::Paused(next_paused)).await;
+                tracing::debug!(
+                    next_paused,
+                    "🎵 [AudioEngine] 发送 Paused 事件"
+                );
             }
             AudioCommand::Stop => {
                 self.pending_play = None;
