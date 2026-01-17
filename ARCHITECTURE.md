@@ -109,6 +109,8 @@ flowchart LR
 - `src/core`：reducer、effects、infra
 - `src/features`：业务模块
 - `src/player_state`：播放状态持久化
+- `src/domain/ids.rs`：结构化资源标识（`SourceId`/`TrackKey`），为多音源扩展做准备
+- `src/messages/source.rs` / `src/source/hub.rs`：音源统一消息与路由（准备中，用于本地音源/多音源扩展）
 - `src/netease`：API 与网关
 - `src/audio_worker`：播放与缓存
 - `src/app` / `src/domain`：状态与模型

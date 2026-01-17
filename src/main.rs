@@ -10,6 +10,7 @@ mod netease;
 mod player_state;
 mod settings;
 mod ui;
+mod source;
 
 use app::{App, AppSnapshot};
 use audio_worker::AudioBackend;
