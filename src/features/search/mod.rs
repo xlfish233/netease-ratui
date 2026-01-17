@@ -71,7 +71,7 @@ pub async fn handle_search_command(
                 effects.emit_state(app);
                 song_request_titles.clear();
                 let id = request_tracker.issue(RequestKey::SongUrl, || utils::next_id(req_id));
-                song_request_titles.insert(s.id, title.clone());
+                song_request_titles.insert(s.id, title);
 
                 // 先停止当前播放
                 effects.send_audio(AudioCommand::Stop);

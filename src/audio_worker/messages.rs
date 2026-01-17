@@ -54,7 +54,6 @@ mod tests {
         match event {
             AudioEvent::NeedsReload => {
                 // 测试可以成功创建和匹配 NeedsReload 事件
-                assert!(true);
             }
             _ => panic!("Expected NeedsReload event"),
         }
@@ -73,7 +72,6 @@ mod tests {
         match cmd {
             AudioCommand::TogglePause => {
                 // 测试可以成功创建和匹配 TogglePause 命令
-                assert!(true);
             }
             _ => panic!("Expected TogglePause command"),
         }
