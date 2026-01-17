@@ -31,9 +31,13 @@ impl PlayQueue {
         self.rebuild_order(current);
     }
 
-    pub fn set_songs(&mut self, songs: Vec<Song>, start_index: Option<usize>) {
-        self.songs = songs;
+    /// 设置播放队列的歌曲列表
+    ///
+    /// 返回旧的 songs 向量，允许调用方重用或丢弃
+    pub fn set_songs(&mut self, songs: Vec<Song>, start_index: Option<usize>) -> Vec<Song> {
+        let old = std::mem::replace(&mut self.songs, songs);
         self.rebuild_order(start_index);
+        old
     }
 
     pub fn clear(&mut self) {

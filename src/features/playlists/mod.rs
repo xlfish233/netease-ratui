@@ -45,20 +45,29 @@ pub async fn handle_playlists_command(
                 };
 
                 // 检查是否已有预加载完成的歌曲
-                if let Some(preload) = app.playlist_preloads.get(&playlist_id)
-                    && matches!(preload.status, PreloadStatus::Completed)
-                    && !preload.songs.is_empty()
+                if let std::collections::hash_map::Entry::Occupied(mut entry) =
+                    app.playlist_preloads.entry(playlist_id)
                 {
-                    app.playlist_tracks = preload.songs.clone();
-                    app.playlist_tracks_selected = 0;
-                    app.playlist_mode = PlaylistMode::Tracks;
-                    app.play_queue
-                        .set_songs(app.playlist_tracks.clone(), Some(0));
-                    next_song_cache.reset(); // 失效预缓存
-                    app.playlists_status =
-                        format!("歌曲: {} 首（已缓存，p 播放）", app.playlist_tracks.len());
-                    effects.emit_state(app);
-                    return true;
+                    let preload = entry.get_mut();
+                    if matches!(preload.status, PreloadStatus::Completed)
+                        && !preload.songs.is_empty()
+                    {
+                        // 使用 mem::take 转移所有权，避免克隆
+                        app.playlist_tracks = std::mem::take(&mut preload.songs);
+                        app.playlist_tracks_selected = 0;
+                        app.playlist_mode = PlaylistMode::Tracks;
+
+                        // 转移所有权给 play_queue，丢弃旧队列
+                        let _old = app
+                            .play_queue
+                            .set_songs(std::mem::take(&mut app.playlist_tracks), Some(0));
+
+                        next_song_cache.reset(); // 失效预缓存
+                        app.playlists_status =
+                            format!("歌曲: {} 首（已缓存，p 播放）", app.playlist_tracks.len());
+                        effects.emit_state(app);
+                        return true;
+                    }
                 }
 
                 // 用户主动打开歌单：取消该歌单的预加载（若正在进行），并走高优先级加载
@@ -94,19 +103,25 @@ pub async fn handle_playlists_command(
                 && let Some(s) = app.playlist_tracks.get(app.playlist_tracks_selected)
             {
                 app.play_status = "获取播放链接...".to_owned();
-                app.play_queue.set_songs(
-                    app.playlist_tracks.clone(),
+
+                // 先保存歌曲信息，因为后续会转移所有权
+                let song_id = s.id;
+                let title = format!("{} - {}", s.name, s.artists);
+
+                // 转移所有权给 play_queue
+                let _old = app.play_queue.set_songs(
+                    std::mem::take(&mut app.playlist_tracks),
                     Some(app.playlist_tracks_selected),
                 );
+
                 next_song_cache.reset(); // 失效预缓存
-                let title = format!("{} - {}", s.name, s.artists);
                 effects.emit_state(app);
                 song_request_titles.clear();
                 let id = request_tracker.issue(RequestKey::SongUrl, || utils::next_id(req_id));
-                song_request_titles.insert(s.id, title);
+                song_request_titles.insert(song_id, title);
                 effects.send_netease_hi(NeteaseCommand::SongUrl {
                     req_id: id,
-                    id: s.id,
+                    id: song_id,
                     br: app.play_br,
                 });
             }
@@ -256,6 +271,9 @@ pub async fn handle_songs_event(
         let songs = loader.songs;
 
         // 更新预加载缓存
+        // 克隆保存到预加载缓存（songs 会被赋值给 playlist_tracks）
+        // 注意：这里需要克隆是因为 songs 还要赋值给 app.playlist_tracks
+        // TODO: 考虑使用 Arc<Song> 避免克隆
         if let std::collections::hash_map::Entry::Occupied(mut entry) =
             app.playlist_preloads.entry(playlist_id)
         {
@@ -270,8 +288,12 @@ pub async fn handle_songs_event(
         app.playlist_tracks = songs;
         app.playlist_tracks_selected = 0;
         app.playlist_mode = PlaylistMode::Tracks;
-        app.play_queue
-            .set_songs(app.playlist_tracks.clone(), Some(0));
+
+        // 转移所有权给 play_queue
+        let _old = app
+            .play_queue
+            .set_songs(std::mem::take(&mut app.playlist_tracks), Some(0));
+
         app.playlists_status = format!("歌曲: {} 首（p 播放）", app.playlist_tracks.len());
         effects.emit_state(app);
         Some(true)

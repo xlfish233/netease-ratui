@@ -306,6 +306,52 @@ pub struct SettingsSnapshot {
 }
 
 impl AppSnapshot {
+    /// 从 App 创建 UI 渲染快照
+    ///
+    /// ## 架构说明
+    ///
+    /// ### 为什么需要克隆？
+    /// 本函数会克隆 App 状态中的数据，这是设计上的必要权衡：
+    ///
+    /// 1. **线程隔离与安全**
+    ///    - Core 线程（tokio）：处理业务逻辑、网络请求、音频播放
+    ///    - UI 线程（ratatui）：处理渲染、用户输入
+    ///    - 两个线程通过 `tokio::sync::mpsc` 通信，需要传递拥有所有权的消息
+    ///
+    /// 2. **避免长期引用导致的数据竞争**
+    ///    - App 在 Core 线程中持续更新（播放进度、网络响应等）
+    ///    - UI 渲染需要快照时间点的状态
+    ///    - 如果使用引用，App 更新时可能导致 UI 读取到不一致的状态
+    ///
+    /// 3. **类型系统要求**
+    ///    - `AppEvent::State(Box<AppSnapshot>)` 需要拥有所有权
+    ///    - `mpsc::Sender` 需要发送拥有所有权的值
+    ///
+    /// ### 性能考虑
+    ///
+    /// **调用频率**：
+    /// - 每次状态变化时调用一次（播放、搜索、用户操作等）
+    /// - UI 刷新频率：200ms 一次（但只在状态变化时才创建新快照）
+    /// - 大部分时间快照未变化，UI 只重绘相同内容
+    ///
+    /// **克隆开销分析**：
+    /// - 小字符串（`now_playing: Option<String>`）- 开销小
+    /// - `Vec<Song>`（队列、搜索结果、歌单）- 开销较大
+    ///   - 典型场景：搜索结果 30 首，歌单 200 首
+    ///   - Song 结构：约 50-100 字节
+    ///   - 总开销：可接受范围
+    ///
+    /// ## 使用示例
+    ///
+    /// ```text
+    /// // 在 Core 线程中创建快照
+    /// effects.emit_state(app);
+    ///
+    /// // 在 UI 线程中接收快照
+    /// AppEvent::State(snapshot) => {
+    ///     app = *snapshot;
+    /// }
+    /// ```
     pub fn from_app(app: &App) -> Self {
         let player = PlayerSnapshot {
             now_playing: app.now_playing.clone(),
