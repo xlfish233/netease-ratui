@@ -52,21 +52,18 @@ pub(super) fn draw_left_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
             );
         }
         AppViewSnapshot::Settings(state) => {
-            let categories = vec![
-                ("播放", 0..=2),
-                ("歌词", 3..=3),
-                ("缓存", 4..=5),
-                ("账号", 6..=6),
-            ];
-            let mut lines = Vec::new();
-            for (label, range) in categories {
-                let mark = if range.contains(&state.settings_selected) {
-                    ">"
-                } else {
-                    " "
-                };
-                lines.push(Line::from(format!("{mark}{label}")));
-            }
+            let categories = vec![("播放", 0), ("歌词", 1), ("缓存", 2), ("账号", 3)];
+            let lines: Vec<Line> = categories
+                .into_iter()
+                .map(|(label, idx)| {
+                    let mark = if idx == state.settings_group_selected {
+                        ">"
+                    } else {
+                        " "
+                    };
+                    Line::from(format!("{mark}{label}"))
+                })
+                .collect();
             draw_left_info(
                 f,
                 area,

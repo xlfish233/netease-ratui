@@ -44,31 +44,54 @@ pub async fn handle_playlists_command(
                     return true;
                 };
 
+                // 新增：检查前的日志
+                tracing::info!(
+                    "🎵 [Playlists] 打开歌单: playlist_id={}, playlist_preloads.contains_key={}",
+                    playlist_id,
+                    app.playlist_preloads.contains_key(&playlist_id)
+                );
+
                 // 检查是否已有预加载完成的歌曲
                 if let std::collections::hash_map::Entry::Occupied(mut entry) =
                     app.playlist_preloads.entry(playlist_id)
                 {
                     let preload = entry.get_mut();
+                    tracing::info!(
+                        "🎵 [Playlists] 预加载状态: status={:?}, songs={}",
+                        preload.status,
+                        preload.songs.len()
+                    );
+
                     if matches!(preload.status, PreloadStatus::Completed)
                         && !preload.songs.is_empty()
                     {
-                        // 使用 mem::take 转移所有权，避免克隆
-                        app.playlist_tracks = std::mem::take(&mut preload.songs);
+                        // 保留 playlist_tracks 给 UI 显示，同时克隆给 play_queue
+                        app.playlist_tracks = preload.songs.clone();
                         app.playlist_tracks_selected = 0;
                         app.playlist_mode = PlaylistMode::Tracks;
 
-                        // 转移所有权给 play_queue，丢弃旧队列
-                        let _old = app
-                            .play_queue
-                            .set_songs(std::mem::take(&mut app.playlist_tracks), Some(0));
+                        // 克隆一份给 play_queue（不转移 playlist_tracks 的所有权）
+                        let _old = app.play_queue.set_songs(preload.songs.clone(), Some(0));
 
                         next_song_cache.reset(); // 失效预缓存
                         app.playlists_status =
                             format!("歌曲: {} 首（已缓存，p 播放）", app.playlist_tracks.len());
+                        // 新增：使用预加载的日志
+                        tracing::info!(
+                            "🎵 [Playlists] 使用预加载数据: playlist_id={}, songs={}",
+                            playlist_id,
+                            app.playlist_tracks.len()
+                        );
                         effects.emit_state(app);
                         return true;
                     }
                 }
+
+                // 新增：没有可用预加载的日志
+                tracing::info!(
+                    "🎵 [Playlists] 无可用预加载，发起网络请求: playlist_id={}",
+                    playlist_id
+                );
 
                 // 用户主动打开歌单：取消该歌单的预加载（若正在进行），并走高优先级加载
                 preload_mgr.cancel_playlist(app, playlist_id);
@@ -108,9 +131,9 @@ pub async fn handle_playlists_command(
                 let song_id = s.id;
                 let title = format!("{} - {}", s.name, s.artists);
 
-                // 转移所有权给 play_queue
+                // 克隆一份给 play_queue（保留 playlist_tracks 给 UI 显示）
                 let _old = app.play_queue.set_songs(
-                    std::mem::take(&mut app.playlist_tracks),
+                    app.playlist_tracks.clone(),
                     Some(app.playlist_tracks_selected),
                 );
 
@@ -176,9 +199,21 @@ pub async fn handle_playlists_event(
     app.playlist_tracks.clear();
     app.playlist_tracks_selected = 0;
 
+    // 新增：在调用 start_for_playlists 前记录
+    tracing::info!(
+        "🎵 [Playlists] 收到歌单列表, 准备调用 start_for_playlists, 当前 playlist_preloads count={}",
+        app.playlist_preloads.len()
+    );
+
     preload_mgr
         .start_for_playlists(app, effects, next_req_id, preload_count)
         .await;
+
+    // 新增：调用后记录
+    tracing::info!(
+        "🎵 [Playlists] start_for_playlists 完成, playlist_preloads count={}",
+        app.playlist_preloads.len()
+    );
 
     refresh_playlist_list_status(app);
     effects.emit_state(app);
@@ -285,14 +320,12 @@ pub async fn handle_songs_event(
             preload::update_preload_summary(app);
         }
 
-        app.playlist_tracks = songs;
+        app.playlist_tracks = songs.clone();
         app.playlist_tracks_selected = 0;
         app.playlist_mode = PlaylistMode::Tracks;
 
-        // 转移所有权给 play_queue
-        let _old = app
-            .play_queue
-            .set_songs(std::mem::take(&mut app.playlist_tracks), Some(0));
+        // 克隆一份给 play_queue（保留 playlist_tracks 给 UI 显示）
+        let _old = app.play_queue.set_songs(songs, Some(0));
 
         app.playlists_status = format!("歌曲: {} 首（p 播放）", app.playlist_tracks.len());
         effects.emit_state(app);

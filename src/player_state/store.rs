@@ -1,12 +1,13 @@
-use crate::app::PlayQueue;
 use crate::app::state::{App, PlayMode};
+use crate::app::{PlayQueue, PlaylistPreload};
 use crate::domain::model::{Playlist, Song};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const CURRENT_VERSION: u8 = 2;
+const CURRENT_VERSION: u8 = 3;
 const STATE_FILE: &str = "player_state.json";
 
 /// 轻量级歌曲信息（用于序列化）
@@ -85,6 +86,8 @@ pub struct AppStateSnapshot {
     pub player: PlayerState,
     pub playlists: Vec<PlaylistLite>,
     pub playlists_selected: usize,
+    #[serde(default)]
+    pub playlist_preloads: HashMap<i64, PlaylistPreload>,
     pub saved_at_epoch_ms: i64,
 }
 
@@ -203,11 +206,29 @@ fn app_to_snapshot(app: &App) -> AppStateSnapshot {
         crossfade_ms: app.crossfade_ms,
     };
 
+    // 保存预加载的歌单数据
+    let playlist_preloads = app.playlist_preloads.clone();
+
+    // 诊断日志：记录预加载歌单保存信息
+    tracing::info!(
+        "🎵 [StateSave] 保存 playlist_preloads: count={}",
+        playlist_preloads.len()
+    );
+    for (id, preload) in &playlist_preloads {
+        tracing::info!(
+            "🎵 [StateSave]   预加载歌单[{}]: status={:?}, songs={}",
+            id,
+            preload.status,
+            preload.songs.len()
+        );
+    }
+
     AppStateSnapshot {
         version: CURRENT_VERSION,
         player,
         playlists,
         playlists_selected: app.playlists_selected,
+        playlist_preloads,
         saved_at_epoch_ms: now,
     }
 }
@@ -217,7 +238,7 @@ pub fn apply_snapshot_to_app(
     snapshot: &AppStateSnapshot,
     app: &mut App,
 ) -> Result<(), PlayerStateError> {
-    // 检查版本兼容性（支持版本 1 和 2）
+    // 检查版本兼容性（支持版本 1、2 和 3）
     if snapshot.version > CURRENT_VERSION {
         return Err(PlayerStateError::IncompatibleVersion {
             expected: CURRENT_VERSION,
@@ -227,6 +248,27 @@ pub fn apply_snapshot_to_app(
 
     // 版本 1 没有 special_type 字段，恢复时使用默认值
     let use_default_special_type = snapshot.version < 2;
+
+    // 版本 3 恢复 playlist_preloads，版本 1-2 使用空 HashMap
+    if snapshot.version >= 3 {
+        app.playlist_preloads = snapshot.playlist_preloads.clone();
+        tracing::info!(
+            "🎵 [StateRestore] 恢复 playlist_preloads: count={}",
+            app.playlist_preloads.len()
+        );
+        // 详细日志：记录每个预加载歌单的状态
+        for (id, preload) in &app.playlist_preloads {
+            tracing::info!(
+                "🎵 [StateRestore]   预加载歌单[{}]: status={:?}, songs={}",
+                id,
+                preload.status,
+                preload.songs.len()
+            );
+        }
+    } else {
+        app.playlist_preloads = HashMap::new();
+        tracing::info!("🎵 [StateRestore] 版本 < 3, playlist_preloads 初始化为空");
+    }
 
     let now = chrono::Utc::now().timestamp_millis();
     let time_since_save = now - snapshot.saved_at_epoch_ms;
@@ -524,6 +566,7 @@ mod tests {
             },
             playlists: vec![],
             playlists_selected: 0,
+            playlist_preloads: HashMap::new(),
             saved_at_epoch_ms: 0,
         };
 
@@ -532,7 +575,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(PlayerStateError::IncompatibleVersion { expected, found }) => {
-                assert_eq!(expected, 2);
+                assert_eq!(expected, 3);
                 assert_eq!(found, 99);
             }
             _ => panic!("Expected IncompatibleVersion error"),
@@ -574,6 +617,7 @@ mod tests {
                 special_type: 0,
             }],
             playlists_selected: 0,
+            playlist_preloads: HashMap::new(),
             saved_at_epoch_ms: chrono::Utc::now().timestamp_millis(),
         };
 
@@ -624,5 +668,176 @@ mod tests {
         // 超出范围
         queue.set_cursor_pos(10);
         assert_eq!(queue.cursor_pos(), None);
+    }
+
+    #[test]
+    fn test_playlist_preloads_serialization() {
+        use crate::app::{PlaylistPreload, PreloadStatus};
+
+        // 创建包含预加载歌单的快照
+        let preload = PlaylistPreload {
+            status: PreloadStatus::Completed,
+            songs: vec![Song {
+                id: 101,
+                name: "Preloaded Song".to_string(),
+                artists: "Test Artist".to_string(),
+            }],
+        };
+
+        // 验证 PlaylistPreload 可以序列化和反序列化
+        let serialized = serde_json::to_string(&preload).expect("序列化失败");
+        let deserialized: PlaylistPreload =
+            serde_json::from_str(&serialized).expect("反序列化失败");
+
+        match deserialized.status {
+            PreloadStatus::Completed => {}
+            _ => panic!("期望 Completed 状态"),
+        }
+        assert_eq!(deserialized.songs.len(), 1);
+        assert_eq!(deserialized.songs[0].id, 101);
+    }
+
+    #[test]
+    fn test_app_state_snapshot_with_playlist_preloads() {
+        use crate::app::{PlaylistPreload, PreloadStatus};
+
+        // 创建版本 3 快照，包含 playlist_preloads
+        let snapshot_with_preloads = AppStateSnapshot {
+            version: 3,
+            player: PlayerState {
+                version: 3,
+                play_song_id: None,
+                progress: PlaybackProgress {
+                    started_at_epoch_ms: None,
+                    total_ms: None,
+                    paused: true,
+                    paused_at_epoch_ms: None,
+                    paused_accum_ms: 0,
+                },
+                play_queue: PlayQueueState {
+                    songs: vec![],
+                    order: vec![],
+                    cursor: None,
+                    mode: "ListLoop".to_string(),
+                },
+                volume: 0.5,
+                play_br: 320000,
+                crossfade_ms: 300,
+            },
+            playlists: vec![PlaylistLite {
+                id: 1,
+                name: "Test Playlist".to_string(),
+                track_count: 10,
+                special_type: 0,
+            }],
+            playlists_selected: 0,
+            playlist_preloads: vec![(
+                1,
+                PlaylistPreload {
+                    status: PreloadStatus::Completed,
+                    songs: vec![Song {
+                        id: 201,
+                        name: "Cached Song".to_string(),
+                        artists: "Cached Artist".to_string(),
+                    }],
+                },
+            )]
+            .into_iter()
+            .collect(),
+            saved_at_epoch_ms: chrono::Utc::now().timestamp_millis(),
+        };
+
+        // 验证快照可以序列化和反序列化
+        let serialized = serde_json::to_string(&snapshot_with_preloads).expect("序列化失败");
+        let deserialized: AppStateSnapshot =
+            serde_json::from_str(&serialized).expect("反序列化失败");
+
+        assert_eq!(deserialized.version, 3);
+        assert_eq!(deserialized.playlist_preloads.len(), 1);
+        assert!(deserialized.playlist_preloads.contains_key(&1));
+
+        let preload = &deserialized.playlist_preloads[&1];
+        assert_eq!(preload.songs.len(), 1);
+        assert_eq!(preload.songs[0].id, 201);
+    }
+
+    #[test]
+    fn test_apply_snapshot_restores_playlist_preloads_v3() {
+        use crate::app::{PlaylistPreload, PreloadStatus};
+
+        // 创建版本 3 快照
+        let snapshot = AppStateSnapshot {
+            version: 3,
+            player: PlayerState {
+                version: 3,
+                play_song_id: None,
+                progress: PlaybackProgress {
+                    started_at_epoch_ms: None,
+                    total_ms: None,
+                    paused: true,
+                    paused_at_epoch_ms: None,
+                    paused_accum_ms: 0,
+                },
+                play_queue: PlayQueueState {
+                    songs: vec![],
+                    order: vec![],
+                    cursor: None,
+                    mode: "ListLoop".to_string(),
+                },
+                volume: 0.5,
+                play_br: 320000,
+                crossfade_ms: 300,
+            },
+            playlists: vec![PlaylistLite {
+                id: 100,
+                name: "My Playlist".to_string(),
+                track_count: 50,
+                special_type: 5,
+            }],
+            playlists_selected: 0,
+            playlist_preloads: vec![(
+                100,
+                PlaylistPreload {
+                    status: PreloadStatus::Completed,
+                    songs: vec![
+                        Song {
+                            id: 301,
+                            name: "Song A".to_string(),
+                            artists: "Artist A".to_string(),
+                        },
+                        Song {
+                            id: 302,
+                            name: "Song B".to_string(),
+                            artists: "Artist B".to_string(),
+                        },
+                    ],
+                },
+            )]
+            .into_iter()
+            .collect(),
+            saved_at_epoch_ms: chrono::Utc::now().timestamp_millis(),
+        };
+
+        let mut app = App::default();
+        let result = apply_snapshot_to_app(&snapshot, &mut app);
+
+        assert!(result.is_ok(), "apply_snapshot_to_app 应该成功");
+
+        // 验证 playlist_preloads 被恢复
+        assert_eq!(app.playlist_preloads.len(), 1, "应该恢复 1 个预加载歌单");
+        assert!(
+            app.playlist_preloads.contains_key(&100),
+            "应该包含歌单 ID 100 的预加载数据"
+        );
+
+        let preload = &app.playlist_preloads[&100];
+        assert_eq!(preload.songs.len(), 2, "应该有 2 首歌曲");
+        assert_eq!(preload.songs[0].id, 301);
+        assert_eq!(preload.songs[1].id, 302);
+
+        match &preload.status {
+            PreloadStatus::Completed => {}
+            _ => panic!("期望 Completed 状态"),
+        }
     }
 }

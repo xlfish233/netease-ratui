@@ -19,38 +19,59 @@ pub(super) fn draw_settings(
     active: bool,
 ) {
     let border = focus_style(active);
-    let items = vec![
-        ListItem::new(Line::from(format!("音质: {}", br_label(player.play_br)))),
-        ListItem::new(Line::from(format!("音量: {:.0}%", player.volume * 100.0))),
-        ListItem::new(Line::from(format!(
-            "播放模式: {}",
-            play_mode_label(player.play_mode)
-        ))),
-        ListItem::new(Line::from(format!(
-            "歌词 offset: {}",
-            fmt_offset(state.lyrics_offset_ms)
-        ))),
-        ListItem::new(Line::from(format!(
-            "淡入淡出: {}",
-            if state.crossfade_ms == 0 {
-                "关闭".to_owned()
+
+    // 根据分组生成设置项
+    let items = match state.settings_group_selected {
+        0 => vec![
+            // 播放
+            ListItem::new(Line::from(format!("音质: {}", br_label(player.play_br)))),
+            ListItem::new(Line::from(format!("音量: {:.0}%", player.volume * 100.0))),
+            ListItem::new(Line::from(format!(
+                "播放模式: {}",
+                play_mode_label(player.play_mode)
+            ))),
+        ],
+        1 => vec![
+            // 歌词
+            ListItem::new(Line::from(format!(
+                "歌词 offset: {}",
+                fmt_offset(state.lyrics_offset_ms)
+            ))),
+        ],
+        2 => vec![
+            // 缓存
+            ListItem::new(Line::from(format!(
+                "淡入淡出: {}",
+                if state.crossfade_ms == 0 {
+                    "关闭".to_owned()
+                } else {
+                    format!("{}ms", state.crossfade_ms)
+                }
+            ))),
+            ListItem::new(Line::from("清除音频缓存".to_owned())),
+        ],
+        3 => vec![
+            // 账号
+            ListItem::new(Line::from(if logged_in {
+                "退出登录".to_owned()
             } else {
-                format!("{}ms", state.crossfade_ms)
-            }
-        ))),
-        ListItem::new(Line::from("清除音频缓存".to_owned())),
-        ListItem::new(Line::from(if logged_in {
-            "退出登录".to_owned()
-        } else {
-            "退出登录（未登录）".to_owned()
-        })),
-    ];
+                "退出登录（未登录）".to_owned()
+            })),
+        ],
+        _ => vec![],
+    };
+
+    let group_names = ["播放", "歌词", "缓存", "账号"];
+    let title = format!(
+        "设置[3]（↑↓选择 ←→调整 Enter 操作）- {}",
+        group_names[state.settings_group_selected]
+    );
 
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("设置[3]（↑↓选择，←→调整，Enter 操作）")
+                .title(title)
                 .border_style(border),
         )
         .highlight_style(Style::default().fg(Color::Yellow));

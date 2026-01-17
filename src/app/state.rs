@@ -167,6 +167,7 @@ pub struct App {
     pub lyrics_offset_ms: i64,
 
     pub settings_selected: usize,
+    pub settings_group_selected: usize,
     pub settings_status: String,
 }
 
@@ -223,6 +224,7 @@ impl Default for App {
             lyrics_offset_ms: 0,
 
             settings_selected: 0,
+            settings_group_selected: 0,
             settings_status: "←→ 调整 | Enter 操作 | Ctrl+Tab 切换".to_owned(),
         }
     }
@@ -302,6 +304,7 @@ pub struct LyricsSnapshot {
 #[derive(Debug, Clone)]
 pub struct SettingsSnapshot {
     pub settings_selected: usize,
+    pub settings_group_selected: usize,
     pub settings_status: String,
     pub lyrics_offset_ms: i64,
     pub crossfade_ms: u64,
@@ -402,6 +405,7 @@ impl AppSnapshot {
             }),
             View::Settings => AppViewSnapshot::Settings(SettingsSnapshot {
                 settings_selected: app.settings_selected,
+                settings_group_selected: app.settings_group_selected,
                 settings_status: app.settings_status.clone(),
                 lyrics_offset_ms: app.lyrics_offset_ms,
                 crossfade_ms: app.crossfade_ms,

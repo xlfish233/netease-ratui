@@ -45,15 +45,60 @@ impl PreloadManager {
         self.pending.clear();
         self.loaders.clear();
         self.active_playlists.clear();
-        app.playlist_preloads.clear();
+
+        // 在清空前记录
+        tracing::info!(
+            "🎵 [Preload] start_for_playlists: 清空前 playlist_preloads count={}",
+            app.playlist_preloads.len()
+        );
+
+        // 只清除未完成的预加载，保留已完成的
+        app.playlist_preloads.retain(|id, preload| {
+            let keep = matches!(preload.status, PreloadStatus::Completed);
+            tracing::info!(
+                "🎵 [Preload]   歌单[{}]: status={:?}, songs={}, keep={}",
+                id,
+                preload.status,
+                preload.songs.len(),
+                keep
+            );
+            keep
+        });
+
         app.preload_summary.clear();
+
+        tracing::info!(
+            "🎵 [Preload] start_for_playlists: 保留已完成的预加载, count={}",
+            app.playlist_preloads.len()
+        );
 
         let selected = select_preload_targets(&app.playlists, preload_count);
         if selected.is_empty() {
             return;
         }
 
-        for playlist_id in &selected {
+        // 过滤掉已经有完成预加载的歌单，避免覆盖已恢复的数据
+        let to_preload: Vec<i64> = selected
+            .into_iter()
+            .filter(|id| {
+                let should_preload = !app.playlist_preloads.contains_key(id)
+                    || !matches!(
+                        app.playlist_preloads.get(id).map(|p| &p.status),
+                        Some(PreloadStatus::Completed)
+                    );
+                if !should_preload {
+                    tracing::info!("🎵 [Preload] 跳过已有完成预加载的歌单: playlist_id={}", id);
+                }
+                should_preload
+            })
+            .collect();
+
+        if to_preload.is_empty() {
+            tracing::info!("🎵 [Preload] 所有歌单已有完成预加载，无需新预加载");
+            return;
+        }
+
+        for playlist_id in &to_preload {
             app.playlist_preloads.insert(
                 *playlist_id,
                 PlaylistPreload {
@@ -64,10 +109,12 @@ impl PreloadManager {
                     songs: Vec::new(),
                 },
             );
+            // 新增日志
+            tracing::info!("🎵 [Preload] 创建预加载条目: playlist_id={}", playlist_id);
         }
         update_preload_summary(app);
 
-        for playlist_id in selected {
+        for playlist_id in to_preload {
             self.active_playlists.insert(playlist_id);
             let rid = next_id(req_id);
             self.pending.insert(
@@ -220,6 +267,12 @@ impl PreloadManager {
             if let Some(p) = app.playlist_preloads.get_mut(&playlist_id) {
                 p.status = PreloadStatus::Completed;
                 p.songs = loader.songs;
+                // 新增日志
+                tracing::info!(
+                    "🎵 [Preload] 预加载完成: playlist_id={}, songs={}",
+                    playlist_id,
+                    p.songs.len()
+                );
             }
             update_preload_summary(app);
             return true;
