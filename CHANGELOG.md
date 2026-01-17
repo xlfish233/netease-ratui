@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **修复**：修复重启应用后按空格键播放进度丢失的问题
+  - 在 `App` 状态中添加 `pending_seek_ms` 字段存储待恢复的播放位置
+  - `NeedsReload` 事件触发时保存当前播放进度
+  - `NowPlaying` 事件处理时通过 SeekToMs 命令恢复播放进度
+  - 修改文件：
+    - `src/app/state.rs`：添加 `pending_seek_ms` 字段
+    - `src/features/player/audio.rs`：保存和恢复播放进度的逻辑
+
 - **UI 修复**：恢复 PlaylistsView 快捷键提示
   - 左侧歌单列表：添加 `[2]` 焦点切换提示
   - 中间歌曲列表：添加 `[3]` 焦点切换提示和操作说明（↑↓选择 p 播放 b 返回）

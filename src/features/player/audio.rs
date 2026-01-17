@@ -29,6 +29,32 @@ pub async fn handle_audio_event(
             title,
             duration_ms,
         } => {
+            // 保存待恢复的播放位置（在重置之前）
+            let seek_to = app.pending_seek_ms.take();
+
+            // 记录旧的播放进度
+            let old_elapsed_ms = if let Some(started) = app.play_started_at {
+                let elapsed = started.elapsed().as_millis() as u64;
+                if app.paused {
+                    elapsed.saturating_sub(app.play_paused_accum_ms)
+                } else {
+                    elapsed
+                }
+            } else {
+                0
+            };
+
+            tracing::info!(
+                song_id,
+                play_id,
+                title = %title,
+                old_elapsed_ms = old_elapsed_ms / 1000,
+                paused = app.paused,
+                paused_accum_ms = app.play_paused_accum_ms,
+                seek_to = ?seek_to,
+                "🎵 [PlayerAudio] NowPlaying START"
+            );
+
             app.now_playing = Some(title);
             app.paused = false;
             app.play_status = "播放中".to_owned();
@@ -42,6 +68,31 @@ pub async fn handle_audio_event(
             effects.send_audio_warn(
                 AudioCommand::SetVolume(app.volume),
                 "AudioWorker 通道已关闭：SetVolume 发送失败",
+            );
+
+            // 记录是否恢复了播放进度
+            let restored_seek_ms = seek_to;
+
+            // 如果有待恢复的播放位置，发送 seek 命令
+            if let Some(seek_ms) = restored_seek_ms {
+                tracing::info!("🎵 [PlayerAudio] 恢复播放进度: {}ms", seek_ms);
+                effects.send_audio_warn(
+                    AudioCommand::SeekToMs(seek_ms),
+                    "AudioWorker 通道已关闭：SeekToMs 发送失败",
+                );
+                // 更新 play_started_at 以匹配 seek 位置
+                app.play_started_at =
+                    Some(std::time::Instant::now() - std::time::Duration::from_millis(seek_ms));
+            }
+
+            tracing::warn!(
+                "🎵 [PlayerAudio] NowPlaying END: play_started_at 已重置为当前时间，播放进度已从 {}s {}",
+                old_elapsed_ms / 1000,
+                if let Some(seek_ms) = restored_seek_ms {
+                    format!("恢复到 {}s", seek_ms / 1000)
+                } else {
+                    "重置为 0s".to_string()
+                }
             );
 
             app.lyrics_song_id = None;
@@ -115,10 +166,32 @@ pub async fn handle_audio_event(
             .await;
         }
         AudioEvent::NeedsReload => {
+            // 计算当前播放进度
+            let current_elapsed_ms = if let Some(started) = app.play_started_at {
+                let elapsed = started.elapsed().as_millis() as u64;
+                if app.paused {
+                    elapsed.saturating_sub(app.play_paused_accum_ms)
+                } else {
+                    elapsed
+                }
+            } else {
+                0
+            };
+
             tracing::info!(
                 play_song_id = ?app.play_song_id,
+                elapsed_ms = current_elapsed_ms / 1000,
+                paused = app.paused,
+                paused_accum_ms = app.play_paused_accum_ms,
+                play_total_ms = ?app.play_total_ms,
                 "🎵 [PlayerAudio] 收到 NeedsReload 事件，重新加载音频"
             );
+
+            // 保存播放进度，用于重新加载后恢复
+            if current_elapsed_ms > 0 {
+                app.pending_seek_ms = Some(current_elapsed_ms);
+                tracing::info!("🎵 [PlayerAudio] 保存播放进度: {}ms", current_elapsed_ms);
+            }
 
             // 检查是否有有效的歌曲可以播放
             let song_id = match app
