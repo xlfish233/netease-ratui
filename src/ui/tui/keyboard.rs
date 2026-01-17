@@ -394,9 +394,11 @@ mod tests {
 
     #[tokio::test]
     async fn number_keys_send_ui_focus_set() {
-        let mut app = App::default();
-        app.view = View::Playlists; // Not Search view
-        app.ui_focus = UiFocus::BodyCenter;
+        let mut app = App {
+            view: View::Playlists, // Not Search view
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
         let app_snapshot = AppSnapshot::from_app(&app);
 
         let test_cases = vec![
@@ -427,9 +429,11 @@ mod tests {
 
     #[tokio::test]
     async fn number_keys_in_search_input_send_search_char_not_focus_set() {
-        let mut app = App::default();
-        app.view = View::Search;
-        app.ui_focus = UiFocus::HeaderSearch;
+        let mut app = App {
+            view: View::Search,
+            ui_focus: UiFocus::HeaderSearch,
+            ..Default::default()
+        };
         let app_snapshot = AppSnapshot::from_app(&app);
 
         for key_char in ['1', '2', '3', '4'] {
@@ -473,9 +477,11 @@ mod tests {
     #[tokio::test]
     async fn alt_number_keys_always_switch_focus_even_in_search() {
         // 测试 Alt+1-4 在搜索框中也能切换焦点
-        let mut app = App::default();
-        app.view = View::Search;
-        app.ui_focus = UiFocus::HeaderSearch;
+        let mut app = App {
+            view: View::Search,
+            ui_focus: UiFocus::HeaderSearch,
+            ..Default::default()
+        };
         let app_snapshot = AppSnapshot::from_app(&app);
 
         for (key_char, expected_focus) in [

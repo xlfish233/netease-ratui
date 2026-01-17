@@ -502,7 +502,7 @@ mod tests {
         assert_eq!(app.play_br, 320000);
         assert_eq!(app.crossfade_ms, 500);
         assert_eq!(app.play_total_ms, Some(180000));
-        assert_eq!(app.paused, true); // 默认恢复为暂停
+        assert!(app.paused); // 默认恢复为暂停
         assert_eq!(app.play_paused_accum_ms, 5000);
         assert_eq!(app.playlists.len(), 1);
         assert_eq!(app.playlists[0].id, 1);
