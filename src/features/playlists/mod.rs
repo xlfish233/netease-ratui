@@ -314,9 +314,14 @@ pub fn refresh_playlist_list_status(app: &mut App) {
     if matches!(app.view, crate::app::View::Playlists)
         && matches!(app.playlist_mode, PlaylistMode::List)
     {
+        // 计算普通歌单数量（排除"我喜欢的音乐"）
+        let normal_count = app.playlists.iter()
+            .filter(|p| p.special_type != 5)
+            .count();
+        
         let mut s = format!(
-            "歌单: {} 个（已选中我喜欢的音乐，回车打开）",
-            app.playlists.len()
+            "歌单[{}]（已选中我喜欢的音乐，回车打开）",
+            normal_count
         );
         if !app.preload_summary.is_empty() {
             s.push_str(" | ");
