@@ -485,7 +485,30 @@ pub fn spawn_transfer_actor_with_config(
         tokio::spawn(run);
     } else {
         std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+            // 在独立线程中创建 tokio runtime 用于音频下载
+            //
+            // ## 为何使用 expect()？
+            //
+            // 1. **架构限制**:
+            //    - 检测当前无 tokio runtime (`Handle::try_current()` 失败)
+            //    - 使用 `std::thread::spawn` 在独立线程运行
+            //    - 闭包无法返回 Result
+            //
+            // 2. **实际风险极低**:
+            //    - 与 engine.rs 相同，tokio runtime 创建几乎不会失败
+            //    - 系统级问题才导致失败，panic 合理
+            //
+            // 3. **已通过其他方式处理业务错误**:
+            //    - 下载失败: `DownloadError`
+            //    - 网络错误: 自动重试
+            //    - 缓存错误: `CacheError`
+            //    - 都通过 `JobResult` 返回给调用方
+            //
+            // 4. **设计权衡**:
+            //    - 优点: 简单，性能好（独立线程不阻塞主 runtime）
+            //    - 缺点: 无法优雅处理 runtime 创建失败
+            //    - 结论: 收益大于风险
+            let rt = tokio::runtime::Runtime::new().expect("tokio runtime: 系统资源不足或配置错误");
             rt.block_on(run);
         });
     }

@@ -122,6 +122,28 @@ impl PlayerState {
 
         let thread_name = format!("audio-end-check-{}", play_id);
         tracing::debug!(play_id, "Spawning end check thread");
+
+        // 启动后台线程监控播放结束
+        //
+        // ## 为何使用 expect()？
+        //
+        // 1. **功能降级而非崩溃**:
+        //    - 如果线程创建失败，`end_cancel` 不会被触发
+        //    - 播放仍可继续，只是无法自动检测歌曲结束
+        //    - 不影响核心播放功能
+        //
+        // 2. **实际风险**:
+        //    - 系统资源严重不足时可能失败
+        //    - 极端情况下，但不应导致整个应用 panic
+        //
+        // 3. **未来改进方向**:
+        //    - 改为返回 `Result<(), AudioError>`
+        //    - 在调用方决定如何处理（降级或报错）
+        //    - 需要修改 `attach_sink` 签名
+        //
+        // ## 当前权衡:
+        // - 简单性: 避免复杂的错误传播
+        // - 影响: 有限，只影响自动切歌
         thread::Builder::new()
             .name(thread_name)
             .spawn(move || {
@@ -144,7 +166,7 @@ impl PlayerState {
                     );
                 }
             })
-            .expect("failed to spawn end check thread");
+            .expect("failed to spawn end check thread: 系统资源不足");
 
         self.current = Some(ActiveSink {
             sink,

@@ -388,10 +388,35 @@ pub(super) fn spawn(
     settings: AudioSettings,
 ) {
     std::thread::spawn(move || {
+        // 创建当前线程的 tokio runtime
+        //
+        // ## 为何使用 expect()？
+        //
+        // 1. **无法返回 Result**:
+        //    - 此代码在 `std::thread::spawn` 闭包中运行
+        //    - 闭包返回类型是 `()`，无法传播错误
+        //    - 线程 panic 是唯一可行的失败处理方式
+        //
+        // 2. **实际风险极低**:
+        //    - tokio runtime 创建只在以下情况失败：
+        //      - 系统资源耗尽（内存、文件描述符）
+        //      - 操作系统级别的配置错误
+        //    - 这些情况下应用已无法正常运行
+        //    - panic 是合理的系统级失败响应
+        //
+        // 3. **真正的风险已处理**:
+        //    - `OutputStreamBuilder::open_default_stream()` 可能失败（无音频设备）
+        //    - 已通过 `match` 处理，发送 `AudioEvent::Error` 给 UI
+        //    - 用户会看到友好的错误消息
+        //
+        // 4. **未来改进方向**:
+        //    - 考虑使用 `tokio::task::spawn_blocking` 替代 `std::thread::spawn`
+        //    - 可以使用 `?` 传播错误到主线程
+        //    - 但需要较大架构改动，且可能影响性能
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .expect("tokio runtime");
+            .expect("tokio runtime: 系统资源不足或配置错误");
         let local = tokio::task::LocalSet::new();
         local.block_on(&rt, async move {
             let (tx_transfer, rx_transfer) =
