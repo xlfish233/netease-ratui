@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.0.6（2026-01-17）
+
 - **播放状态持久化**：新增自动保存和恢复播放状态功能（`src/player_state`）
   - 启动时自动恢复播放队列、播放进度、音量、播放模式等
   - 退出时自动保存状态（按 `q`）
@@ -17,6 +19,7 @@
   - 播放进度计算测试
   - 错误处理测试
 - **总测试数量**：从 68 个增加到 76 个（+12%）
+- **文档更新**：更新 README、ARCHITECTURE 和 CHANGELOG 文档
 
 - **测试基础设施**：添加代码覆盖率工具（tarpaulin）、pre-commit hooks、Makefile，CI 集成覆盖率检查
 - **DTO 转换测试**：为 `src/netease/models/convert.rs` 添加 15 个单元测试，覆盖登录状态、歌词解析、歌单转换、歌曲 URL 等核心功能
