@@ -198,9 +198,8 @@ pub fn spawn_app_actor(
 
                         // 验证状态一致性
                         if let Some(song_id) = state.app.play_song_id {
-                            let song_exists = state.app.play_queue.songs()
-                                .iter()
-                                .any(|s| s.id == song_id);
+                            let song_exists =
+                                state.app.play_queue.songs().iter().any(|s| s.id == song_id);
                             if !song_exists {
                                 tracing::warn!(
                                     song_id,

@@ -269,10 +269,7 @@ impl AudioEngine {
                     tracing::warn!("🎵 [AudioEngine] sink 为 None，无法切换播放状态");
                 }
                 let _ = self.tx_evt.send(AudioEvent::Paused(next_paused)).await;
-                tracing::debug!(
-                    next_paused,
-                    "🎵 [AudioEngine] 发送 Paused 事件"
-                );
+                tracing::debug!(next_paused, "🎵 [AudioEngine] 发送 Paused 事件");
             }
             AudioCommand::Stop => {
                 self.pending_play = None;

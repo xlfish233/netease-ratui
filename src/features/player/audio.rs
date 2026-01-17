@@ -121,7 +121,10 @@ pub async fn handle_audio_event(
             );
 
             // 检查是否有有效的歌曲可以播放
-            let song_id = match app.play_song_id.or_else(|| app.play_queue.current().map(|s| s.id)) {
+            let song_id = match app
+                .play_song_id
+                .or_else(|| app.play_queue.current().map(|s| s.id))
+            {
                 Some(id) => id,
                 None => {
                     tracing::warn!("🎵 [PlayerAudio] 没有可播放的歌曲");
@@ -147,7 +150,9 @@ pub async fn handle_audio_event(
 
             // 清理旧的请求记录并重新请求
             ctx.song_request_titles.clear();
-            let req_id = ctx.request_tracker.issue(RequestKey::SongUrl, || utils::next_id(ctx.req_id));
+            let req_id = ctx
+                .request_tracker
+                .issue(RequestKey::SongUrl, || utils::next_id(ctx.req_id));
             ctx.song_request_titles.insert(song_id, title.clone());
 
             effects.send_netease_hi_warn(
