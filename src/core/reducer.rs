@@ -21,6 +21,23 @@ mod search;
 mod settings;
 mod ui;
 
+fn playback_elapsed_ms_for_log(app: &crate::app::App) -> u64 {
+    let Some(started) = app.play_started_at else {
+        return 0;
+    };
+    let now = if app.paused {
+        app.play_paused_at.unwrap_or_else(std::time::Instant::now)
+    } else {
+        std::time::Instant::now()
+    };
+    u64::try_from(
+        now.duration_since(started)
+            .as_millis()
+            .saturating_sub(app.play_paused_accum_ms as u128),
+    )
+    .unwrap_or(u64::MAX)
+}
+
 enum CoreMsg {
     Ui(AppCommand),
     Netease(NeteaseEvent),
@@ -187,6 +204,19 @@ pub fn spawn_app_actor(
             Ok(snapshot) => {
                 match crate::player_state::apply_snapshot_to_app(&snapshot, &mut state.app) {
                     Ok(()) => {
+                        tracing::debug!(
+                            play_song_id = ?state.app.play_song_id,
+                            paused = state.app.paused,
+                            paused_at = state.app.play_paused_at.is_some(),
+                            paused_accum_ms = state.app.play_paused_accum_ms,
+                            elapsed_ms = playback_elapsed_ms_for_log(&state.app),
+                            total_ms = ?state.app.play_total_ms,
+                            saved_at_epoch_ms = snapshot.saved_at_epoch_ms,
+                            started_at_epoch_ms = snapshot.player.progress.started_at_epoch_ms,
+                            snapshot_paused = snapshot.player.progress.paused,
+                            snapshot_paused_accum_ms = snapshot.player.progress.paused_accum_ms,
+                            "🎵 [StateRestoreDbg] restore applied"
+                        );
                         tracing::info!(
                             play_song_id = ?state.app.play_song_id,
                             play_queue_len = state.app.play_queue.songs().len(),
@@ -261,8 +291,20 @@ pub fn spawn_app_actor(
                     let data_dir = data_dir.clone();
                     let app = state.app.clone();
                     state_save_task = Some(tokio::spawn(async move {
+                        tracing::debug!(
+                            save_kind = "timer",
+                            play_song_id = ?app.play_song_id,
+                            paused = app.paused,
+                            paused_at = app.play_paused_at.is_some(),
+                            paused_accum_ms = app.play_paused_accum_ms,
+                            elapsed_ms = playback_elapsed_ms_for_log(&app),
+                            total_ms = ?app.play_total_ms,
+                            "🎵 [StateSaveDbg] start"
+                        );
                         if let Err(e) = crate::player_state::save_player_state_async(&data_dir, app).await {
                             tracing::warn!("定时保存播放状态失败: {}", e);
+                        } else {
+                            tracing::debug!(save_kind = "timer", "🎵 [StateSaveDbg] done");
                         }
                     }));
                     continue; // 继续循环，不生成 CoreMsg
@@ -280,8 +322,21 @@ pub fn spawn_app_actor(
                 if let Some(h) = state_save_task.take() {
                     let _ = h.await;
                 }
+                tracing::debug!(
+                    save_kind = "quit",
+                    play_song_id = ?state.app.play_song_id,
+                    paused = state.app.paused,
+                    paused_at = state.app.play_paused_at.is_some(),
+                    paused_accum_ms = state.app.play_paused_accum_ms,
+                    elapsed_ms = playback_elapsed_ms_for_log(&state.app),
+                    total_ms = ?state.app.play_total_ms,
+                    "🎵 [StateSaveDbg] start"
+                );
                 match crate::player_state::save_player_state_async(&data_dir, state.app.clone()).await {
-                    Ok(()) => tracing::info!("播放状态已保存"),
+                    Ok(()) => {
+                        tracing::debug!(save_kind = "quit", "🎵 [StateSaveDbg] done");
+                        tracing::info!("播放状态已保存")
+                    }
                     Err(e) => tracing::error!("保存播放状态失败: {}", e),
                 };
                 // ========== 保存完成 ==========

@@ -515,6 +515,25 @@ pub async fn save_player_state_async(
     let tmp_path = path.with_extension("json.tmp");
 
     let snapshot = app_to_snapshot(&app);
+    let base_pos_ms = snapshot
+        .player
+        .progress
+        .started_at_epoch_ms
+        .map(|t| snapshot.saved_at_epoch_ms.saturating_sub(t))
+        .unwrap_or(0)
+        .max(0);
+    tracing::debug!(
+        path = %path.display(),
+        saved_at_epoch_ms = snapshot.saved_at_epoch_ms,
+        started_at_epoch_ms = snapshot.player.progress.started_at_epoch_ms,
+        base_pos_ms,
+        paused = snapshot.player.progress.paused,
+        paused_at_epoch_ms = snapshot.player.progress.paused_at_epoch_ms,
+        paused_accum_ms = snapshot.player.progress.paused_accum_ms,
+        total_ms = ?snapshot.player.progress.total_ms,
+        play_song_id = ?snapshot.player.play_song_id,
+        "🎵 [StateSaveDbg] snapshot"
+    );
     let bytes = serde_json::to_vec_pretty(&snapshot).map_err(PlayerStateError::Serde)?;
 
     tokio::fs::write(&tmp_path, bytes)
