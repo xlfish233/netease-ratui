@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v0.0.9（2026-01-18）
+
+- **功能改进**：设置页面分组功能
+  - 添加 `settings_group_selected` 字段跟踪当前分组
+  - 左侧显示分组列表（播放/歌词/缓存/账号）
+  - 中间根据选中分组显示对应设置项
+  - 优化预加载管理器，添加详细日志
+  - 改进播放状态持久化，支持更多字段
+  - 修改文件：`src/app/state.rs`、`src/core/infra/preload.rs`、`src/domain/model.rs`、`src/features/playlists/mod.rs`、`src/player_state/store.rs`、`src/ui/tui/panels.rs`、`src/ui/tui/settings_view.rs`
+
 ## v0.0.8（2026-01-18）
 
 - **UI 修复**：修复打开歌单后歌单列表消失的问题
