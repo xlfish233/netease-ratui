@@ -94,8 +94,8 @@ flowchart LR
 - `PlaybackProgress`：播放进度（使用时间戳替代 `Instant`）
 
 **关键函数：**
-- `save_player_state()`：序列化 App 状态到 JSON（原子写入）
-- `load_player_state()`：从 JSON 反序列化
+- `save_player_state_async()`：序列化 App 状态到 JSON（尽量原子写入，避免阻塞主循环）
+- `load_player_state_async()`：从 JSON 反序列化（避免阻塞主循环）
 - `apply_snapshot_to_app()`：将快照恢复到 App 状态
 
 **时间戳转换：**
@@ -127,14 +127,14 @@ flowchart LR
 **保存流程（退出时）：**
 1. 用户按 `q` → `AppCommand::Quit`
 2. `core::reducer` 设置 `should_quit = true`
-3. 退出前调用 `player_state::save_player_state()`
+3. 退出前等待/执行 `player_state::save_player_state_async()`
 4. 序列化 `App` 状态为 `AppStateSnapshot`
 5. 转换 `Instant` 为 epoch milliseconds
 6. 原子写入 `player_state.json.tmp` → 重命名为 `player_state.json`
 
 **恢复流程（启动时）：**
 1. `core::reducer` 创建 `CoreState`
-2. 调用 `player_state::load_player_state()`
+2. 调用 `player_state::load_player_state_async()`
 3. 从 `player_state.json` 反序列化
 4. 调用 `player_state::apply_snapshot_to_app()`
 5. 转换 epoch milliseconds 为 `Instant`
@@ -158,6 +158,6 @@ flowchart LR
 
 **定时保存（每 30 秒）：**
 1. `tokio::time::interval` 触发
-2. 调用 `player_state::save_player_state()`
+2. 触发后台保存任务调用 `player_state::save_player_state_async()`（如上一次保存未完成则跳过本轮）
 3. 成功：debug 日志（可选）
 4. 失败：warn 日志，不阻塞主循环

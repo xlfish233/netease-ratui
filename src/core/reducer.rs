@@ -180,9 +180,10 @@ pub fn spawn_app_actor(
 
     tokio::spawn(async move {
         let mut state = CoreState::new_with_settings(&data_dir, settings);
+        let mut state_save_task: Option<tokio::task::JoinHandle<()>> = None;
 
         // ========== 加载保存的状态 ==========
-        match crate::player_state::load_player_state(&data_dir) {
+        match crate::player_state::load_player_state_async(&data_dir).await {
             Ok(snapshot) => {
                 match crate::player_state::apply_snapshot_to_app(&snapshot, &mut state.app) {
                     Ok(()) => {
@@ -249,10 +250,21 @@ pub fn spawn_app_actor(
             let msg = tokio::select! {
                 _ = qr_poll.tick() => CoreMsg::QrPoll,
                 _ = state_save_timer.tick() => {
-                    // 定时保存状态
-                    if let Err(e) = crate::player_state::save_player_state(&data_dir, &state.app) {
-                        tracing::warn!("定时保存播放状态失败: {}", e);
+                    // 定时保存状态（后台写盘，避免阻塞主循环）
+                    if state_save_task.as_ref().is_some_and(|h| !h.is_finished()) {
+                        tracing::debug!("定时保存仍在进行，跳过本轮 tick");
+                        continue;
                     }
+                    if let Some(h) = state_save_task.take() {
+                        let _ = h.await;
+                    }
+                    let data_dir = data_dir.clone();
+                    let app = state.app.clone();
+                    state_save_task = Some(tokio::spawn(async move {
+                        if let Err(e) = crate::player_state::save_player_state_async(&data_dir, app).await {
+                            tracing::warn!("定时保存播放状态失败: {}", e);
+                        }
+                    }));
                     continue; // 继续循环，不生成 CoreMsg
                 }
                 Some(cmd) = rx_cmd.recv() => CoreMsg::Ui(cmd),
@@ -265,11 +277,13 @@ pub fn spawn_app_actor(
             run_effects(effects, &dispatch).await;
             if should_quit {
                 // ========== 保存播放状态 ==========
-                if let Err(e) = crate::player_state::save_player_state(&data_dir, &state.app) {
-                    tracing::error!("保存播放状态失败: {}", e);
-                } else {
-                    tracing::info!("播放状态已保存");
+                if let Some(h) = state_save_task.take() {
+                    let _ = h.await;
                 }
+                match crate::player_state::save_player_state_async(&data_dir, state.app.clone()).await {
+                    Ok(()) => tracing::info!("播放状态已保存"),
+                    Err(e) => tracing::error!("保存播放状态失败: {}", e),
+                };
                 // ========== 保存完成 ==========
                 break;
             }
