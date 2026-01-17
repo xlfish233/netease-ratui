@@ -315,14 +315,9 @@ pub fn refresh_playlist_list_status(app: &mut App) {
         && matches!(app.playlist_mode, PlaylistMode::List)
     {
         // 计算普通歌单数量（排除"我喜欢的音乐"）
-        let normal_count = app.playlists.iter()
-            .filter(|p| p.special_type != 5)
-            .count();
-        
-        let mut s = format!(
-            "歌单[{}]（已选中我喜欢的音乐，回车打开）",
-            normal_count
-        );
+        let normal_count = app.playlists.iter().filter(|p| p.special_type != 5).count();
+
+        let mut s = format!("歌单[{}]（已选中我喜欢的音乐，回车打开）", normal_count);
         if !app.preload_summary.is_empty() {
             s.push_str(" | ");
             s.push_str(&app.preload_summary);

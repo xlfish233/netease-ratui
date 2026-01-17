@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const CURRENT_VERSION: u8 = 1;
+const CURRENT_VERSION: u8 = 2;
 const STATE_FILE: &str = "player_state.json";
 
 /// 轻量级歌曲信息（用于序列化）
@@ -64,6 +64,7 @@ pub struct PlaylistLite {
     pub id: i64,
     pub name: String,
     pub track_count: i64,
+    pub special_type: i64,
 }
 
 impl From<&Playlist> for PlaylistLite {
@@ -72,6 +73,7 @@ impl From<&Playlist> for PlaylistLite {
             id: playlist.id,
             name: playlist.name.clone(),
             track_count: playlist.track_count,
+            special_type: playlist.special_type,
         }
     }
 }
@@ -168,6 +170,23 @@ fn app_to_snapshot(app: &App) -> AppStateSnapshot {
     // 转换歌单
     let playlists: Vec<PlaylistLite> = app.playlists.iter().map(PlaylistLite::from).collect();
 
+    // 诊断日志：记录歌单保存信息
+    tracing::info!(
+        "🎵 [StateSave] 保存歌单: count={}, playlists_selected={}",
+        playlists.len(),
+        app.playlists_selected
+    );
+    for (i, p) in playlists.iter().enumerate() {
+        tracing::info!(
+            "🎵 [StateSave]   歌单[{}]: id={}, name={}, track_count={}, special_type={}",
+            i,
+            p.id,
+            p.name,
+            p.track_count,
+            p.special_type
+        );
+    }
+
     let player = PlayerState {
         version: CURRENT_VERSION,
         play_song_id: app.play_song_id,
@@ -198,13 +217,16 @@ pub fn apply_snapshot_to_app(
     snapshot: &AppStateSnapshot,
     app: &mut App,
 ) -> Result<(), PlayerStateError> {
-    // 检查版本兼容性
-    if snapshot.version != CURRENT_VERSION {
+    // 检查版本兼容性（支持版本 1 和 2）
+    if snapshot.version > CURRENT_VERSION {
         return Err(PlayerStateError::IncompatibleVersion {
             expected: CURRENT_VERSION,
             found: snapshot.version,
         });
     }
+
+    // 版本 1 没有 special_type 字段，恢复时使用默认值
+    let use_default_special_type = snapshot.version < 2;
 
     let now = chrono::Utc::now().timestamp_millis();
     let time_since_save = now - snapshot.saved_at_epoch_ms;
@@ -223,8 +245,19 @@ pub fn apply_snapshot_to_app(
             new_elapsed_ms
         };
 
+        tracing::info!(
+            "🎵 [StateRestore] 恢复播放状态: saved_elapsed_ms={}ms, now={}, time_since_save={}ms, final_elapsed_ms={}ms, paused={}, paused_accum_ms={}ms",
+            save_time_elapsed,
+            now,
+            time_since_save,
+            final_elapsed_ms,
+            snapshot.player.progress.paused,
+            snapshot.player.progress.paused_accum_ms,
+        );
+
         app.play_started_at = Some(Instant::now() - Duration::from_millis(final_elapsed_ms));
     } else {
+        tracing::info!("🎵 [StateRestore] 没有保存的播放进度，play_started_at 设置为 None");
         app.play_started_at = None;
     }
 
@@ -271,10 +304,46 @@ pub fn apply_snapshot_to_app(
             id: lite.id,
             name: lite.name.clone(),
             track_count: lite.track_count,
-            special_type: 0, // 默认值
+            special_type: if use_default_special_type {
+                0 // 版本 1 兼容：旧数据没有 special_type
+            } else {
+                lite.special_type
+            },
         })
         .collect();
-    app.playlists_selected = snapshot.playlists_selected;
+
+    // 诊断日志：记录恢复的歌单信息
+    tracing::info!(
+        "🎵 [StateRestore] 恢复歌单: count={}, playlists_selected={}",
+        app.playlists.len(),
+        snapshot.playlists_selected
+    );
+    for (i, p) in app.playlists.iter().enumerate() {
+        tracing::info!(
+            "🎵 [StateRestore]   歌单[{}]: id={}, name={}, track_count={}, special_type={}",
+            i,
+            p.id,
+            p.name,
+            p.track_count,
+            p.special_type
+        );
+    }
+
+    // 边界检查警告
+    if snapshot.playlists_selected >= app.playlists.len() && !app.playlists.is_empty() {
+        tracing::warn!(
+            "🎵 [StateRestore] playlists_selected 越界: {} >= {}, 将被截断",
+            snapshot.playlists_selected,
+            app.playlists.len()
+        );
+    }
+
+    // 边界检查：确保 playlists_selected 不越界
+    app.playlists_selected = if !app.playlists.is_empty() {
+        std::cmp::min(snapshot.playlists_selected, app.playlists.len() - 1)
+    } else {
+        0
+    };
 
     Ok(())
 }
@@ -286,8 +355,8 @@ pub fn load_player_state(data_dir: &Path) -> Result<AppStateSnapshot, PlayerStat
     let snapshot: AppStateSnapshot =
         serde_json::from_slice(&bytes).map_err(PlayerStateError::Serde)?;
 
-    // 检查版本兼容性
-    if snapshot.version != CURRENT_VERSION {
+    // 检查版本兼容性（支持版本 1 和 2）
+    if snapshot.version > CURRENT_VERSION {
         return Err(PlayerStateError::IncompatibleVersion {
             expected: CURRENT_VERSION,
             found: snapshot.version,
@@ -305,6 +374,20 @@ pub fn save_player_state(data_dir: &Path, app: &App) -> Result<(), PlayerStateEr
     let tmp_path = path.with_extension("json.tmp");
 
     let snapshot = app_to_snapshot(app);
+
+    // 计算播放进度用于日志
+    let elapsed_ms = playback_elapsed_ms(app);
+    let started_at_epoch_ms = snapshot.player.progress.started_at_epoch_ms;
+    let now = chrono::Utc::now().timestamp_millis();
+
+    tracing::info!(
+        "🎵 [StateSave] 保存播放状态: elapsed_ms={}s, started_at_epoch_ms={:?}, paused={}, paused_accum_ms={}ms",
+        elapsed_ms / 1000,
+        started_at_epoch_ms.map(|t| format!("{} (前{}ms)", t, now - t)),
+        app.paused,
+        app.play_paused_accum_ms,
+    );
+
     let bytes = serde_json::to_vec_pretty(&snapshot).map_err(PlayerStateError::Serde)?;
 
     fs::write(&tmp_path, bytes).map_err(PlayerStateError::Io)?;
@@ -390,6 +473,7 @@ mod tests {
         assert_eq!(lite.id, 456);
         assert_eq!(lite.name, "Test Playlist");
         assert_eq!(lite.track_count, 100);
+        assert_eq!(lite.special_type, 0);
     }
 
     #[test]
@@ -448,7 +532,7 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(PlayerStateError::IncompatibleVersion { expected, found }) => {
-                assert_eq!(expected, 1);
+                assert_eq!(expected, 2);
                 assert_eq!(found, 99);
             }
             _ => panic!("Expected IncompatibleVersion error"),
@@ -487,6 +571,7 @@ mod tests {
                 id: 1,
                 name: "My Playlist".to_string(),
                 track_count: 50,
+                special_type: 0,
             }],
             playlists_selected: 0,
             saved_at_epoch_ms: chrono::Utc::now().timestamp_millis(),

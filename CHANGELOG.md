@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **修复**：修复重启后歌单加载问题
+  - `PlaylistLite` 添加 `special_type` 字段，保存和恢复时不再丢失此字段
+  - 恢复时使用保存的 `special_type`（而非硬编码为 0），确保"我喜欢的音乐"（special_type=5）能正确识别
+  - `playlists_selected` 添加边界检查，防止越界访问
+  - 版本升级（1 → 2）并添加兼容性处理，旧版本状态文件可正常加载
+  - 添加诊断日志，便于排查问题
+  - 修改文件：
+    - `src/player_state/store.rs`：PlaylistLite 结构、恢复逻辑、版本检查
+
 - **修复**：修复重启应用后按空格键播放进度丢失的问题
   - 在 `App` 状态中添加 `pending_seek_ms` 字段存储待恢复的播放位置
   - `NeedsReload` 事件触发时保存当前播放进度
