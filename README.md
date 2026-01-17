@@ -37,7 +37,46 @@
 
 ## 预览
 
-暂无截图，欢迎补充。
+### 截图
+
+> 📸 **欢迎贡献截图！**  
+> 查看 [screenshots/README.md](screenshots/README.md) 了解如何添加项目截图。
+
+**以下是主要界面展示**：
+
+#### 1. 登录页面
+支持二维码登录和 Cookie 登录两种方式。
+![登录页面](screenshots/login.png)
+
+#### 2. 主界面 - 歌单视图
+三栏布局：歌单列表（左）| 歌曲列表（中）| 播放队列（右）
+![主界面](screenshots/main.png)
+
+#### 3. 播放中
+实时显示播放进度、歌词、控制按钮。
+![播放中](screenshots/playing.png)
+
+#### 4. 设置界面
+调整音质、音量、播放模式，管理缓存。
+![设置](screenshots/settings.png)
+
+**如何贡献截图**：
+1. 运行应用并截图各个界面
+2. 将截图放到 `screenshots/` 目录
+3. 更新本文件的截图列表
+4. 提交 Pull Request
+
+**截图工具推荐**：
+- **vhs** - 终端 GIF 录制工具（推荐）
+- **asciinema** - 终端会话录制
+- **GNOME Screenshot** / **Spectacle** - Linux 截图工具
+- **Windows 截图工具** (Win + Shift + S)
+
+详细信息请参考 [screenshots/README.md](screenshots/README.md)。
+
+### 演示视频
+
+（可选：如果创建了 GIF/视频演示，可以添加在这里）
 
 ## 安装
 
