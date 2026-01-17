@@ -115,19 +115,25 @@ impl std::error::Error for PlayerStateError {}
 
 /// 计算播放进度（毫秒）
 fn playback_elapsed_ms(app: &App) -> u64 {
-    if let Some(started) = app.play_started_at {
-        let elapsed = started.elapsed();
-        let elapsed_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    let Some(started) = app.play_started_at else {
+        return 0;
+    };
 
-        // 如果当前暂停，需要减去暂停累积时间
-        if app.paused {
-            elapsed_ms.saturating_sub(app.play_paused_accum_ms)
-        } else {
-            elapsed_ms
-        }
+    // Align with `features::player::playback::playback_elapsed_ms`:
+    // - If paused, freeze "now" at `play_paused_at` (so time won't move while paused).
+    // - Always subtract `play_paused_accum_ms`.
+    let now = if app.paused {
+        app.play_paused_at.unwrap_or_else(Instant::now)
     } else {
-        0
-    }
+        Instant::now()
+    };
+
+    u64::try_from(
+        now.duration_since(started)
+            .as_millis()
+            .saturating_sub(app.play_paused_accum_ms as u128),
+    )
+    .unwrap_or(u64::MAX)
 }
 
 /// 将 App 转换为持久化格式
@@ -273,74 +279,76 @@ pub fn apply_snapshot_to_app(
         tracing::info!("🎵 [StateRestore] 版本 < 3, playlist_preloads 初始化为空");
     }
 
-    let now = chrono::Utc::now().timestamp_millis();
-    let time_since_save_ms = now.saturating_sub(snapshot.saved_at_epoch_ms).max(0);
-    if snapshot.saved_at_epoch_ms > now {
+    let now_epoch_ms = chrono::Utc::now().timestamp_millis();
+    let restore_now = Instant::now();
+    let time_since_save_ms = now_epoch_ms
+        .saturating_sub(snapshot.saved_at_epoch_ms)
+        .max(0);
+    if snapshot.saved_at_epoch_ms > now_epoch_ms {
         tracing::warn!(
             saved_at_epoch_ms = snapshot.saved_at_epoch_ms,
-            now_epoch_ms = now,
+            now_epoch_ms,
             "🎵 [StateRestore] saved_at 在未来（可能是系统时间回拨/状态文件异常），将忽略 time_since_save"
         );
     }
 
-    // 恢复播放进度
-    if let Some(started_at_epoch_ms) = snapshot.player.progress.started_at_epoch_ms {
-        // 计算新的 started_at，使得播放位置不变
-        // 新的 started_at = 当前时间 - (保存时的播放时长 + 距离保存的时间)
-        let saved_elapsed_ms = now.saturating_sub(started_at_epoch_ms).max(0);
-        if started_at_epoch_ms > now {
-            tracing::warn!(
-                started_at_epoch_ms,
-                now_epoch_ms = now,
-                "🎵 [StateRestore] started_at 在未来（可能是系统时间回拨/状态文件异常），将按 0ms 处理"
-            );
-        }
+    // 恢复播放进度（以“播放位置 ms”作为主语义）
+    //
+    // Snapshot 中的 `started_at_epoch_ms` 是用 `saved_at_epoch_ms - position_ms` 反推的“虚拟 started_at”，
+    // position_ms 需要额外结合 `paused_accum_ms` 才能恢复到 App 的 `Instant` 模型。
+    //
+    // 额外：为支持“异常退出/崩溃”场景的近似恢复，如果保存时未暂停，则最多补偿一个 autosave 周期（30s）。
+    const MAX_ADVANCE_MS: i64 = 30_000;
 
-        let mut elapsed_ms = saved_elapsed_ms.saturating_add(time_since_save_ms);
-        if snapshot.player.progress.paused {
-            let paused_accum_ms_i64 =
-                i64::try_from(snapshot.player.progress.paused_accum_ms).unwrap_or(i64::MAX);
-            elapsed_ms = elapsed_ms.saturating_sub(paused_accum_ms_i64);
-        }
-        if let Some(total_ms) = snapshot.player.progress.total_ms {
-            let total_ms_i64 = i64::try_from(total_ms).unwrap_or(i64::MAX);
-            elapsed_ms = elapsed_ms.min(total_ms_i64).max(0);
-        } else {
-            elapsed_ms = elapsed_ms.max(0);
-        }
+    let paused_accum_ms_u64 = snapshot.player.progress.paused_accum_ms;
+    let base_pos_ms = snapshot
+        .player
+        .progress
+        .started_at_epoch_ms
+        .map(|started_epoch_ms| snapshot.saved_at_epoch_ms.saturating_sub(started_epoch_ms))
+        .unwrap_or(0)
+        .max(0);
 
-        tracing::info!(
-            "🎵 [StateRestore] 恢复播放状态: saved_elapsed_ms={}ms, time_since_save_ms={}ms, final_elapsed_ms={}ms, paused={}, paused_accum_ms={}ms",
-            saved_elapsed_ms,
-            time_since_save_ms,
-            elapsed_ms,
-            snapshot.player.progress.paused,
-            snapshot.player.progress.paused_accum_ms,
-        );
-
-        let elapsed_ms_u64 = elapsed_ms as u64;
-        app.play_started_at = Instant::now()
-            .checked_sub(Duration::from_millis(elapsed_ms_u64))
-            .or_else(|| {
-                tracing::warn!(
-                    elapsed_ms_u64,
-                    "🎵 [StateRestore] 播放进度过大导致 Instant::checked_sub 失败，将丢弃 play_started_at"
-                );
-                None
-            });
+    let advance_ms = if snapshot.player.progress.paused {
+        0
     } else {
-        tracing::info!("🎵 [StateRestore] 没有保存的播放进度，play_started_at 设置为 None");
-        app.play_started_at = None;
+        time_since_save_ms.min(MAX_ADVANCE_MS)
+    };
+
+    let mut pos_ms_i64 = base_pos_ms.saturating_add(advance_ms).max(0);
+    if let Some(total_ms) = snapshot.player.progress.total_ms {
+        let total_ms_i64 = i64::try_from(total_ms).unwrap_or(i64::MAX);
+        pos_ms_i64 = pos_ms_i64.min(total_ms_i64);
     }
+
+    tracing::info!(
+        "🎵 [StateRestore] 恢复播放进度: base_pos_ms={}ms, advance_ms={}ms, final_pos_ms={}ms, saved_paused={}, paused_accum_ms={}ms",
+        base_pos_ms,
+        advance_ms,
+        pos_ms_i64,
+        snapshot.player.progress.paused,
+        paused_accum_ms_u64,
+    );
+
+    let pos_ms_u64 = u64::try_from(pos_ms_i64).unwrap_or(u64::MAX);
+    let total_offset_ms_u64 = pos_ms_u64.saturating_add(paused_accum_ms_u64);
+    let started_at = restore_now
+        .checked_sub(Duration::from_millis(total_offset_ms_u64))
+        .or_else(|| {
+            tracing::warn!(
+                total_offset_ms_u64,
+                "🎵 [StateRestore] 播放进度过大导致 Instant::checked_sub 失败，将丢弃 play_started_at"
+            );
+            None
+        });
+
+    app.play_started_at = started_at;
 
     app.play_total_ms = snapshot.player.progress.total_ms;
     app.paused = true; // 默认恢复为暂停
-    app.play_paused_accum_ms = snapshot.player.progress.paused_accum_ms;
-    app.play_paused_at = if snapshot.player.progress.paused {
-        Some(Instant::now())
-    } else {
-        None
-    };
+    app.play_paused_accum_ms = paused_accum_ms_u64;
+    // 恢复时总是“暂停”以避免自动播放；如果有 started_at，则冻结 paused_at 以避免进度继续走。
+    app.play_paused_at = app.play_started_at.map(|_| restore_now);
 
     // 恢复播放器状态
     app.play_song_id = snapshot.player.play_song_id;
@@ -559,6 +567,23 @@ mod tests {
     use super::*;
     use crate::app::PlayQueue;
 
+    fn app_playback_elapsed_ms(app: &App) -> u64 {
+        let Some(started) = app.play_started_at else {
+            return 0;
+        };
+        let now = if app.paused {
+            app.play_paused_at.unwrap_or_else(Instant::now)
+        } else {
+            Instant::now()
+        };
+        u64::try_from(
+            now.duration_since(started)
+                .as_millis()
+                .saturating_sub(app.play_paused_accum_ms as u128),
+        )
+        .unwrap_or(u64::MAX)
+    }
+
     #[test]
     fn test_song_lite_from_song() {
         let song = Song {
@@ -677,6 +702,96 @@ mod tests {
         let result = apply_snapshot_to_app(&snapshot, &mut app);
         assert!(result.is_ok());
         assert!(app.play_started_at.is_some());
+    }
+
+    #[test]
+    fn test_apply_snapshot_restores_position_with_capped_advance() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let saved_at = now - 120_000; // 2 minutes ago
+
+        let base_pos_ms: i64 = 10_000;
+        let started_at_epoch_ms = saved_at - base_pos_ms; // virtual started_at: saved_at - position
+
+        let snapshot = AppStateSnapshot {
+            version: 3,
+            player: PlayerState {
+                version: 3,
+                play_song_id: Some(1),
+                progress: PlaybackProgress {
+                    started_at_epoch_ms: Some(started_at_epoch_ms),
+                    total_ms: Some(180_000),
+                    paused: false,
+                    paused_at_epoch_ms: None,
+                    paused_accum_ms: 5_000,
+                },
+                play_queue: PlayQueueState {
+                    songs: vec![],
+                    order: vec![],
+                    cursor: None,
+                    mode: "ListLoop".to_string(),
+                },
+                volume: 1.0,
+                play_br: 320000,
+                crossfade_ms: 300,
+            },
+            playlists: vec![],
+            playlists_selected: 0,
+            playlist_preloads: std::collections::HashMap::new(),
+            saved_at_epoch_ms: saved_at,
+        };
+
+        let mut app = App::default();
+        apply_snapshot_to_app(&snapshot, &mut app).unwrap();
+
+        // Restore always pauses, so `play_paused_at` must be set to freeze the elapsed time.
+        assert!(app.paused);
+        assert!(app.play_paused_at.is_some());
+
+        // Since we cap advance to one autosave cycle (30s): 10s + 30s = 40s.
+        assert_eq!(app_playback_elapsed_ms(&app), 40_000);
+    }
+
+    #[test]
+    fn test_apply_snapshot_restores_position_paused_does_not_advance() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let saved_at = now - 120_000; // 2 minutes ago
+
+        let base_pos_ms: i64 = 10_000;
+        let started_at_epoch_ms = saved_at - base_pos_ms;
+
+        let snapshot = AppStateSnapshot {
+            version: 3,
+            player: PlayerState {
+                version: 3,
+                play_song_id: Some(1),
+                progress: PlaybackProgress {
+                    started_at_epoch_ms: Some(started_at_epoch_ms),
+                    total_ms: Some(180_000),
+                    paused: true,
+                    paused_at_epoch_ms: Some(saved_at),
+                    paused_accum_ms: 0,
+                },
+                play_queue: PlayQueueState {
+                    songs: vec![],
+                    order: vec![],
+                    cursor: None,
+                    mode: "ListLoop".to_string(),
+                },
+                volume: 1.0,
+                play_br: 320000,
+                crossfade_ms: 300,
+            },
+            playlists: vec![],
+            playlists_selected: 0,
+            playlist_preloads: std::collections::HashMap::new(),
+            saved_at_epoch_ms: saved_at,
+        };
+
+        let mut app = App::default();
+        apply_snapshot_to_app(&snapshot, &mut app).unwrap();
+
+        // paused-at-save should never advance.
+        assert_eq!(app_playback_elapsed_ms(&app), 10_000);
     }
 
     #[test]
