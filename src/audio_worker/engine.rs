@@ -308,7 +308,7 @@ impl AudioEngine {
             }
             AudioCommand::SeekToMs(ms) => {
                 self.clear_fade();
-                tracing::debug!(
+                tracing::trace!(
                     ms,
                     play_id = self.state.play_id(),
                     paused = self.state.paused(),

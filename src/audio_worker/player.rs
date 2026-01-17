@@ -126,7 +126,7 @@ pub(super) fn seek_to_ms(
     }
 
     state.attach_sink(Arc::clone(&sink));
-    tracing::debug!(
+    tracing::trace!(
         position_ms,
         paused = state.paused(),
         sink_empty = sink.empty(),

@@ -90,6 +90,18 @@ GitHub Actions CI 会自动运行：
 3. **测试** (`cargo test`)
 4. **覆盖率** (`cargo tarpaulin`) - 仅 Linux
 
+## 日志排查
+
+排查播放状态保存/恢复、Seek 等问题时，建议启用更详细的 tracing 输出：
+
+```bash
+# 仅开启本项目 trace，降低外部依赖噪音
+RUST_LOG=netease_ratui=trace,reqwest=warn,hyper=warn cargo run
+
+# 或使用 CLI 参数（优先级高于 RUST_LOG）
+cargo run -- --log-filter "netease_ratui=trace,reqwest=warn,hyper=warn"
+```
+
 ## 测试最佳实践
 
 1. **单元测试**：测试纯函数和独立逻辑

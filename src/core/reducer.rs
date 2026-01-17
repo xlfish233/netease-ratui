@@ -204,7 +204,7 @@ pub fn spawn_app_actor(
             Ok(snapshot) => {
                 match crate::player_state::apply_snapshot_to_app(&snapshot, &mut state.app) {
                     Ok(()) => {
-                        tracing::debug!(
+                        tracing::trace!(
                             play_song_id = ?state.app.play_song_id,
                             paused = state.app.paused,
                             paused_at = state.app.play_paused_at.is_some(),
@@ -282,7 +282,7 @@ pub fn spawn_app_actor(
                 _ = state_save_timer.tick() => {
                     // 定时保存状态（后台写盘，避免阻塞主循环）
                     if state_save_task.as_ref().is_some_and(|h| !h.is_finished()) {
-                        tracing::debug!("定时保存仍在进行，跳过本轮 tick");
+                        tracing::trace!("🎵 [StateSaveDbg] previous save still running, skip tick");
                         continue;
                     }
                     if let Some(h) = state_save_task.take() {
@@ -291,7 +291,7 @@ pub fn spawn_app_actor(
                     let data_dir = data_dir.clone();
                     let app = state.app.clone();
                     state_save_task = Some(tokio::spawn(async move {
-                        tracing::debug!(
+                        tracing::trace!(
                             save_kind = "timer",
                             play_song_id = ?app.play_song_id,
                             paused = app.paused,
@@ -304,7 +304,7 @@ pub fn spawn_app_actor(
                         if let Err(e) = crate::player_state::save_player_state_async(&data_dir, app).await {
                             tracing::warn!("定时保存播放状态失败: {}", e);
                         } else {
-                            tracing::debug!(save_kind = "timer", "🎵 [StateSaveDbg] done");
+                            tracing::trace!(save_kind = "timer", "🎵 [StateSaveDbg] done");
                         }
                     }));
                     continue; // 继续循环，不生成 CoreMsg
@@ -322,7 +322,7 @@ pub fn spawn_app_actor(
                 if let Some(h) = state_save_task.take() {
                     let _ = h.await;
                 }
-                tracing::debug!(
+                tracing::trace!(
                     save_kind = "quit",
                     play_song_id = ?state.app.play_song_id,
                     paused = state.app.paused,
@@ -334,7 +334,7 @@ pub fn spawn_app_actor(
                 );
                 match crate::player_state::save_player_state_async(&data_dir, state.app.clone()).await {
                     Ok(()) => {
-                        tracing::debug!(save_kind = "quit", "🎵 [StateSaveDbg] done");
+                        tracing::trace!(save_kind = "quit", "🎵 [StateSaveDbg] done");
                         tracing::info!("播放状态已保存")
                     }
                     Err(e) => tracing::error!("保存播放状态失败: {}", e),

@@ -58,7 +58,7 @@ Every cross-layer request carries `req_id`. `RequestTracker` only accepts respon
 ## Environment Variables
 
 - `NETEASE_DATA_DIR` / `NETEASE_LOG_DIR` - Override data/log directories
-- `RUST_LOG` - Log level (default: `info,reqwest=warn,hyper=warn`)
+- `RUST_LOG` - Log level (default: `info,reqwest=warn,hyper=warn`); for deep debugging use `netease_ratui=trace,reqwest=warn,hyper=warn` (or CLI `--log-filter`)
 - `NETEASE_NO_AUDIO=1` - Disable audio
 - `NETEASE_SKIP_LOGIN=1` - Anonymous test mode
 - `NETEASE_QR_KEY=1` - QR debug mode
@@ -76,3 +76,4 @@ Default `~/.local/share/netease-ratui`:
 - Rust 2024 edition - requires latest toolchain
 - AudioWorker runs on dedicated thread with single-threaded tokio runtime
 - Crossfade default 300ms, configurable in settings
+- Ended detection is polled in the audio engine (no per-track thread)

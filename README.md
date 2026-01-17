@@ -229,7 +229,7 @@ cargo run -- qr-key
 
 ### 环境变量
 
-- `RUST_LOG`：日志级别（如 `debug`）
+- `RUST_LOG`：日志级别（如 `debug` / `trace`）；排查播放状态保存/恢复、Seek 等问题可用 `RUST_LOG=netease_ratui=trace,reqwest=warn,hyper=warn`（或使用 `--log-filter`）
 - `NETEASE_DOMAIN`：覆盖网易域名（默认 `https://music.163.com`）
 - `NETEASE_API_DOMAIN`：覆盖 API 域名（默认 `https://interface.music.163.com`）
 - `NETEASE_NO_AUDIO=1`：禁用音频输出（无声模式）

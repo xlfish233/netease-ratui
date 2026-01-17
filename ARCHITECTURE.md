@@ -46,6 +46,7 @@ flowchart LR
 - `src/netease`：请求、加密、Cookie 持久化、事件上报
 - `src/audio_worker`：音频播放、缓存、预取、下载
 - 音频传输使用 `tokio::sync::mpsc` 与 `select!` 协调播放与缓存任务
+- 播放结束检测由引擎定时轮询 `sink` 状态触发 `Ended` 事件（避免每首歌启动额外线程）
 
 ## 状态与快照
 
@@ -159,5 +160,5 @@ flowchart LR
 **定时保存（每 30 秒）：**
 1. `tokio::time::interval` 触发
 2. 触发后台保存任务调用 `player_state::save_player_state_async()`（如上一次保存未完成则跳过本轮）
-3. 成功：debug 日志（可选）
+3. 成功：trace 日志（可选）
 4. 失败：warn 日志，不阻塞主循环

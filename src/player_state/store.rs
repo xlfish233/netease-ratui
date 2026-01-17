@@ -522,7 +522,7 @@ pub async fn save_player_state_async(
         .map(|t| snapshot.saved_at_epoch_ms.saturating_sub(t))
         .unwrap_or(0)
         .max(0);
-    tracing::debug!(
+    tracing::trace!(
         path = %path.display(),
         saved_at_epoch_ms = snapshot.saved_at_epoch_ms,
         started_at_epoch_ms = snapshot.player.progress.started_at_epoch_ms,

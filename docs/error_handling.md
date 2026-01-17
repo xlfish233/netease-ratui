@@ -159,21 +159,7 @@ let rt = tokio::runtime::Builder::new_current_thread()
 - **业务错误处理**: `OutputStreamBuilder::open_default_stream()` 失败会发送 `AudioEvent::Error`
 - **替代方案**: `tokio::task::spawn_blocking`（需架构改动）
 
-### 2. audio_worker/player.rs:147
-
-```rust
-thread::Builder::new()
-    .name(thread_name)
-    .spawn(move || { /* ... */ })
-    .expect("failed to spawn end check thread: 系统资源不足");
-```
-
-- **用途**: 启动播放监控线程
-- **影响**: 只影响自动切歌，不影响核心播放功能
-- **风险**: 系统资源严重不足时可能失败
-- **替代方案**: 返回 `Result`，功能降级
-
-### 3. audio_worker/transfer.rs:488
+### 2. audio_worker/transfer.rs:488
 
 ```rust
 let rt = tokio::runtime::Runtime::new()
@@ -185,6 +171,8 @@ let rt = tokio::runtime::Runtime::new()
 - **安全性**: 与 engine.rs 相同
 - **业务错误处理**: 下载、缓存错误通过 `JobResult` 返回
 - **替代方案**: 同 engine.rs
+
+> 说明：此前项目曾使用“每首歌启动一个播放结束监控线程”的方式检测播放结束；该实现已移除，改为在音频引擎中定时轮询 `sink` 状态触发 `Ended` 事件，从而避免线程风暴与相关 `expect()`。
 
 ## 错误恢复策略
 
