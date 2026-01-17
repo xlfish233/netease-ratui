@@ -107,13 +107,16 @@ pub(super) fn seek_to_ms(
     position_ms: u64,
 ) -> Result<(), String> {
     let Some(path) = state.path() else {
+        tracing::warn!(position_ms, "seek ignored: no active path");
         return Ok(());
     };
 
+    let seek = Duration::from_millis(position_ms);
+    // Build the new sink first; if building fails, keep current playback running.
+    let (sink, _duration_ms) = state.build_sink(&path, Some(seek), "seek")?;
+
     state.stop_keep_play_id();
 
-    let seek = Duration::from_millis(position_ms);
-    let (sink, _duration_ms) = state.build_sink(&path, Some(seek), "seek")?;
     let sink = Arc::new(sink);
     sink.set_volume(state.volume());
     if state.paused() {
@@ -123,6 +126,12 @@ pub(super) fn seek_to_ms(
     }
 
     state.attach_sink(Arc::clone(&sink));
+    tracing::debug!(
+        position_ms,
+        paused = state.paused(),
+        sink_empty = sink.empty(),
+        "seek applied"
+    );
     Ok(())
 }
 

@@ -308,6 +308,13 @@ impl AudioEngine {
             }
             AudioCommand::SeekToMs(ms) => {
                 self.clear_fade();
+                tracing::debug!(
+                    ms,
+                    play_id = self.state.play_id(),
+                    paused = self.state.paused(),
+                    has_sink = self.state.current_sink().is_some(),
+                    "🎵 [AudioEngine] SeekToMs"
+                );
                 if let Err(e) = seek_to_ms(&mut self.state, ms) {
                     tracing::warn!(ms, err = %e, "Seek 失败");
                     let _ = self.tx_evt.send(AudioEvent::Error(e)).await;
