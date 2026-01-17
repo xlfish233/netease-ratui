@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.0.7（2026-01-17）
+
+- **修复**：解决 CI 中的 clippy 警告（Rust 1.92.0）
+  - 替换 `assert_eq!(bool, true)` 为 `assert!(bool)`
+  - 使用结构体字面量初始化替代 `Default::default()` 后的字段重新赋值
+  - 修复 4 个 clippy 错误（1 个 bool 断言比较 + 3 个字段重新赋值）
+
 ## v0.0.6（2026-01-17）
 
 - **播放状态持久化**：新增自动保存和恢复播放状态功能（`src/player_state`）

@@ -394,7 +394,7 @@ mod tests {
 
     #[tokio::test]
     async fn number_keys_send_ui_focus_set() {
-        let mut app = App {
+        let app = App {
             view: View::Playlists, // Not Search view
             ui_focus: UiFocus::BodyCenter,
             ..Default::default()
@@ -429,7 +429,7 @@ mod tests {
 
     #[tokio::test]
     async fn number_keys_in_search_input_send_search_char_not_focus_set() {
-        let mut app = App {
+        let app = App {
             view: View::Search,
             ui_focus: UiFocus::HeaderSearch,
             ..Default::default()
@@ -477,7 +477,7 @@ mod tests {
     #[tokio::test]
     async fn alt_number_keys_always_switch_focus_even_in_search() {
         // 测试 Alt+1-4 在搜索框中也能切换焦点
-        let mut app = App {
+        let app = App {
             view: View::Search,
             ui_focus: UiFocus::HeaderSearch,
             ..Default::default()
