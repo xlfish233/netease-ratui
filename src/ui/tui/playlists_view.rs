@@ -98,10 +98,10 @@ pub(super) fn draw_playlists(f: &mut Frame, area: Rect, state: &PlaylistsSnapsho
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("歌单详情[3]")
+                    .title("歌单详情")
                     .border_style(border),
             )
-            .wrap(Wrap { trim: false });
+            .wrap(Wrap { trim false });
         f.render_widget(panel, area);
     }
 }
