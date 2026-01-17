@@ -41,11 +41,13 @@ pub enum AppCommand {
     LyricsMoveDown,
     LyricsGotoCurrent,
     LyricsOffsetAddMs { ms: i64 },
-    SettingsMoveUp,
-    SettingsMoveDown,
     SettingsDecrease,
     SettingsIncrease,
     SettingsActivate,
+    SettingsGroupPrev,
+    SettingsGroupNext,
+    SettingsItemPrev,
+    SettingsItemNext,
     Quit,
 }
 

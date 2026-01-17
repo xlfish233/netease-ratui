@@ -4,7 +4,47 @@ use crate::core::prelude::{
 };
 use crate::settings;
 
-const SETTINGS_ITEMS_COUNT: usize = 7;
+// 分组枚举
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsGroup {
+    Playback, // 0: 音质、音量、播放模式
+    Lyrics,   // 1: 歌词 offset
+    Cache,    // 2: 淡入淡出、清除缓存
+    Account,  // 3: 退出登录
+}
+
+impl SettingsGroup {
+    const COUNT: usize = 4;
+
+    fn item_count(self) -> usize {
+        match self {
+            Self::Playback => 3,
+            Self::Lyrics => 1,
+            Self::Cache => 2,
+            Self::Account => 1,
+        }
+    }
+
+    fn from_index(idx: usize) -> Self {
+        match idx {
+            0 => Self::Playback,
+            1 => Self::Lyrics,
+            2 => Self::Cache,
+            3 => Self::Account,
+            _ => Self::Playback,
+        }
+    }
+
+    // 转换为全局索引
+    fn to_global_index(self, item_idx: usize) -> usize {
+        match self {
+            Self::Playback => item_idx,
+            Self::Lyrics => 3 + item_idx,
+            Self::Cache => 4 + item_idx,
+            Self::Account => 6 + item_idx,
+        }
+    }
+}
 
 /// 处理设置相关的 AppCommand
 /// 返回 true 表示命令已处理，false 表示未处理
@@ -17,23 +57,43 @@ pub async fn handle_settings_command(
     next_song_cache: &mut NextSongCacheManager,
 ) -> bool {
     match cmd {
-        AppCommand::SettingsMoveUp => {
-            if matches!(app.view, crate::app::View::Settings) && app.settings_selected > 0 {
-                app.settings_selected -= 1;
-                effects.emit_state(app);
+        AppCommand::SettingsGroupPrev => {
+            if app.settings_group_selected > 0 {
+                app.settings_group_selected -= 1;
+            } else {
+                app.settings_group_selected = SettingsGroup::COUNT - 1;
             }
+            app.settings_selected = 0; // 重置设置项索引
+            effects.emit_state(app);
         }
-        AppCommand::SettingsMoveDown => {
-            if matches!(app.view, crate::app::View::Settings) {
-                app.settings_selected = (app.settings_selected + 1).min(SETTINGS_ITEMS_COUNT - 1);
-                effects.emit_state(app);
+        AppCommand::SettingsGroupNext => {
+            app.settings_group_selected = (app.settings_group_selected + 1) % SettingsGroup::COUNT;
+            app.settings_selected = 0;
+            effects.emit_state(app);
+        }
+        AppCommand::SettingsItemPrev => {
+            let group = SettingsGroup::from_index(app.settings_group_selected);
+            let max_idx = group.item_count().saturating_sub(1);
+            if app.settings_selected > 0 {
+                app.settings_selected -= 1;
+            } else {
+                app.settings_selected = max_idx;
             }
+            effects.emit_state(app);
+        }
+        AppCommand::SettingsItemNext => {
+            let group = SettingsGroup::from_index(app.settings_group_selected);
+            let max_idx = group.item_count().saturating_sub(1);
+            app.settings_selected = (app.settings_selected + 1).min(max_idx);
+            effects.emit_state(app);
         }
         AppCommand::SettingsDecrease => {
             if matches!(app.view, crate::app::View::Settings) {
                 let old_br = app.play_br;
                 let old_crossfade = app.crossfade_ms;
-                apply_settings_adjust(app, -1, next_song_cache);
+                let group = SettingsGroup::from_index(app.settings_group_selected);
+                let global_idx = group.to_global_index(app.settings_selected);
+                apply_settings_adjust(app, global_idx, -1, next_song_cache);
                 sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
                     tracing::warn!(err = %e, "保存设置失败");
@@ -58,7 +118,9 @@ pub async fn handle_settings_command(
             if matches!(app.view, crate::app::View::Settings) {
                 let old_br = app.play_br;
                 let old_crossfade = app.crossfade_ms;
-                apply_settings_adjust(app, 1, next_song_cache);
+                let group = SettingsGroup::from_index(app.settings_group_selected);
+                let global_idx = group.to_global_index(app.settings_selected);
+                apply_settings_adjust(app, global_idx, 1, next_song_cache);
                 sync_settings_from_app(settings, app);
                 if let Err(e) = settings::save_settings(data_dir, settings) {
                     tracing::warn!(err = %e, "保存设置失败");
@@ -190,15 +252,22 @@ pub fn sync_settings_from_app(s: &mut settings::AppSettings, app: &App) {
 }
 
 fn is_logout_selected(app: &App) -> bool {
-    app.settings_selected == SETTINGS_ITEMS_COUNT - 1
+    // 账号分组（group_selected=3）的第1项（settings_selected=0）
+    app.settings_group_selected == 3 && app.settings_selected == 0
 }
 
 fn is_clear_cache_selected(app: &App) -> bool {
-    app.settings_selected == SETTINGS_ITEMS_COUNT - 2
+    // 缓存分组（group_selected=2）的第2项（settings_selected=1）
+    app.settings_group_selected == 2 && app.settings_selected == 1
 }
 
-fn apply_settings_adjust(app: &mut App, dir: i32, next_song_cache: &mut NextSongCacheManager) {
-    match app.settings_selected {
+fn apply_settings_adjust(
+    app: &mut App,
+    global_idx: usize,
+    dir: i32,
+    next_song_cache: &mut NextSongCacheManager,
+) {
+    match global_idx {
         0 => {
             let options = [128_000, 192_000, 320_000, 999_000];
             let pos = options

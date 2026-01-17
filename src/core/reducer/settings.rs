@@ -73,15 +73,19 @@ pub async fn handle_ui(
             .await;
             return UiAction::Handled;
         }
-        AppCommand::SettingsMoveUp
-        | AppCommand::SettingsMoveDown
-        | AppCommand::SettingsDecrease
-        | AppCommand::SettingsIncrease => {
+        AppCommand::SettingsDecrease
+        | AppCommand::SettingsIncrease
+        | AppCommand::SettingsGroupPrev
+        | AppCommand::SettingsGroupNext
+        | AppCommand::SettingsItemPrev
+        | AppCommand::SettingsItemNext => {
             let settings_cmd = match cmd {
-                AppCommand::SettingsMoveUp => AppCommand::SettingsMoveUp,
-                AppCommand::SettingsMoveDown => AppCommand::SettingsMoveDown,
                 AppCommand::SettingsDecrease => AppCommand::SettingsDecrease,
                 AppCommand::SettingsIncrease => AppCommand::SettingsIncrease,
+                AppCommand::SettingsGroupPrev => AppCommand::SettingsGroupPrev,
+                AppCommand::SettingsGroupNext => AppCommand::SettingsGroupNext,
+                AppCommand::SettingsItemPrev => AppCommand::SettingsItemPrev,
+                AppCommand::SettingsItemNext => AppCommand::SettingsItemNext,
                 _ => unreachable!("checked by outer match"),
             };
             settings_handlers::handle_settings_command(
@@ -190,7 +194,8 @@ mod tests {
         let mut effects = crate::core::effects::CoreEffects::default();
 
         state.app.view = View::Settings;
-        state.app.settings_selected = 5;
+        state.app.settings_group_selected = 2; // 缓存分组
+        state.app.settings_selected = 1; // 清除缓存（缓存分组第2项）
 
         let outcome = handle_ui(
             &AppCommand::SettingsActivate,

@@ -304,24 +304,60 @@ pub(super) async fn handle_key(
             }
         }
         View::Settings => {
-            if focus != UiFocus::BodyCenter {
-                return false;
-            }
-            match key.code {
-                KeyCode::Up => {
-                    let _ = tx.send(AppCommand::SettingsMoveUp).await;
+            match focus {
+                UiFocus::BodyLeft => {
+                    // 左侧：分组导航
+                    match key.code {
+                        KeyCode::Up => {
+                            let _ = tx.send(AppCommand::SettingsGroupPrev).await;
+                        }
+                        KeyCode::Down => {
+                            let _ = tx.send(AppCommand::SettingsGroupNext).await;
+                        }
+                        KeyCode::Enter => {
+                            let _ = tx
+                                .send(AppCommand::UiFocusSet {
+                                    focus: UiFocus::BodyCenter,
+                                })
+                                .await;
+                        }
+                        KeyCode::Tab => {
+                            let _ = tx
+                                .send(AppCommand::UiFocusSet {
+                                    focus: UiFocus::BodyCenter,
+                                })
+                                .await;
+                        }
+                        _ => {}
+                    }
                 }
-                KeyCode::Down => {
-                    let _ = tx.send(AppCommand::SettingsMoveDown).await;
-                }
-                KeyCode::Left => {
-                    let _ = tx.send(AppCommand::SettingsDecrease).await;
-                }
-                KeyCode::Right => {
-                    let _ = tx.send(AppCommand::SettingsIncrease).await;
-                }
-                KeyCode::Enter => {
-                    let _ = tx.send(AppCommand::SettingsActivate).await;
+                UiFocus::BodyCenter => {
+                    // 中间：设置项详情
+                    match key.code {
+                        KeyCode::Up => {
+                            let _ = tx.send(AppCommand::SettingsItemPrev).await;
+                        }
+                        KeyCode::Down => {
+                            let _ = tx.send(AppCommand::SettingsItemNext).await;
+                        }
+                        KeyCode::Left => {
+                            let _ = tx.send(AppCommand::SettingsDecrease).await;
+                        }
+                        KeyCode::Right => {
+                            let _ = tx.send(AppCommand::SettingsIncrease).await;
+                        }
+                        KeyCode::Enter => {
+                            let _ = tx.send(AppCommand::SettingsActivate).await;
+                        }
+                        KeyCode::Tab => {
+                            let _ = tx
+                                .send(AppCommand::UiFocusSet {
+                                    focus: UiFocus::BodyLeft,
+                                })
+                                .await;
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             }
