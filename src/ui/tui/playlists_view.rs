@@ -39,7 +39,7 @@ pub(super) fn draw_playlist_list(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("我的歌单")
+                .title("歌单[2]")
                 .border_style(border),
         )
         .highlight_style(Style::default().fg(Color::Yellow));
@@ -68,7 +68,7 @@ pub(super) fn draw_playlists(f: &mut Frame, area: Rect, state: &PlaylistsSnapsho
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("歌曲列表")
+                    .title("歌曲[3](↑↓选择 p 播放 b 返回)")
                     .border_style(border),
             )
             .highlight_style(Style::default().fg(Color::Yellow));
@@ -98,10 +98,10 @@ pub(super) fn draw_playlists(f: &mut Frame, area: Rect, state: &PlaylistsSnapsho
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("歌单详情")
+                    .title("歌单详情[3]")
                     .border_style(border),
             )
-            .wrap(Wrap { trim false });
+            .wrap(Wrap { trim: false });
         f.render_widget(panel, area);
     }
 }
