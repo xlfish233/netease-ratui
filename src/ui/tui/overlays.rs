@@ -15,7 +15,8 @@ pub(super) fn draw_help_overlay(f: &mut Frame, area: Rect) {
     let lines = vec![
         Line::from("Help"),
         Line::from(""),
-        Line::from("1-4: Switch view"),
+        Line::from("F1-F4: Switch view"),
+        Line::from("1-4: Switch focus (Alt+1-4 in search)"),
         Line::from("Tab / Shift+Tab: Focus cycle"),
         Line::from("Enter: Confirm / Open"),
         Line::from("Space: Play / Pause"),

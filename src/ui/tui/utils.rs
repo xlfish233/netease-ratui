@@ -2,8 +2,8 @@ use crate::app::{PlayMode, PlayerSnapshot};
 use ratatui::layout::Rect;
 use std::time::Instant;
 
-pub(super) const MIN_CANVAS_WIDTH: u16 = 128;
-pub(super) const MIN_CANVAS_HEIGHT: u16 = 36;
+pub(super) const MIN_CANVAS_WIDTH: u16 = 122;
+pub(super) const MIN_CANVAS_HEIGHT: u16 = 29;
 
 pub(super) fn canvas_rect(area: Rect) -> Option<Rect> {
     if area.width < MIN_CANVAS_WIDTH || area.height < MIN_CANVAS_HEIGHT {

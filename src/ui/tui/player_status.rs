@@ -26,7 +26,7 @@ pub(super) fn draw_footer(f: &mut Frame, area: Rect, player: &PlayerSnapshot, vi
     };
 
     let lines = vec![
-        Line::from(format!("提示: {view_status} | Now: {now}")),
+        Line::from(format!("提示:{view_status}|Now:{now}")),
         Line::from(format!(
             "时间: {time_text} | 模式: {mode_text} | 音量: {:.0}% | 音质: {} | {progress}",
             (player.volume.clamp(0.0, 2.0) * 100.0),

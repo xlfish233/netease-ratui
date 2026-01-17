@@ -9,7 +9,11 @@ use ratatui::{
 
 pub(super) fn draw_header(f: &mut Frame, layout: &HeaderLayout, app: &AppSnapshot) {
     let configs = tab_configs(app.logged_in);
-    let titles: Vec<Line> = configs.iter().map(|c| Line::from(c.title)).collect();
+    let titles: Vec<Line> = configs
+        .iter()
+        .enumerate()
+        .map(|(i, c)| Line::from(format!("{}[F{}]", c.title, i + 1)))
+        .collect();
     let selected = tab_index_for_view(app.view, app.logged_in).unwrap_or(0);
 
     let tabs = Tabs::new(titles)
@@ -21,9 +25,9 @@ pub(super) fn draw_header(f: &mut Frame, layout: &HeaderLayout, app: &AppSnapsho
     f.render_widget(tabs, layout.tabs);
 
     let search_hint = if app.search_input.is_empty() {
-        "Search: (type and Enter)".to_owned()
+        "Search[1]: (type and Enter)".to_owned()
     } else {
-        format!("Search: {}", app.search_input)
+        format!("Search[1]: {}", app.search_input)
     };
     let search_style = if matches!(app.ui_focus, UiFocus::HeaderSearch) {
         Style::default().fg(Color::Yellow)
@@ -42,7 +46,7 @@ pub(super) fn draw_header(f: &mut Frame, layout: &HeaderLayout, app: &AppSnapsho
         UiFocus::BodyRight => "Right",
     };
     let status = format!(
-        "View: {} | Focus: {} | Login: {} | Help: {}",
+        "View:{}|Focus:{}|Login:{}|Help:{}",
         configs.get(selected).map(|c| c.title).unwrap_or(""),
         focus_label,
         if app.logged_in { "Yes" } else { "No" },

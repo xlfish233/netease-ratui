@@ -50,7 +50,7 @@ pub(super) fn draw_settings(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("设置（↑↓选择，←→调整，Enter 操作）")
+                .title("设置[3]（↑↓选择，←→调整，Enter 操作）")
                 .border_style(border),
         )
         .highlight_style(Style::default().fg(Color::Yellow));

@@ -65,8 +65,8 @@ pub(super) fn split_body(body: Rect) -> BodyLayout {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(26),
-            Constraint::Length(62),
+            Constraint::Length(24),
+            Constraint::Length(58),
             Constraint::Length(40),
         ])
         .split(body);
@@ -81,7 +81,7 @@ pub(super) fn split_body(body: Rect) -> BodyLayout {
 pub(super) fn split_right(right: Rect) -> RightLayout {
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(12), Constraint::Min(0)])
+        .constraints([Constraint::Length(10), Constraint::Min(0)])
         .split(right);
 
     RightLayout {

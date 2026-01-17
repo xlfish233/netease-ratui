@@ -58,18 +58,48 @@ pub(super) async fn handle_key(
         } => {
             let _ = tx.send(AppCommand::UiFocusPrev).await;
         }
+        KeyEvent {
+            code: KeyCode::F(k @ 1..=4),
+            ..
+        } => {
+            let index = k as usize - 1;
+            let _ = tx.send(AppCommand::TabTo { index }).await;
+            return false;
+        }
+        _ => {}
+    }
+
+    // Alt+数字键：始终切换焦点（即使在搜索框中）
+    match (key.code, key.modifiers) {
+        (KeyCode::Char(c), m) if m.contains(KeyModifiers::ALT) && ('1'..='4').contains(&c) => {
+            let focus = match c {
+                '1' => UiFocus::HeaderSearch,
+                '2' => UiFocus::BodyLeft,
+                '3' => UiFocus::BodyCenter,
+                '4' => UiFocus::BodyRight,
+                _ => return false,
+            };
+            let _ = tx.send(AppCommand::UiFocusSet { focus }).await;
+            return false;
+        }
         _ => {}
     }
 
     // Global player controls (avoid interfering with text input as much as possible)
     match (key.code, key.modifiers) {
-        // Tab switching with number keys (1-4), but not when typing in search
+        // Focus switching with number keys (1-4), but not when typing in search
         (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) && ('1'..='4').contains(&c) => {
             if matches!(app.view, View::Search) && matches!(app.ui_focus, UiFocus::HeaderSearch) {
-                // Let search input handle the number character
+                // 在搜索框中，允许输入数字
             } else {
-                let index = c as usize - '1' as usize;
-                let _ = tx.send(AppCommand::TabTo { index }).await;
+                let focus = match c {
+                    '1' => UiFocus::HeaderSearch,
+                    '2' => UiFocus::BodyLeft,
+                    '3' => UiFocus::BodyCenter,
+                    '4' => UiFocus::BodyRight,
+                    _ => return false,
+                };
+                let _ = tx.send(AppCommand::UiFocusSet { focus }).await;
                 return false;
             }
         }
@@ -338,5 +368,124 @@ mod tests {
         assert!(!should_quit);
         assert!(matches!(rx.try_recv(), Ok(AppCommand::UiFocusNext)));
         assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn f1_sends_tab_to_index_0() {
+        let app = AppSnapshot::from_app(&App::default());
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        for f_key in 1..=4 {
+            let key = KeyEvent {
+                code: KeyCode::F(f_key),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            };
+
+            let should_quit = handle_key(&app, key, &tx).await;
+            assert!(!should_quit);
+            assert!(matches!(rx.try_recv(), Ok(AppCommand::TabTo { index }) if index == (f_key as usize) - 1));
+            assert!(rx.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn number_keys_send_ui_focus_set() {
+        let mut app = App::default();
+        app.view = View::Playlists; // Not Search view
+        app.ui_focus = UiFocus::BodyCenter;
+        let app_snapshot = AppSnapshot::from_app(&app);
+
+        let test_cases = vec![
+            ('1', UiFocus::HeaderSearch),
+            ('2', UiFocus::BodyLeft),
+            ('3', UiFocus::BodyCenter),
+            ('4', UiFocus::BodyRight),
+        ];
+
+        for (key_char, expected_focus) in test_cases {
+            let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+            let key = KeyEvent {
+                code: KeyCode::Char(key_char),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            };
+
+            let should_quit = handle_key(&app_snapshot, key, &tx).await;
+            assert!(!should_quit);
+            assert!(matches!(rx.try_recv(), Ok(AppCommand::UiFocusSet { focus }) if focus == expected_focus));
+            assert!(rx.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn number_keys_in_search_input_send_search_char_not_focus_set() {
+        let mut app = App::default();
+        app.view = View::Search;
+        app.ui_focus = UiFocus::HeaderSearch;
+        let app_snapshot = AppSnapshot::from_app(&app);
+
+        for key_char in ['1', '2', '3', '4'] {
+            let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+            let key = KeyEvent {
+                code: KeyCode::Char(key_char),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            };
+
+            let should_quit = handle_key(&app_snapshot, key, &tx).await;
+            assert!(!should_quit);
+            // In search input, number keys should send SearchInputChar, not UiFocusSet
+            assert!(matches!(rx.try_recv(), Ok(AppCommand::SearchInputChar { c }) if c == key_char));
+            assert!(rx.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn backtab_sends_focus_prev() {
+        let app = AppSnapshot::from_app(&App::default());
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::BackTab,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&app, key, &tx).await;
+        assert!(!should_quit);
+        assert!(matches!(rx.try_recv(), Ok(AppCommand::UiFocusPrev)));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn alt_number_keys_always_switch_focus_even_in_search() {
+        // 测试 Alt+1-4 在搜索框中也能切换焦点
+        let mut app = App::default();
+        app.view = View::Search;
+        app.ui_focus = UiFocus::HeaderSearch;
+        let app_snapshot = AppSnapshot::from_app(&app);
+
+        for (key_char, expected_focus) in [('1', UiFocus::HeaderSearch), ('2', UiFocus::BodyLeft), ('3', UiFocus::BodyCenter), ('4', UiFocus::BodyRight)] {
+            let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+            let key = KeyEvent {
+                code: KeyCode::Char(key_char),
+                modifiers: KeyModifiers::ALT,
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            };
+
+            let should_quit = handle_key(&app_snapshot, key, &tx).await;
+            assert!(!should_quit);
+            assert!(matches!(rx.try_recv(), Ok(AppCommand::UiFocusSet { focus }) if focus == expected_focus));
+            assert!(rx.try_recv().is_err());
+        }
     }
 }

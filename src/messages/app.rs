@@ -1,4 +1,4 @@
-use crate::app::AppSnapshot;
+use crate::app::{AppSnapshot, UiFocus};
 
 #[derive(Debug)]
 pub enum AppCommand {
@@ -7,6 +7,7 @@ pub enum AppCommand {
     TabTo { index: usize },
     UiFocusNext,
     UiFocusPrev,
+    UiFocusSet { focus: UiFocus },
     UiToggleHelp,
     LoginGenerateQr,
     LoginToggleCookieInput,

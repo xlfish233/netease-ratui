@@ -16,7 +16,7 @@ pub(super) fn draw_search(f: &mut Frame, area: Rect, state: &SearchSnapshot, act
         .iter()
         .enumerate()
         .map(|(i, s)| {
-            let line = format!("{}  {} - {}  ({})", s.id, s.name, s.artists, i + 1);
+            let line = format!("{}. {}-{}({})", s.id, s.name, s.artists, i + 1);
             ListItem::new(Line::from(line))
         })
         .collect::<Vec<_>>();
@@ -25,7 +25,7 @@ pub(super) fn draw_search(f: &mut Frame, area: Rect, state: &SearchSnapshot, act
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("结果(↑↓选择)")
+                .title("结果[3](↑↓选择)")
                 .border_style(border),
         )
         .highlight_style(Style::default().fg(Color::Yellow));

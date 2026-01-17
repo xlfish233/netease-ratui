@@ -23,7 +23,7 @@ pub(super) fn draw_lyrics(
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("歌词")
+                    .title("歌词[3]")
                     .border_style(border),
             )
             .wrap(Wrap { trim: false });
@@ -65,7 +65,7 @@ pub(super) fn draw_lyrics(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("歌词（自动滚动）")
+                .title("歌词[3]（自动滚动）")
                 .border_style(border),
         )
         .scroll_padding(scroll_padding)

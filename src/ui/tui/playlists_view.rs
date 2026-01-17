@@ -26,7 +26,7 @@ pub(super) fn draw_playlist_list(
                 ""
             };
             ListItem::new(Line::from(format!(
-                "{}  {} ({}首){}",
+                "{}. {}({}首){}",
                 i + 1,
                 p.name,
                 p.track_count,
@@ -39,7 +39,7 @@ pub(super) fn draw_playlist_list(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("歌单")
+                .title("歌单[3]")
                 .border_style(border),
         )
         .highlight_style(Style::default().fg(Color::Yellow));
@@ -62,15 +62,13 @@ pub(super) fn draw_playlists(f: &mut Frame, area: Rect, state: &PlaylistsSnapsho
             .playlist_tracks
             .iter()
             .enumerate()
-            .map(|(i, s)| {
-                ListItem::new(Line::from(format!("{}  {} - {}", i + 1, s.name, s.artists)))
-            })
+            .map(|(i, s)| ListItem::new(Line::from(format!("{}. {}-{}", i + 1, s.name, s.artists))))
             .collect();
         let list = List::new(items)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("歌曲(↑↓选择 p 播放 b 返回)")
+                    .title("歌曲[3](↑↓选择 p 播放 b 返回)")
                     .border_style(border),
             )
             .highlight_style(Style::default().fg(Color::Yellow));
@@ -87,7 +85,7 @@ pub(super) fn draw_playlists(f: &mut Frame, area: Rect, state: &PlaylistsSnapsho
     } else {
         let selected = state.playlists.get(state.playlists_selected);
         let hint = if let Some(p) = selected {
-            format!("选中: {} ({}首)\n回车打开歌单", p.name, p.track_count)
+            format!("选中:{}({}首)\n回车打开歌单", p.name, p.track_count)
         } else {
             "暂无歌单，等待登录后加载".to_owned()
         };
@@ -100,7 +98,7 @@ pub(super) fn draw_playlists(f: &mut Frame, area: Rect, state: &PlaylistsSnapsho
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("歌单详情")
+                    .title("歌单详情[3]")
                     .border_style(border),
             )
             .wrap(Wrap { trim: false });

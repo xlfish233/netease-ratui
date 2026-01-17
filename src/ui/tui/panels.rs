@@ -65,7 +65,7 @@ pub(super) fn draw_left_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
                 } else {
                     " "
                 };
-                lines.push(Line::from(format!("{mark} {label}")));
+                lines.push(Line::from(format!("{mark}{label}")));
             }
             draw_left_info(
                 f,
@@ -97,7 +97,7 @@ fn draw_left_info(f: &mut Frame, area: Rect, title: &str, lines: Vec<Line>, acti
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(title)
+                .title(format!("{}[2]", title))
                 .style(style),
         )
         .style(style);
@@ -141,11 +141,11 @@ pub(super) fn draw_now_panel(f: &mut Frame, area: Rect, player: &PlayerSnapshot,
         crate::app::PlayMode::Shuffle => "随机",
     };
     let lines = vec![
-        Line::from(format!("Now: {now}")),
-        Line::from(format!("状态: {}", player.play_status)),
-        Line::from(format!("模式: {mode}")),
-        Line::from(format!("音量: {:.0}%", player.volume * 100.0)),
-        Line::from(format!("音质: {}", br_label(player.play_br))),
+        Line::from(format!("Now:{now}")),
+        Line::from(format!("状态:{}", player.play_status)),
+        Line::from(format!("模式:{mode}")),
+        Line::from(format!("音量:{:.0}%", player.volume * 100.0)),
+        Line::from(format!("音质:{}", br_label(player.play_br))),
     ];
 
     let style = focus_style(focus == UiFocus::BodyRight);
@@ -153,7 +153,7 @@ pub(super) fn draw_now_panel(f: &mut Frame, area: Rect, player: &PlayerSnapshot,
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Now")
+                .title("Now[4]")
                 .style(style),
         )
         .style(style);
@@ -281,7 +281,7 @@ pub(super) fn draw_context_panel(f: &mut Frame, area: Rect, app: &AppSnapshot) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(title)
+                .title(format!("{}[4]", title))
                 .style(style),
         )
         .style(style);
@@ -299,14 +299,14 @@ fn queue_preview_lines(app: &AppSnapshot, max_lines: usize) -> Vec<Line<'_>> {
     let total = app.queue.len();
     let start = app.queue_pos.unwrap_or(0).min(total.saturating_sub(1));
     let mut lines = Vec::with_capacity(max_lines);
-    lines.push(Line::from(format!("队列: {}/{}", start + 1, total)));
+    lines.push(Line::from(format!("队列:{}/{}", start + 1, total)));
     let max_songs = max_lines.saturating_sub(1);
     for (i, song) in app.queue.iter().skip(start).take(max_songs).enumerate() {
         let idx = start + i + 1;
         let marker = if i == 0 { ">" } else { " " };
         lines.push(Line::from(format!(
-            "{marker} {idx}. {} - {}",
-            song.name, song.artists
+            "{marker}{}.{}-{}",
+            idx, song.name, song.artists
         )));
     }
     lines
