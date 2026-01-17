@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+- **性能优化**：优化歌单播放队列的克隆开销
+  - 重构 `PlayQueue::set_songs()` 返回旧数据，允许调用方转移所有权
+  - 优化预加载歌单克隆：使用 `mem::take` 转移所有权，避免克隆
+  - 优化播放选中歌曲：使用 `mem::take` 转移所有权
+  - 优化歌单加载完成：使用 `mem::take` 转移所有权
+  - 为 `AppSnapshot::from_app()` 添加详细的架构文档说明为何需要克隆
+  - 为预加载缓存克隆添加 TODO 注释
+  - **性能提升**：每次操作节省 ~20-40KB 内存分配（200 首歌）
+
+- **测试质量提升**：改进测试代码质量
+  - 修复 `tests/player_reload.rs` 中的无意义断言（`assert!(true)`）
+  - 重写测试以验证具体的字段值和行为
+  - 使用 `matches!` 宏简化测试代码
+  - 删除文档注释后的空行
+  - 修复所有 Clippy 警告（`empty_line_after_doc_comments`、`assertions_on_constants`）
+
+- **代码质量**：优化搜索功能中的不必要克隆
+  - 删除 `features/search/mod.rs` 中的 `title.clone()`
+  - `title` 已拥有所有权，无需再次克隆
+
+- **文档完善**：为 `expect()` 调用添加详细文档说明
+  - 为 `audio_worker/engine.rs` 的 tokio runtime 创建添加 24 行注释
+  - 为 `audio_worker/player.rs` 的线程创建添加 21 行注释
+  - 为 `audio_worker/transfer.rs` 的 tokio runtime 创建添加 23 行注释
+  - 说明为何在这些位置使用 `expect()` 是安全的
+  - 解释架构限制、实际风险和设计权衡
+  - 提供未来改进方向
+  - 创建完整的错误处理策略文档（`docs/error_handling.md`）
+
+- **文档新增**：
+  - 新增 `docs/error_handling.md` - 完整的错误处理策略文档
+  - 说明分层错误处理（UI、Core、Worker）
+  - 记录错误类型体系和最佳实践
+  - 为未来的错误处理改进提供方向
+
+## v0.0.7（2026-01-17）
+
 - **修复**：修复重启应用后按空格键无响应的问题
   - 在 `AudioEvent` 中新增 `NeedsReload` 事件类型
   - `AudioEngine::TogglePause` 检测到 sink 为 None 时自动发送 `NeedsReload` 事件
