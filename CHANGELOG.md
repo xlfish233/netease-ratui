@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.0.8（2026-01-18）
+
 - **UI 修复**：修复打开歌单后歌单列表消失的问题
   - `AppSnapshot::from_app()` 中的 `playlists` 字段现在始终克隆歌单列表
   - 之前在 `PlaylistMode::Tracks` 模式下返回空数组，导致左侧歌单列表消失
@@ -64,6 +66,12 @@
   - 说明分层错误处理（UI、Core、Worker）
   - 记录错误类型体系和最佳实践
   - 为未来的错误处理改进提供方向
+
+- **UI 改进**：设置页面左侧面板支持 Enter 键跳转到中间面板
+  - 左侧分组面板按 Enter 或 Tab 都可跳转到中间设置面板
+  - 移除未使用的 `SettingsMoveUp` 和 `SettingsMoveDown` 命令变体
+  - 更新 README 文档说明设置页快捷键
+  - 修改文件：`src/ui/tui/keyboard.rs`、`src/messages/app.rs`、`src/core/reducer/settings.rs`、`src/features/settings/mod.rs`
 
 ## v0.0.7（2026-01-17）
 
