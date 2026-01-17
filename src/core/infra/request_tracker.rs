@@ -82,8 +82,8 @@ impl<K: Eq + Hash> RequestTracker<K> {
 /// 用于标识不同类型的请求，避免使用字符串 key。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RequestKey {
-    /// 搜索请求
-    Search,
+    /// 统一音源：搜索请求
+    SourceSearch,
     /// 登录二维码 key 请求
     LoginQrKey,
     /// 登录二维码轮询请求
@@ -100,6 +100,8 @@ pub enum RequestKey {
     PlaylistTracks,
     /// 播放链接请求
     SongUrl,
+    /// 统一音源：可播放资源解析请求
+    SourcePlayable,
     /// 歌词请求
     Lyric,
 }
@@ -234,13 +236,13 @@ mod tests {
         let mut tracker: RequestTracker<RequestKey> = RequestTracker::new();
         let mut id_counter = 1u64;
 
-        let req_id = tracker.issue(RequestKey::Search, || {
+        let req_id = tracker.issue(RequestKey::SourceSearch, || {
             let id = id_counter;
             id_counter += 1;
             id
         });
 
-        assert!(tracker.accept(&RequestKey::Search, req_id));
+        assert!(tracker.accept(&RequestKey::SourceSearch, req_id));
     }
 
     #[test]

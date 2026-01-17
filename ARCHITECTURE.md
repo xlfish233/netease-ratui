@@ -15,8 +15,10 @@
 flowchart LR
   UI[UI (ratatui)] -->|AppCommand| Core[core::reducer]
   Core -->|AppEvent::State| UI
-  Core -->|NeteaseCommand| NeteaseActor
-  NeteaseActor -->|NeteaseEvent| Core
+  Core -->|SourceCommand / NeteaseCommand| SourceHub[src::source::hub]
+  SourceHub -->|NeteaseCommand| NeteaseActor
+  NeteaseActor -->|NeteaseEvent| SourceHub
+  SourceHub -->|NeteaseEvent / SourceEvent| Core
   Core -->|AudioCommand| AudioWorker
   AudioWorker -->|AudioEvent| Core
 ```
@@ -38,7 +40,7 @@ flowchart LR
 ### Features（`src/features`）
 
 - 按领域划分：login/logout/lyrics/player/playlists/search/settings
-- 处理 `AppCommand` / `NeteaseEvent` / `AudioEvent`
+- 处理 `AppCommand` / `NeteaseEvent` / `SourceEvent` / `AudioEvent`
 - 通过 `CoreEffects` 下发后续动作
 
 ### 网关与音频
@@ -109,8 +111,8 @@ flowchart LR
 - `src/core`：reducer、effects、infra
 - `src/features`：业务模块
 - `src/player_state`：播放状态持久化
-- `src/domain/ids.rs`：结构化资源标识（`SourceId`/`TrackKey`），为多音源扩展做准备
-- `src/messages/source.rs` / `src/source/hub.rs`：音源统一消息与路由（准备中，用于本地音源/多音源扩展）
+- `src/domain/ids.rs`：结构化资源标识（`SourceId`/`TrackKey`），为多音源扩展提供稳定 ID
+- `src/messages/source.rs` / `src/source/hub.rs`：音源统一消息与路由（已接入 core；搜索链路已迁移到 Source API）
 - `src/netease`：API 与网关
 - `src/audio_worker`：播放与缓存
 - `src/app` / `src/domain`：状态与模型
@@ -124,6 +126,8 @@ flowchart LR
 3. `NeteaseActor` 拉取播放链接，回传 `NeteaseEvent`
 4. `features::player` 组装 `AudioCommand::PlayTrack`
 5. `AudioWorker` 缓存/播放并回传 `AudioEvent` 更新 UI
+
+> 备注：搜索播放链路已通过 `SourceCommand/SourceEvent` 走 `SourceHub`（用于后续本地音源/多音源扩展）。
 
 ### 播放状态保存与恢复
 

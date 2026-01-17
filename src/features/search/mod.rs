@@ -4,8 +4,9 @@
     effects::CoreEffects,
     infra::{RequestKey, RequestTracker},
     messages::AppCommand,
-    netease::NeteaseCommand,
 };
+use crate::domain::ids::{SourceId, TrackKey};
+use crate::messages::source::{QualityHint, SourceCommand, SourceEvent, TrackSummary};
 use crate::core::utils;
 
 /// 处理搜索相关的 AppCommand
@@ -31,15 +32,16 @@ pub async fn handle_search_command(
             app.search_results.clear();
             app.search_selected = 0;
             effects.emit_state(app);
-            let id = request_tracker.issue(RequestKey::Search, || utils::next_id(req_id));
-            effects.send_netease_hi_warn(
-                NeteaseCommand::CloudSearchSongs {
+            let id = request_tracker.issue(RequestKey::SourceSearch, || utils::next_id(req_id));
+            effects.send_source_warn(
+                SourceCommand::SearchTracks {
                     req_id: id,
+                    source: SourceId::Netease,
                     keywords: q,
                     limit: 30,
                     offset: 0,
                 },
-                "NeteaseActor 通道已关闭：CloudSearchSongs 发送失败",
+                "SourceHub 通道已关闭：SearchTracks 发送失败",
             );
         }
         AppCommand::SearchInputBackspace => {
@@ -70,17 +72,20 @@ pub async fn handle_search_command(
                 let title = format!("{} - {}", s.name, s.artists);
                 effects.emit_state(app);
                 song_request_titles.clear();
-                let id = request_tracker.issue(RequestKey::SongUrl, || utils::next_id(req_id));
+                let id = request_tracker.issue(RequestKey::SourcePlayable, || utils::next_id(req_id));
                 song_request_titles.insert(s.id, title);
 
                 // 先停止当前播放
                 effects.send_audio(AudioCommand::Stop);
 
-                effects.send_netease_hi(NeteaseCommand::SongUrl {
-                    req_id: id,
-                    id: s.id,
-                    br: app.play_br,
-                });
+                effects.send_source_warn(
+                    SourceCommand::ResolvePlayable {
+                        req_id: id,
+                        track: TrackKey::netease(s.id),
+                        quality: Some(QualityHint::Bitrate(app.play_br)),
+                    },
+                    "SourceHub 通道已关闭：ResolvePlayable 发送失败",
+                );
             }
         }
         _ => return false,
@@ -88,25 +93,58 @@ pub async fn handle_search_command(
     true
 }
 
-/// 处理搜索相关的 NeteaseEvent::SearchSongs
+/// 处理搜索相关的 SourceEvent::SearchTracks
 /// req_id: 请求ID，用于匹配pending请求
-/// songs: 搜索结果歌曲列表
+/// tracks: 搜索结果曲目列表
 /// 返回 true 表示事件已处理，false 表示未处理（req_id不匹配/过期）
-pub async fn handle_search_songs_event(
+pub async fn handle_search_tracks_event(
     req_id: u64,
-    songs: &[crate::domain::model::Song],
+    tracks: &[TrackSummary],
     app: &mut App,
     request_tracker: &mut RequestTracker<RequestKey>,
     effects: &mut CoreEffects,
 ) -> bool {
-    if !request_tracker.accept(&RequestKey::Search, req_id) {
+    if !request_tracker.accept(&RequestKey::SourceSearch, req_id) {
         // 过期请求，丢弃
-        tracing::debug!(req_id, "搜索响应过期，丢弃");
+        tracing::trace!(req_id, "搜索响应过期，丢弃（Source）");
         return false;
     }
-    app.search_results = songs.to_vec();
+    app.search_results = tracks
+        .iter()
+        .filter_map(|t| {
+            let song_id = t.key.id.as_netease_song_id()?;
+            Some(crate::domain::model::Song {
+                id: song_id,
+                name: t.title.clone(),
+                artists: t.artists.clone(),
+            })
+        })
+        .collect();
     app.search_selected = 0;
     app.search_status = format!("结果: {} 首", app.search_results.len());
+    effects.emit_state(app);
+    true
+}
+
+pub async fn handle_search_error_event(
+    req_id: u64,
+    evt: &SourceEvent,
+    app: &mut App,
+    request_tracker: &mut RequestTracker<RequestKey>,
+    effects: &mut CoreEffects,
+) -> bool {
+    let SourceEvent::Error {
+        req_id: _,
+        track: _,
+        message,
+    } = evt
+    else {
+        return false;
+    };
+    if !request_tracker.accept(&RequestKey::SourceSearch, req_id) {
+        return false;
+    }
+    app.search_status = format!("搜索失败: {message}");
     effects.emit_state(app);
     true
 }

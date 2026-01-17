@@ -2,6 +2,7 @@ use super::{CoreState, UiAction};
 use crate::core::effects::CoreEffects;
 use crate::features::search as search_handlers;
 use crate::messages::app::AppCommand;
+use crate::messages::source::SourceEvent;
 use crate::netease::actor::NeteaseEvent;
 
 pub async fn handle_ui(
@@ -34,14 +35,33 @@ pub async fn handle_ui(
 
 pub async fn handle_netease_event(
     evt: &NeteaseEvent,
+    _state: &mut CoreState,
+    _effects: &mut CoreEffects,
+) -> bool {
+    let _ = evt;
+    false
+}
+
+pub async fn handle_source_event(
+    evt: &SourceEvent,
     state: &mut CoreState,
     effects: &mut CoreEffects,
 ) -> bool {
     match evt {
-        NeteaseEvent::SearchSongs { req_id, songs } => {
-            search_handlers::handle_search_songs_event(
+        SourceEvent::SearchTracks { req_id, tracks } => {
+            search_handlers::handle_search_tracks_event(
                 *req_id,
-                songs,
+                tracks,
+                &mut state.app,
+                &mut state.request_tracker,
+                effects,
+            )
+            .await
+        }
+        SourceEvent::Error { req_id, .. } => {
+            search_handlers::handle_search_error_event(
+                *req_id,
+                evt,
                 &mut state.app,
                 &mut state.request_tracker,
                 effects,
@@ -57,9 +77,10 @@ mod tests {
     use super::handle_ui;
     use crate::core::effects::CoreEffect;
     use crate::core::reducer::{CoreState, UiAction};
-    use crate::domain::model::Song;
+    use crate::domain::ids::TrackKey;
     use crate::messages::app::AppCommand;
-    use crate::netease::actor::{NeteaseCommand, NeteaseEvent};
+    use crate::messages::source::SourceCommand;
+    use crate::messages::source::{SourceEvent, TrackSummary};
 
     #[tokio::test]
     async fn search_submit_emits_request() {
@@ -75,10 +96,7 @@ mod tests {
         assert!(effects.actions.iter().any(|effect| {
             matches!(
                 effect,
-                CoreEffect::SendNeteaseHi {
-                    cmd: NeteaseCommand::CloudSearchSongs { .. },
-                    ..
-                }
+                CoreEffect::SendSource { cmd: SourceCommand::SearchTracks { .. }, .. }
             )
         }));
     }
@@ -94,30 +112,28 @@ mod tests {
         state.app.search_input = "second".to_owned();
         let _ = handle_ui(&AppCommand::SearchSubmit, &mut state, &mut effects).await;
 
-        let stale_songs = vec![Song {
-            id: 1,
-            name: "old".to_owned(),
-            artists: "a".to_owned(),
-        }];
-        let stale_evt = NeteaseEvent::SearchSongs {
+        let stale_evt = SourceEvent::SearchTracks {
             req_id: 1,
-            songs: stale_songs.clone(),
+            tracks: vec![TrackSummary {
+                key: TrackKey::netease(1),
+                title: "old".to_owned(),
+                artists: "a".to_owned(),
+            }],
         };
-        let handled_stale = super::handle_netease_event(&stale_evt, &mut state, &mut effects).await;
+        let handled_stale = super::handle_source_event(&stale_evt, &mut state, &mut effects).await;
         assert!(!handled_stale);
         assert!(state.app.search_results.is_empty());
         assert_eq!(state.app.search_status, "搜索中...");
 
-        let fresh_songs = vec![Song {
-            id: 2,
-            name: "new".to_owned(),
-            artists: "b".to_owned(),
-        }];
-        let fresh_evt = NeteaseEvent::SearchSongs {
+        let fresh_evt = SourceEvent::SearchTracks {
             req_id: 2,
-            songs: fresh_songs.clone(),
+            tracks: vec![TrackSummary {
+                key: TrackKey::netease(2),
+                title: "new".to_owned(),
+                artists: "b".to_owned(),
+            }],
         };
-        let handled_fresh = super::handle_netease_event(&fresh_evt, &mut state, &mut effects).await;
+        let handled_fresh = super::handle_source_event(&fresh_evt, &mut state, &mut effects).await;
 
         assert!(handled_fresh);
         assert_eq!(state.app.search_results.len(), 1);

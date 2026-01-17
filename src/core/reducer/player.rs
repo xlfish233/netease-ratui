@@ -4,6 +4,7 @@ use crate::core::effects::CoreEffects;
 use crate::core::infra::RequestKey;
 use crate::features::player;
 use crate::messages::app::AppCommand;
+use crate::messages::source::{Playable, SourceEvent};
 use crate::netease::actor::NeteaseEvent;
 
 pub async fn handle_ui(
@@ -112,6 +113,77 @@ pub async fn handle_netease_event(
     }
 }
 
+pub async fn handle_source_event(
+    evt: &SourceEvent,
+    state: &mut CoreState,
+    effects: &mut CoreEffects,
+) -> bool {
+    match evt {
+        SourceEvent::PlayableResolved {
+            req_id,
+            track,
+            playable,
+        } => {
+            if !state
+                .request_tracker
+                .accept(&RequestKey::SourcePlayable, *req_id)
+            {
+                return false;
+            }
+
+            let Some(song_id) = track.id.as_netease_song_id() else {
+                state.app.play_status = "暂不支持该音源的播放".to_owned();
+                effects.emit_state(&state.app);
+                return true;
+            };
+
+            let Playable::RemoteUrl { url } = playable else {
+                state.app.play_status = "暂不支持本地音频播放".to_owned();
+                effects.emit_state(&state.app);
+                return true;
+            };
+
+            if let Some(title) = state.song_request_titles.remove(&song_id) {
+                state.app.play_status = "开始播放...".to_owned();
+                state.app.play_song_id = Some(song_id);
+                effects.emit_state(&state.app);
+                effects.send_audio_warn(
+                    AudioCommand::PlayTrack {
+                        id: song_id,
+                        br: state.app.play_br,
+                        url: url.clone(),
+                        title,
+                    },
+                    "AudioWorker 通道已关闭：PlayTrack 发送失败",
+                );
+            }
+
+            true
+        }
+        SourceEvent::Error {
+            req_id,
+            track,
+            message,
+        } => {
+            if !state
+                .request_tracker
+                .accept(&RequestKey::SourcePlayable, *req_id)
+            {
+                return false;
+            }
+
+            let song_id = track.as_ref().and_then(|t| t.id.as_netease_song_id());
+            if let Some(song_id) = song_id {
+                state.song_request_titles.remove(&song_id);
+            }
+            state.app.play_status = format!("播放失败: {message}");
+            effects.emit_state(&state.app);
+            true
+        }
+        _ => false,
+    }
+}
+
 pub async fn handle_audio_event(evt: AudioEvent, state: &mut CoreState, effects: &mut CoreEffects) {
     let is_stopped = matches!(evt, AudioEvent::Stopped);
 
@@ -137,7 +209,9 @@ mod tests {
     use crate::core::effects::CoreEffect;
     use crate::core::infra::RequestKey;
     use crate::core::reducer::CoreState;
+    use crate::domain::ids::TrackKey;
     use crate::domain::model::SongUrl;
+    use crate::messages::source::{Playable, SourceEvent};
     use crate::netease::actor::NeteaseEvent;
 
     #[tokio::test]
@@ -217,5 +291,45 @@ mod tests {
         assert_eq!(state.app.play_song_id, Some(1));
         assert_eq!(state.app.play_status, "开始播放...");
         assert!(!state.song_request_titles.contains_key(&1));
+    }
+
+    #[tokio::test]
+    async fn source_playable_resolved_starts_playback() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut state = CoreState::new(dir.path());
+        let mut effects = crate::core::effects::CoreEffects::default();
+
+        let req_id = 9;
+        state.request_tracker.issue(RequestKey::SourcePlayable, || req_id);
+        state
+            .song_request_titles
+            .insert(7, "artist - title".to_owned());
+
+        let handled = super::handle_source_event(
+            &SourceEvent::PlayableResolved {
+                req_id,
+                track: TrackKey::netease(7),
+                playable: Playable::RemoteUrl {
+                    url: "http://example.com".to_owned(),
+                },
+            },
+            &mut state,
+            &mut effects,
+        )
+        .await;
+
+        assert!(handled);
+        assert_eq!(state.app.play_status, "开始播放...");
+        assert_eq!(state.app.play_song_id, Some(7));
+        assert!(!state.song_request_titles.contains_key(&7));
+        assert!(effects.actions.iter().any(|effect| {
+            matches!(
+                effect,
+                CoreEffect::SendAudio {
+                    cmd: AudioCommand::PlayTrack { id: 7, .. },
+                    ..
+                }
+            )
+        }));
     }
 }

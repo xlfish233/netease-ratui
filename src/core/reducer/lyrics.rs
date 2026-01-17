@@ -2,6 +2,7 @@ use super::{CoreState, UiAction};
 use crate::core::effects::CoreEffects;
 use crate::features::lyrics as lyrics_handlers;
 use crate::messages::app::AppCommand;
+use crate::messages::source::SourceEvent;
 use crate::netease::actor::NeteaseEvent;
 
 pub async fn handle_ui(
@@ -46,6 +47,34 @@ pub async fn handle_netease_event(
                 *req_id,
                 *song_id,
                 lyrics.clone(),
+                &mut state.app,
+                &mut state.request_tracker,
+                effects,
+            )
+            .await
+        }
+        _ => false,
+    }
+}
+
+pub async fn handle_source_event(
+    evt: &SourceEvent,
+    state: &mut CoreState,
+    effects: &mut CoreEffects,
+) -> bool {
+    match evt {
+        SourceEvent::Lyric {
+            req_id,
+            track,
+            lrc,
+        } => {
+            let Some(song_id) = track.id.as_netease_song_id() else {
+                return false;
+            };
+            lyrics_handlers::handle_lyric_event(
+                *req_id,
+                song_id,
+                lrc.clone(),
                 &mut state.app,
                 &mut state.request_tracker,
                 effects,

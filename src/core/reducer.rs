@@ -1,6 +1,7 @@
 use crate::app::App;
 use crate::audio_worker::{AudioBackend, AudioCommand, AudioEvent, AudioSettings};
 use crate::messages::app::{AppCommand, AppEvent};
+use crate::messages::source::SourceEvent;
 use crate::netease::NeteaseClientConfig;
 use crate::netease::actor::NeteaseEvent;
 use crate::settings as app_settings;
@@ -41,6 +42,7 @@ fn playback_elapsed_ms_for_log(app: &crate::app::App) -> u64 {
 enum CoreMsg {
     Ui(AppCommand),
     Netease(NeteaseEvent),
+    Source(SourceEvent),
     Audio(AudioEvent),
     QrPoll,
 }
@@ -152,6 +154,17 @@ async fn reduce(
             }
             settings::handle_netease_event(&evt, state, effects).await;
         }
+        CoreMsg::Source(evt) => {
+            if search::handle_source_event(&evt, state, effects).await {
+                return false;
+            }
+            if player::handle_source_event(&evt, state, effects).await {
+                return false;
+            }
+            if lyrics::handle_source_event(&evt, state, effects).await {
+                return false;
+            }
+        }
         CoreMsg::Audio(evt) => {
             player::handle_audio_event(evt, state, effects).await;
         }
@@ -172,8 +185,13 @@ pub fn spawn_app_actor(
     // 先加载 settings，以便创建配置化的 audio worker
     let settings = app_settings::load_settings(&data_dir);
 
-    let (tx_netease_hi, tx_netease_lo, mut rx_netease) =
-        crate::netease::actor::spawn_netease_actor(cfg);
+    let crate::source::hub::SourceHubHandles {
+        tx_source,
+        mut rx_source,
+        tx_netease_hi,
+        tx_netease_lo,
+        mut rx_netease,
+    } = crate::source::hub::spawn_source_hub(cfg);
 
     // Audio worker is now tokio-native, no need for std mpsc bridge
     let transfer_config = crate::audio_worker::TransferConfig {
@@ -270,6 +288,7 @@ pub fn spawn_app_actor(
         let mut state_save_timer = tokio::time::interval(Duration::from_secs(30));
         state_save_timer.tick().await; // 立即消耗第一个周期
         let dispatch = CoreDispatch {
+            tx_source: &tx_source,
             tx_netease_hi: &tx_netease_hi,
             tx_netease_lo: &tx_netease_lo,
             tx_audio: &tx_audio,
@@ -311,6 +330,7 @@ pub fn spawn_app_actor(
                 }
                 Some(cmd) = rx_cmd.recv() => CoreMsg::Ui(cmd),
                 Some(evt) = rx_netease.recv() => CoreMsg::Netease(evt),
+                Some(evt) = rx_source.recv() => CoreMsg::Source(evt),
                 Some(evt) = rx_audio_evt.recv() => CoreMsg::Audio(evt),
             };
 

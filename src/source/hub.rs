@@ -6,30 +6,48 @@ use crate::netease::actor::{NeteaseCommand, NeteaseEvent};
 use crate::netease::NeteaseClientConfig;
 use tokio::sync::mpsc;
 
-pub fn spawn_source_hub(
-    cfg: NeteaseClientConfig,
-) -> (mpsc::Sender<SourceCommand>, mpsc::Receiver<SourceEvent>) {
-    let (tx_cmd, mut rx_cmd) = mpsc::channel::<SourceCommand>(64);
-    let (tx_evt, rx_evt) = mpsc::channel::<SourceEvent>(64);
+pub struct SourceHubHandles {
+    pub tx_source: mpsc::Sender<SourceCommand>,
+    pub rx_source: mpsc::Receiver<SourceEvent>,
+    pub tx_netease_hi: mpsc::Sender<NeteaseCommand>,
+    pub tx_netease_lo: mpsc::Sender<NeteaseCommand>,
+    pub rx_netease: mpsc::Receiver<NeteaseEvent>,
+}
 
-    let (tx_netease_hi, _tx_netease_lo, mut rx_netease_evt) =
+/// 统一音源 Hub（当前只集成 Netease，但对 core 暴露双接口）：
+/// - `SourceCommand/SourceEvent`：面向“可插拔音源”的统一接口
+/// - `NeteaseCommand/NeteaseEvent`：保留旧接口，便于逐步迁移
+pub fn spawn_source_hub(cfg: NeteaseClientConfig) -> SourceHubHandles {
+    let (tx_source_cmd, mut rx_source_cmd) = mpsc::channel::<SourceCommand>(64);
+    let (tx_source_evt, rx_source_evt) = mpsc::channel::<SourceEvent>(64);
+
+    let (tx_netease_hi, tx_netease_lo, mut rx_netease_evt) =
         crate::netease::actor::spawn_netease_actor(cfg);
+    let (tx_netease_evt_out, rx_netease_evt_out) = mpsc::channel::<NeteaseEvent>(64);
+    let tx_netease_hi_for_task = tx_netease_hi.clone();
 
     tokio::spawn(async move {
         loop {
             tokio::select! {
-                Some(cmd) = rx_cmd.recv() => {
-                    handle_source_command(&tx_netease_hi, &tx_evt, cmd).await;
+                Some(cmd) = rx_source_cmd.recv() => {
+                    handle_source_command(&tx_netease_hi_for_task, &tx_source_evt, cmd).await;
                 }
                 Some(evt) = rx_netease_evt.recv() => {
-                    handle_netease_event(&tx_evt, evt).await;
+                    handle_netease_event(&tx_source_evt, &evt).await;
+                    let _ = tx_netease_evt_out.send(evt).await;
                 }
                 else => break,
             }
         }
     });
 
-    (tx_cmd, rx_evt)
+    SourceHubHandles {
+        tx_source: tx_source_cmd,
+        rx_source: rx_source_evt,
+        tx_netease_hi,
+        tx_netease_lo,
+        rx_netease: rx_netease_evt_out,
+    }
 }
 
 async fn handle_source_command(
@@ -145,28 +163,35 @@ async fn handle_source_command(
     }
 }
 
-async fn handle_netease_event(tx_evt: &mpsc::Sender<SourceEvent>, evt: NeteaseEvent) {
+async fn handle_netease_event(tx_evt: &mpsc::Sender<SourceEvent>, evt: &NeteaseEvent) {
     match evt {
         NeteaseEvent::ClientReady { req_id, .. } | NeteaseEvent::AnonymousReady { req_id } => {
-            let _ = tx_evt.send(SourceEvent::Ready { req_id }).await;
+            let _ = tx_evt.send(SourceEvent::Ready { req_id: *req_id }).await;
         }
         NeteaseEvent::SearchSongs { req_id, songs } => {
             let tracks = songs
-                .into_iter()
+                .iter()
                 .map(|s| TrackSummary {
                     key: TrackKey::netease(s.id),
-                    title: s.name,
-                    artists: s.artists,
+                    title: s.name.clone(),
+                    artists: s.artists.clone(),
                 })
                 .collect();
-            let _ = tx_evt.send(SourceEvent::SearchTracks { req_id, tracks }).await;
+            let _ = tx_evt
+                .send(SourceEvent::SearchTracks {
+                    req_id: *req_id,
+                    tracks,
+                })
+                .await;
         }
         NeteaseEvent::SongUrl { req_id, song_url } => {
             let track = TrackKey::netease(song_url.id);
-            let playable = Playable::RemoteUrl { url: song_url.url };
+            let playable = Playable::RemoteUrl {
+                url: song_url.url.clone(),
+            };
             let _ = tx_evt
                 .send(SourceEvent::PlayableResolved {
-                    req_id,
+                    req_id: *req_id,
                     track,
                     playable,
                 })
@@ -175,8 +200,8 @@ async fn handle_netease_event(tx_evt: &mpsc::Sender<SourceEvent>, evt: NeteaseEv
         NeteaseEvent::SongUrlUnavailable { req_id, id } => {
             let _ = tx_evt
                 .send(SourceEvent::Error {
-                    req_id,
-                    track: Some(TrackKey::netease(id)),
+                    req_id: *req_id,
+                    track: Some(TrackKey::netease(*id)),
                     message: "song url unavailable".to_owned(),
                 })
                 .await;
@@ -188,18 +213,18 @@ async fn handle_netease_event(tx_evt: &mpsc::Sender<SourceEvent>, evt: NeteaseEv
         } => {
             let _ = tx_evt
                 .send(SourceEvent::Lyric {
-                    req_id,
-                    track: TrackKey::netease(song_id),
-                    lrc: lyrics,
+                    req_id: *req_id,
+                    track: TrackKey::netease(*song_id),
+                    lrc: lyrics.clone(),
                 })
                 .await;
         }
         NeteaseEvent::Error { req_id, message } => {
             let _ = tx_evt
                 .send(SourceEvent::Error {
-                    req_id,
+                    req_id: *req_id,
                     track: None,
-                    message,
+                    message: message.to_string(),
                 })
                 .await;
         }
@@ -210,4 +235,3 @@ async fn handle_netease_event(tx_evt: &mpsc::Sender<SourceEvent>, evt: NeteaseEv
         }
     }
 }
-
