@@ -102,10 +102,7 @@ impl PlayerState {
     }
 }
 
-pub(super) fn seek_to_ms(
-    state: &mut PlayerState,
-    position_ms: u64,
-) -> Result<(), String> {
+pub(super) fn seek_to_ms(state: &mut PlayerState, position_ms: u64) -> Result<(), String> {
     let Some(path) = state.path() else {
         tracing::warn!(position_ms, "seek ignored: no active path");
         return Ok(());

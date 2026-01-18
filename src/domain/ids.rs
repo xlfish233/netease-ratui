@@ -73,7 +73,9 @@ pub struct FileFingerprint {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TrackId {
-    Netease { song_id: i64 },
+    Netease {
+        song_id: i64,
+    },
     /// Local track: identified by a library and a stable relative path.
     ///
     /// `fingerprint` is optional and can be used to detect "same rel_path but different file"
@@ -85,7 +87,10 @@ pub enum TrackId {
         fingerprint: Option<FileFingerprint>,
     },
     /// Forward-compatible/custom track id.
-    Opaque { namespace: String, id: String },
+    Opaque {
+        namespace: String,
+        id: String,
+    },
 }
 
 impl TrackId {

@@ -63,11 +63,7 @@ pub async fn handle_source_event(
     effects: &mut CoreEffects,
 ) -> bool {
     match evt {
-        SourceEvent::Lyric {
-            req_id,
-            track,
-            lrc,
-        } => {
+        SourceEvent::Lyric { req_id, track, lrc } => {
             let Some(song_id) = track.id.as_netease_song_id() else {
                 return false;
             };

@@ -448,7 +448,9 @@ pub fn load_player_state(data_dir: &Path) -> Result<AppStateSnapshot, PlayerStat
 }
 
 /// 异步加载播放器状态（避免在 async 运行时中执行阻塞 IO）
-pub async fn load_player_state_async(data_dir: &Path) -> Result<AppStateSnapshot, PlayerStateError> {
+pub async fn load_player_state_async(
+    data_dir: &Path,
+) -> Result<AppStateSnapshot, PlayerStateError> {
     let path = state_path(data_dir);
     let bytes = tokio::fs::read(&path).await.map_err(PlayerStateError::Io)?;
     let snapshot: AppStateSnapshot =
@@ -503,10 +505,7 @@ pub fn save_player_state(data_dir: &Path, app: &App) -> Result<(), PlayerStateEr
 /// 异步保存播放器状态（避免在 async 运行时中执行阻塞 IO）
 ///
 /// 为避免将 `&App` 跨任务借用，本函数接收 `App` 的所有权（调用方可传 `app.clone()`）。
-pub async fn save_player_state_async(
-    data_dir: &Path,
-    app: App,
-) -> Result<(), PlayerStateError> {
+pub async fn save_player_state_async(data_dir: &Path, app: App) -> Result<(), PlayerStateError> {
     tokio::fs::create_dir_all(data_dir)
         .await
         .map_err(PlayerStateError::Io)?;

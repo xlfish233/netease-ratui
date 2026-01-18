@@ -2,8 +2,8 @@
 
 use crate::domain::ids::{SourceId, TrackKey};
 use crate::messages::source::{Playable, QualityHint, SourceCommand, SourceEvent, TrackSummary};
-use crate::netease::actor::{NeteaseCommand, NeteaseEvent};
 use crate::netease::NeteaseClientConfig;
+use crate::netease::actor::{NeteaseCommand, NeteaseEvent};
 use tokio::sync::mpsc;
 
 pub struct SourceHubHandles {
@@ -154,10 +154,7 @@ async fn handle_source_command(
                 return;
             };
             let _ = tx_netease_hi
-                .send(NeteaseCommand::Lyric {
-                    req_id,
-                    song_id,
-                })
+                .send(NeteaseCommand::Lyric { req_id, song_id })
                 .await;
         }
     }

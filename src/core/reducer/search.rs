@@ -96,7 +96,10 @@ mod tests {
         assert!(effects.actions.iter().any(|effect| {
             matches!(
                 effect,
-                CoreEffect::SendSource { cmd: SourceCommand::SearchTracks { .. }, .. }
+                CoreEffect::SendSource {
+                    cmd: SourceCommand::SearchTracks { .. },
+                    ..
+                }
             )
         }));
     }

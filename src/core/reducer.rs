@@ -352,7 +352,9 @@ pub fn spawn_app_actor(
                     total_ms = ?state.app.play_total_ms,
                     "🎵 [StateSaveDbg] start"
                 );
-                match crate::player_state::save_player_state_async(&data_dir, state.app.clone()).await {
+                match crate::player_state::save_player_state_async(&data_dir, state.app.clone())
+                    .await
+                {
                     Ok(()) => {
                         tracing::trace!(save_kind = "quit", "🎵 [StateSaveDbg] done");
                         tracing::info!("播放状态已保存")

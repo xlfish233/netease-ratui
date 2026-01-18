@@ -300,7 +300,9 @@ mod tests {
         let mut effects = crate::core::effects::CoreEffects::default();
 
         let req_id = 9;
-        state.request_tracker.issue(RequestKey::SourcePlayable, || req_id);
+        state
+            .request_tracker
+            .issue(RequestKey::SourcePlayable, || req_id);
         state
             .song_request_titles
             .insert(7, "artist - title".to_owned());

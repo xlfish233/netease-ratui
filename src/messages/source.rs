@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use crate::domain::ids::TrackKey;
 use crate::domain::ids::SourceId;
+use crate::domain::ids::TrackKey;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -20,7 +20,10 @@ pub enum Playable {
 
 #[derive(Debug, Clone)]
 pub enum SourceCommand {
-    Init { req_id: u64, source: SourceId },
+    Init {
+        req_id: u64,
+        source: SourceId,
+    },
 
     SearchTracks {
         req_id: u64,
@@ -36,12 +39,17 @@ pub enum SourceCommand {
         quality: Option<QualityHint>,
     },
 
-    Lyric { req_id: u64, track: TrackKey },
+    Lyric {
+        req_id: u64,
+        track: TrackKey,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub enum SourceEvent {
-    Ready { req_id: u64 },
+    Ready {
+        req_id: u64,
+    },
 
     SearchTracks {
         req_id: u64,

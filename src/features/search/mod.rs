@@ -1,13 +1,13 @@
-﻿use crate::core::prelude::{
+use crate::core::prelude::{
     app::App,
     audio::AudioCommand,
     effects::CoreEffects,
     infra::{RequestKey, RequestTracker},
     messages::AppCommand,
 };
+use crate::core::utils;
 use crate::domain::ids::{SourceId, TrackKey};
 use crate::messages::source::{QualityHint, SourceCommand, SourceEvent, TrackSummary};
-use crate::core::utils;
 
 /// 处理搜索相关的 AppCommand
 /// 返回 true 表示命令已处理，false 表示未处理
@@ -72,7 +72,8 @@ pub async fn handle_search_command(
                 let title = format!("{} - {}", s.name, s.artists);
                 effects.emit_state(app);
                 song_request_titles.clear();
-                let id = request_tracker.issue(RequestKey::SourcePlayable, || utils::next_id(req_id));
+                let id =
+                    request_tracker.issue(RequestKey::SourcePlayable, || utils::next_id(req_id));
                 song_request_titles.insert(s.id, title);
 
                 // 先停止当前播放
