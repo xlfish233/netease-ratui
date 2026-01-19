@@ -128,24 +128,24 @@ pub async fn handle_search_tracks_event(
 }
 
 pub async fn handle_search_error_event(
-    req_id: u64,
+    _req_id: u64,
     evt: &SourceEvent,
     app: &mut App,
     request_tracker: &mut RequestTracker<RequestKey>,
     effects: &mut CoreEffects,
 ) -> bool {
     let SourceEvent::Error {
-        req_id: _,
+        req_id: evt_req_id,
         track: _,
-        message,
+        error,
     } = evt
     else {
         return false;
     };
-    if !request_tracker.accept(&RequestKey::SourceSearch, req_id) {
+    if !request_tracker.accept(&RequestKey::SourceSearch, *evt_req_id) {
         return false;
     }
-    app.search_status = format!("搜索失败: {message}");
+    app.search_status = format!("搜索失败: {error}");
     effects.emit_state(app);
     true
 }

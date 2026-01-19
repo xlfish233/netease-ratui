@@ -144,24 +144,27 @@ pub async fn handle_netease_event(
     effects: &mut CoreEffects,
 ) -> bool {
     match evt {
-        NeteaseEvent::Error { req_id, message } => {
+        NeteaseEvent::Error { req_id, error } => {
             if state.next_song_cache.on_error(*req_id) {
-                tracing::warn!(req_id, "预缓存失败: {}", message);
+                tracing::warn!(req_id, "预缓存失败: {}", error);
                 return true;
             }
 
-            if state.preload_mgr.on_error(&mut state.app, *req_id, message) {
+            if state
+                .preload_mgr
+                .on_error(&mut state.app, *req_id, &error.to_string())
+            {
                 playlists::refresh_playlist_list_status(&mut state.app);
                 effects.emit_state(&state.app);
                 return true;
             }
 
             match state.app.view {
-                View::Login => state.app.login_status = format!("错误: {message}"),
-                View::Playlists => state.app.playlists_status = format!("错误: {message}"),
-                View::Search => state.app.search_status = format!("错误: {message}"),
-                View::Lyrics => state.app.lyrics_status = format!("错误: {message}"),
-                View::Settings => state.app.settings_status = format!("错误: {message}"),
+                View::Login => state.app.login_status = format!("错误: {error}"),
+                View::Playlists => state.app.playlists_status = format!("错误: {error}"),
+                View::Search => state.app.search_status = format!("错误: {error}"),
+                View::Lyrics => state.app.lyrics_status = format!("错误: {error}"),
+                View::Settings => state.app.settings_status = format!("错误: {error}"),
             }
             effects.emit_state(&state.app);
             true

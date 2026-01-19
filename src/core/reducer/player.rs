@@ -163,7 +163,7 @@ pub async fn handle_source_event(
         SourceEvent::Error {
             req_id,
             track,
-            message,
+            error,
         } => {
             if !state
                 .request_tracker
@@ -176,7 +176,7 @@ pub async fn handle_source_event(
             if let Some(song_id) = song_id {
                 state.song_request_titles.remove(&song_id);
             }
-            state.app.play_status = format!("播放失败: {message}");
+            state.app.play_status = format!("播放失败: {error}");
             effects.emit_state(&state.app);
             true
         }

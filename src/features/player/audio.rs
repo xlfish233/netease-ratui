@@ -240,7 +240,7 @@ pub async fn handle_audio_event(
         AudioEvent::Error(e) => {
             app.play_status = format!("播放错误: {e}");
 
-            let retryable = e.contains("下载音频失败");
+            let retryable = e.is_retryable();
             if retryable {
                 app.play_error_count = app.play_error_count.saturating_add(1);
                 let current_song = app.play_queue.current();

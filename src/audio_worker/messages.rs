@@ -1,3 +1,5 @@
+use crate::error::MessageError;
+
 #[derive(Debug)]
 pub enum AudioCommand {
     PlayTrack {
@@ -40,7 +42,7 @@ pub enum AudioEvent {
         files: usize,
         bytes: u64,
     },
-    Error(String),
+    Error(MessageError),
     NeedsReload,
 }
 

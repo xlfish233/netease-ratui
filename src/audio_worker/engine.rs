@@ -1,3 +1,4 @@
+use crate::error::MessageError;
 use rodio::OutputStreamBuilder;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -187,7 +188,10 @@ impl AudioEngine {
                             self.pending_play = Some(p);
                             return;
                         }
-                        let _ = self.tx_evt.send(AudioEvent::Error(e)).await;
+                        let _ = self
+                            .tx_evt
+                            .send(AudioEvent::Error(MessageError::other(e)))
+                            .await;
                     }
                 }
             }
@@ -195,7 +199,10 @@ impl AudioEngine {
                 tracing::warn!(token, err = %message, "cache error");
                 if self.pending_play.as_ref().is_some_and(|p| p.token == token) {
                     self.pending_play = None;
-                    let _ = self.tx_evt.send(AudioEvent::Error(message)).await;
+                    let _ = self
+                        .tx_evt
+                        .send(AudioEvent::Error(MessageError::other(message)))
+                        .await;
                 }
             }
             TransferEvent::CacheCleared { files, bytes } => {
@@ -317,7 +324,10 @@ impl AudioEngine {
                 );
                 if let Err(e) = seek_to_ms(&mut self.state, ms) {
                     tracing::warn!(ms, err = %e, "Seek 失败");
-                    let _ = self.tx_evt.send(AudioEvent::Error(e)).await;
+                    let _ = self
+                        .tx_evt
+                        .send(AudioEvent::Error(MessageError::other(e)))
+                        .await;
                 } else {
                     self.ended_reported_play_id = None;
                 }
@@ -465,7 +475,9 @@ pub(super) fn spawn(
                 Err(e) => {
                     tracing::error!(err = %e, "初始化音频输出失败");
                     let _ = tx_evt
-                        .send(AudioEvent::Error(format!("初始化音频输出失败: {e}")))
+                        .send(AudioEvent::Error(MessageError::other(format!(
+                            "初始化音频输出失败: {e}"
+                        ))))
                         .await;
                     return;
                 }

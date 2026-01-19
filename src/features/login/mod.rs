@@ -1,4 +1,4 @@
-﻿use crate::core::prelude::{
+use crate::core::prelude::{
     app::App,
     effects::CoreEffects,
     infra::{RequestKey, RequestTracker},
@@ -163,7 +163,9 @@ pub async fn handle_login_event(
             } else {
                 app.login_status = format!("验证失败: {message}");
                 effects.emit_state(app);
-                effects.error(format!("Cookie 验证失败: {message}"));
+                effects.error(crate::error::MessageError::other(format!(
+                    "Cookie 验证失败: {message}"
+                )));
             }
             true
         }

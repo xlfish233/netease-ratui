@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::domain::ids::{SourceId, TrackKey};
+use crate::error::{ErrorContext, MessageError};
 use crate::messages::source::{Playable, QualityHint, SourceCommand, SourceEvent, TrackSummary};
 use crate::netease::NeteaseClientConfig;
 use crate::netease::actor::{NeteaseCommand, NeteaseEvent};
@@ -64,7 +65,10 @@ async fn handle_source_command(
                     .send(SourceEvent::Error {
                         req_id,
                         track: None,
-                        message: format!("Init not supported for source={source}"),
+                        error: MessageError::with_context(
+                            ErrorContext::Source,
+                            format!("Init not supported for source={source}"),
+                        ),
                     })
                     .await;
             }
@@ -90,7 +94,10 @@ async fn handle_source_command(
                     .send(SourceEvent::Error {
                         req_id,
                         track: None,
-                        message: format!("SearchTracks not supported for source={source}"),
+                        error: MessageError::with_context(
+                            ErrorContext::Search,
+                            format!("SearchTracks not supported for source={source}"),
+                        ),
                     })
                     .await;
             }
@@ -105,7 +112,10 @@ async fn handle_source_command(
                     .send(SourceEvent::Error {
                         req_id,
                         track: Some(track),
-                        message: "ResolvePlayable not supported for this source".to_owned(),
+                        error: MessageError::with_context(
+                            ErrorContext::Playback,
+                            "ResolvePlayable not supported for this source",
+                        ),
                     })
                     .await;
                 return;
@@ -115,7 +125,10 @@ async fn handle_source_command(
                     .send(SourceEvent::Error {
                         req_id,
                         track: Some(track),
-                        message: "invalid netease track id".to_owned(),
+                        error: MessageError::with_context(
+                            ErrorContext::Playback,
+                            "invalid netease track id",
+                        ),
                     })
                     .await;
                 return;
@@ -138,7 +151,10 @@ async fn handle_source_command(
                     .send(SourceEvent::Error {
                         req_id,
                         track: Some(track),
-                        message: "Lyric not supported for this source".to_owned(),
+                        error: MessageError::with_context(
+                            ErrorContext::Lyric,
+                            "Lyric not supported for this source",
+                        ),
                     })
                     .await;
                 return;
@@ -148,7 +164,10 @@ async fn handle_source_command(
                     .send(SourceEvent::Error {
                         req_id,
                         track: Some(track),
-                        message: "invalid netease track id".to_owned(),
+                        error: MessageError::with_context(
+                            ErrorContext::Lyric,
+                            "invalid netease track id",
+                        ),
                     })
                     .await;
                 return;
@@ -199,7 +218,10 @@ async fn handle_netease_event(tx_evt: &mpsc::Sender<SourceEvent>, evt: &NeteaseE
                 .send(SourceEvent::Error {
                     req_id: *req_id,
                     track: Some(TrackKey::netease(*id)),
-                    message: "song url unavailable".to_owned(),
+                    error: MessageError::with_context(
+                        ErrorContext::Playback,
+                        "song url unavailable",
+                    ),
                 })
                 .await;
         }
@@ -216,12 +238,12 @@ async fn handle_netease_event(tx_evt: &mpsc::Sender<SourceEvent>, evt: &NeteaseE
                 })
                 .await;
         }
-        NeteaseEvent::Error { req_id, message } => {
+        NeteaseEvent::Error { req_id, error } => {
             let _ = tx_evt
                 .send(SourceEvent::Error {
                     req_id: *req_id,
                     track: None,
-                    message: message.to_string(),
+                    error: error.clone(),
                 })
                 .await;
         }

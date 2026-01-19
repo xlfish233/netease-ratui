@@ -2,6 +2,7 @@
 
 use crate::domain::ids::SourceId;
 use crate::domain::ids::TrackKey;
+use crate::error::MessageError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -71,7 +72,7 @@ pub enum SourceEvent {
     Error {
         req_id: u64,
         track: Option<TrackKey>,
-        message: String,
+        error: MessageError,
     },
 }
 

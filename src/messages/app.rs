@@ -1,4 +1,5 @@
 use crate::app::{AppSnapshot, UiFocus};
+use crate::error::MessageError;
 
 #[derive(Debug)]
 pub enum AppCommand {
@@ -57,5 +58,5 @@ pub enum AppEvent {
     #[allow(dead_code)]
     Toast(String),
     #[allow(dead_code)]
-    Error(String),
+    Error(MessageError),
 }

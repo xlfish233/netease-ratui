@@ -50,7 +50,9 @@ fn test_audio_event_all_variants() {
             files: 10,
             bytes: 1024 * 1024,
         },
-        AudioEvent::Error("Test error".to_string()),
+        AudioEvent::Error(netease_ratui::error::MessageError::Other(
+            "Test error".to_string(),
+        )),
         AudioEvent::NeedsReload,
     ];
 
@@ -86,7 +88,8 @@ fn test_audio_event_all_variants() {
                 assert_eq!(bytes, 1024 * 1024);
             }
             AudioEvent::Error(err) => {
-                assert_eq!(err, "Test error");
+                assert!(matches!(err, netease_ratui::error::MessageError::Other(_)));
+                assert_eq!(err.to_string(), "Test error");
             }
             AudioEvent::NeedsReload => {
                 // NeedsReload 没有字段，只需匹配成功

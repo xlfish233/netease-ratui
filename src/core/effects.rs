@@ -1,6 +1,7 @@
 use crate::app::App;
 use crate::app::AppSnapshot;
 use crate::audio_worker::AudioCommand;
+use crate::error::MessageError;
 use crate::messages::app::AppEvent;
 use crate::messages::source::SourceCommand;
 use crate::netease::actor::NeteaseCommand;
@@ -15,7 +16,7 @@ pub struct CoreEffects {
 pub enum CoreEffect {
     EmitState(Box<AppSnapshot>),
     EmitToast(String),
-    EmitError(String),
+    EmitError(MessageError),
     SendSource {
         cmd: SourceCommand,
         warn: Option<&'static str>,
@@ -87,8 +88,8 @@ impl CoreEffects {
         self.actions.push(CoreEffect::EmitToast(message.into()));
     }
 
-    pub fn error(&mut self, message: impl Into<String>) {
-        self.actions.push(CoreEffect::EmitError(message.into()));
+    pub fn error(&mut self, err: MessageError) {
+        self.actions.push(CoreEffect::EmitError(err));
     }
 }
 
@@ -109,8 +110,8 @@ pub async fn run_effects(effects: CoreEffects, dispatch: &CoreDispatch<'_>) {
             CoreEffect::EmitToast(msg) => {
                 let _ = dispatch.tx_evt.send(AppEvent::Toast(msg)).await;
             }
-            CoreEffect::EmitError(msg) => {
-                let _ = dispatch.tx_evt.send(AppEvent::Error(msg)).await;
+            CoreEffect::EmitError(err) => {
+                let _ = dispatch.tx_evt.send(AppEvent::Error(err)).await;
             }
             CoreEffect::SendSource { cmd, warn } => {
                 if let Err(e) = dispatch.tx_source.send(cmd).await

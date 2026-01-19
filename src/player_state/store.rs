@@ -1,6 +1,7 @@
 use crate::app::state::{App, PlayMode};
 use crate::app::{PlayQueue, PlaylistPreload};
 use crate::domain::model::{Playlist, Song};
+use crate::error::PlayerStateError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -90,28 +91,6 @@ pub struct AppStateSnapshot {
     pub playlist_preloads: HashMap<i64, PlaylistPreload>,
     pub saved_at_epoch_ms: i64,
 }
-
-/// 错误类型
-#[derive(Debug)]
-pub enum PlayerStateError {
-    Io(std::io::Error),
-    Serde(serde_json::Error),
-    IncompatibleVersion { expected: u8, found: u8 },
-}
-
-impl std::fmt::Display for PlayerStateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PlayerStateError::Io(e) => write!(f, "IO 错误: {}", e),
-            PlayerStateError::Serde(e) => write!(f, "序列化错误: {}", e),
-            PlayerStateError::IncompatibleVersion { expected, found } => {
-                write!(f, "版本不兼容: 预期 {}, 找到 {}", expected, found)
-            }
-        }
-    }
-}
-
-impl std::error::Error for PlayerStateError {}
 
 /// 计算播放进度（毫秒）
 fn playback_elapsed_ms(app: &App) -> u64 {

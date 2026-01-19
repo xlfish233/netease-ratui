@@ -1,4 +1,5 @@
 use crate::domain::model::{Account, LoginStatus, LyricLine, Playlist, Song, SongUrl};
+use crate::error::MessageError;
 use crate::netease::models::convert::ModelError;
 use crate::netease::models::{convert, dto};
 use crate::netease::{NeteaseClient, NeteaseClientConfig};
@@ -6,19 +7,21 @@ use crate::netease::{NeteaseClient, NeteaseClientConfig};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-async fn emit_error<E: std::fmt::Display>(
+async fn emit_error(
     tx_evt: &mpsc::Sender<NeteaseEvent>,
     req_id: u64,
     ctx: &'static str,
-    err: E,
+    err: MessageError,
 ) {
     tracing::warn!(req_id, ctx, err = %err, "NeteaseActor 请求失败");
     let _ = tx_evt
-        .send(NeteaseEvent::Error {
-            req_id,
-            message: err.to_string(),
-        })
+        .send(NeteaseEvent::Error { req_id, error: err })
         .await;
+}
+
+// 辅助函数：将 ModelError 转换为 MessageError
+fn model_error_to_message(err: ModelError) -> MessageError {
+    MessageError::other(err.to_string())
 }
 
 #[derive(Debug)]
@@ -138,7 +141,7 @@ pub enum NeteaseEvent {
     },
     Error {
         req_id: u64,
-        message: String,
+        error: MessageError,
     },
 }
 
@@ -161,7 +164,7 @@ pub fn spawn_netease_actor(
                 let _ = tx_evt
                     .send(NeteaseEvent::Error {
                         req_id: 0,
-                        message: format!("初始化失败: {e}"),
+                        error: MessageError::from_netease(e),
                     })
                     .await;
                 return;
@@ -191,7 +194,7 @@ pub fn spawn_netease_actor(
                             let _ = tx_evt.send(NeteaseEvent::AnonymousReady { req_id }).await;
                         }
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "EnsureAnonymous", e).await;
+                            emit_error(&tx_evt, req_id, "EnsureAnonymous", e.into()).await;
                         }
                     }
                 }
@@ -204,12 +207,18 @@ pub fn spawn_netease_actor(
                                     .await;
                             }
                             Err(e) => {
-                                emit_error(&tx_evt, req_id, "LoginQrKey(parse)", e).await;
+                                emit_error(
+                                    &tx_evt,
+                                    req_id,
+                                    "LoginQrKey(parse)",
+                                    model_error_to_message(e),
+                                )
+                                .await;
                             }
                         }
                     }
                     Err(e) => {
-                        emit_error(&tx_evt, req_id, "LoginQrKey(request)", e).await;
+                        emit_error(&tx_evt, req_id, "LoginQrKey(request)", e.into()).await;
                     }
                 },
                 NeteaseCommand::LoginQrCheck { req_id, key } => {
@@ -222,11 +231,17 @@ pub fn spawn_netease_actor(
                                     .await;
                             }
                             Err(e) => {
-                                emit_error(&tx_evt, req_id, "LoginQrCheck(parse)", e).await;
+                                emit_error(
+                                    &tx_evt,
+                                    req_id,
+                                    "LoginQrCheck(parse)",
+                                    model_error_to_message(e),
+                                )
+                                .await;
                             }
                         },
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "LoginQrCheck(request)", e).await;
+                            emit_error(&tx_evt, req_id, "LoginQrCheck(request)", e.into()).await;
                         }
                     }
                 }
@@ -236,11 +251,17 @@ pub fn spawn_netease_actor(
                             let _ = tx_evt.send(NeteaseEvent::Account { req_id, account }).await;
                         }
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "UserAccount(parse)", e).await;
+                            emit_error(
+                                &tx_evt,
+                                req_id,
+                                "UserAccount(parse)",
+                                model_error_to_message(e),
+                            )
+                            .await;
                         }
                     },
                     Err(e) => {
-                        emit_error(&tx_evt, req_id, "UserAccount(request)", e).await;
+                        emit_error(&tx_evt, req_id, "UserAccount(request)", e.into()).await;
                     }
                 },
                 NeteaseCommand::UserPlaylists { req_id, uid } => {
@@ -253,11 +274,17 @@ pub fn spawn_netease_actor(
                                     .await;
                             }
                             Err(e) => {
-                                emit_error(&tx_evt, req_id, "UserPlaylists(parse)", e).await;
+                                emit_error(
+                                    &tx_evt,
+                                    req_id,
+                                    "UserPlaylists(parse)",
+                                    model_error_to_message(e),
+                                )
+                                .await;
                             }
                         },
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "UserPlaylists(request)", e).await;
+                            emit_error(&tx_evt, req_id, "UserPlaylists(request)", e.into()).await;
                         }
                     }
                 }
@@ -277,11 +304,17 @@ pub fn spawn_netease_actor(
                                 .await;
                         }
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "PlaylistDetail(parse)", e).await;
+                            emit_error(
+                                &tx_evt,
+                                req_id,
+                                "PlaylistDetail(parse)",
+                                model_error_to_message(e),
+                            )
+                            .await;
                         }
                     },
                     Err(e) => {
-                        emit_error(&tx_evt, req_id, "PlaylistDetail(request)", e).await;
+                        emit_error(&tx_evt, req_id, "PlaylistDetail(request)", e.into()).await;
                     }
                 },
                 NeteaseCommand::SongDetailByIds { req_id, ids } => {
@@ -292,11 +325,17 @@ pub fn spawn_netease_actor(
                                 let _ = tx_evt.send(NeteaseEvent::Songs { req_id, songs }).await;
                             }
                             Err(e) => {
-                                emit_error(&tx_evt, req_id, "SongDetailByIds(parse)", e).await;
+                                emit_error(
+                                    &tx_evt,
+                                    req_id,
+                                    "SongDetailByIds(parse)",
+                                    model_error_to_message(e),
+                                )
+                                .await;
                             }
                         },
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "SongDetailByIds(request)", e).await;
+                            emit_error(&tx_evt, req_id, "SongDetailByIds(request)", e.into()).await;
                         }
                     }
                 }
@@ -314,11 +353,17 @@ pub fn spawn_netease_actor(
                                 .await;
                         }
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "CloudSearchSongs(parse)", e).await;
+                            emit_error(
+                                &tx_evt,
+                                req_id,
+                                "CloudSearchSongs(parse)",
+                                model_error_to_message(e),
+                            )
+                            .await;
                         }
                     },
                     Err(e) => {
-                        emit_error(&tx_evt, req_id, "CloudSearchSongs(request)", e).await;
+                        emit_error(&tx_evt, req_id, "CloudSearchSongs(request)", e.into()).await;
                     }
                 },
                 NeteaseCommand::SongUrl { req_id, id, br } => {
@@ -342,12 +387,18 @@ pub fn spawn_netease_actor(
                                         .await;
                                 }
                                 Err(e) => {
-                                    emit_error(&tx_evt, req_id, "SongUrl(parse/convert)", e).await;
+                                    emit_error(
+                                        &tx_evt,
+                                        req_id,
+                                        "SongUrl(parse/convert)",
+                                        model_error_to_message(e),
+                                    )
+                                    .await;
                                 }
                             }
                         }
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "SongUrl(request)", e).await;
+                            emit_error(&tx_evt, req_id, "SongUrl(request)", e.into()).await;
                         }
                     }
                 }
@@ -364,11 +415,12 @@ pub fn spawn_netease_actor(
                                 .await;
                         }
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "Lyric(parse)", e).await;
+                            emit_error(&tx_evt, req_id, "Lyric(parse)", model_error_to_message(e))
+                                .await;
                         }
                     },
                     Err(e) => {
-                        emit_error(&tx_evt, req_id, "Lyric(request)", e).await;
+                        emit_error(&tx_evt, req_id, "Lyric(request)", e.into()).await;
                     }
                 },
                 NeteaseCommand::LogoutLocal { req_id } => match client.logout_local() {
@@ -376,7 +428,7 @@ pub fn spawn_netease_actor(
                         let _ = tx_evt.send(NeteaseEvent::LoggedOut { req_id }).await;
                     }
                     Err(e) => {
-                        emit_error(&tx_evt, req_id, "LogoutLocal", e).await;
+                        emit_error(&tx_evt, req_id, "LogoutLocal", e.into()).await;
                     }
                 },
                 NeteaseCommand::LoginSetCookie { req_id, music_u } => {
@@ -391,7 +443,7 @@ pub fn spawn_netease_actor(
                                 .await;
                         }
                         Err(e) => {
-                            emit_error(&tx_evt, req_id, "LoginSetCookie", e).await;
+                            emit_error(&tx_evt, req_id, "LoginSetCookie", e.into()).await;
                         }
                     }
                 }

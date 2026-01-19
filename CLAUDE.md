@@ -7,8 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo run                    # Run TUI (default)
 cargo test                   # Run all tests
+cargo test test_name         # Run single test
+cargo test -- --list         # List all tests
 cargo fmt --check            # Format check
 cargo clippy -- -D warnings  # Lint check
+make check                   # Run all checks (fmt + clippy + test)
 
 # Debug modes
 cargo run -- --no-audio                    # No audio output
@@ -27,9 +30,9 @@ UI (keyboard/mouse)
   → AppCommand
   → core::reducer
   → Features (login/search/playlists/player/lyrics/settings)
-  → CoreEffects (NeteaseCommand/AudioCommand)
-  → NeteaseActor/AudioWorker
-  → NeteaseEvent/AudioEvent
+  → CoreEffects (SourceCommand/NeteaseCommand/AudioCommand)
+  → SourceHub (unified source interface) → NeteaseActor
+  → SourceEvent/NeteaseEvent/AudioEvent
   → core::reducer
   → AppEvent::State(AppSnapshot)
   → UI render
@@ -41,9 +44,20 @@ UI (keyboard/mouse)
 - `src/core/reducer/` - Feature-specific reducers (login, search, playlists, player, lyrics, settings)
 - `src/core/infra/` - RequestTracker (prevents stale responses), PreloadManager, NextSongCacheManager
 - `src/features/` - Business logic by domain
+- `src/source/hub.rs` - Unified source interface, supports multi-source extension
+- `src/domain/ids.rs` - `SourceId`/`TrackKey` structured resource identifiers
+- `src/messages/source.rs` - SourceCommand/SourceEvent message definitions
 - `src/netease/` - API gateway with weapi/eapi/linuxapi encryption
 - `src/audio_worker/` - Audio playback on dedicated thread with LocalSet for !Send rodio resources
 - `src/ui/tui/` - TUI components and event handling
+
+### Multi-Source Architecture
+
+**Source Design Goals**:
+- `SourceId`: Identifies the source (Netease/Local/Other)
+- `TrackKey`: Unified track identifier containing source and id
+- `SourceCommand/SourceEvent`: Source-agnostic unified interface
+- Search flow migrated to Source API, playback flow still uses NeteaseCommand
 
 ### State Flow
 
@@ -54,6 +68,19 @@ UI (keyboard/mouse)
 ### Request Tracking
 
 Every cross-layer request carries `req_id`. `RequestTracker` only accepts responses matching the latest request ID, discarding stale responses.
+
+## Error Handling
+
+The project uses a unified error handling pattern with structured error types:
+
+- `src/error/mod.rs` - Central error module with all error types
+- `src/error/message.rs` - `MessageError` for cross-Actor message passing (cloneable, lightweight)
+- `src/error/app.rs` - `AppError` - Application-level errors
+- `src/error/netease.rs` - `NeteaseError` - NetEase API errors
+- `src/error/audio.rs` - `AudioError` - Audio playback errors
+- `src/error/player_state.rs` - `PlayerStateError` - State persistence errors
+
+**Key principle**: Use `MessageError` in event enums (AppEvent, SourceEvent, NeteaseEvent, AudioEvent) instead of `String` to preserve error context and enable structured error handling.
 
 ## Environment Variables
 
