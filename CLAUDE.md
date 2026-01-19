@@ -30,9 +30,9 @@ UI (keyboard/mouse)
   → AppCommand
   → core::reducer
   → Features (login/search/playlists/player/lyrics/settings)
-  → CoreEffects (SourceCommand/NeteaseCommand/AudioCommand)
-  → SourceHub (unified source interface) → NeteaseActor
-  → SourceEvent/NeteaseEvent/AudioEvent
+  → CoreEffects (NeteaseCommand/AudioCommand)
+  → NeteaseActor
+  → NeteaseEvent/AudioEvent
   → core::reducer
   → AppEvent::State(AppSnapshot)
   → UI render
@@ -44,20 +44,9 @@ UI (keyboard/mouse)
 - `src/core/reducer/` - Feature-specific reducers (login, search, playlists, player, lyrics, settings)
 - `src/core/infra/` - RequestTracker (prevents stale responses), PreloadManager, NextSongCacheManager
 - `src/features/` - Business logic by domain
-- `src/source/hub.rs` - Unified source interface, supports multi-source extension
-- `src/domain/ids.rs` - `SourceId`/`TrackKey` structured resource identifiers
-- `src/messages/source.rs` - SourceCommand/SourceEvent message definitions
 - `src/netease/` - API gateway with weapi/eapi/linuxapi encryption
 - `src/audio_worker/` - Audio playback on dedicated thread with LocalSet for !Send rodio resources
 - `src/ui/tui/` - TUI components and event handling
-
-### Multi-Source Architecture
-
-**Source Design Goals**:
-- `SourceId`: Identifies the source (Netease/Local/Other)
-- `TrackKey`: Unified track identifier containing source and id
-- `SourceCommand/SourceEvent`: Source-agnostic unified interface
-- Search flow migrated to Source API, playback flow still uses NeteaseCommand
 
 ### State Flow
 
@@ -80,7 +69,7 @@ The project uses a unified error handling pattern with structured error types:
 - `src/error/audio.rs` - `AudioError` - Audio playback errors
 - `src/error/player_state.rs` - `PlayerStateError` - State persistence errors
 
-**Key principle**: Use `MessageError` in event enums (AppEvent, SourceEvent, NeteaseEvent, AudioEvent) instead of `String` to preserve error context and enable structured error handling.
+**Key principle**: Use `MessageError` in event enums (AppEvent, NeteaseEvent, AudioEvent) instead of `String` to preserve error context and enable structured error handling.
 
 ## Environment Variables
 

@@ -15,7 +15,7 @@ pub use app::AppError;
 pub use audio::AudioError;
 pub use cache::CacheError;
 pub use download::DownloadError;
-pub use message::{ErrorContext, MessageError};
+pub use message::MessageError;
 pub use netease::NeteaseError;
 pub use player_state::PlayerStateError;
 

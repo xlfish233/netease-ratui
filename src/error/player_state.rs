@@ -52,7 +52,7 @@ mod tests {
 
     #[test]
     fn test_is_retryable() {
-        let io_err = PlayerStateError::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let io_err = PlayerStateError::Io(std::io::Error::other("test"));
         assert!(io_err.is_retryable());
 
         let version_err = PlayerStateError::IncompatibleVersion {

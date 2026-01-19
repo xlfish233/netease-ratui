@@ -292,7 +292,6 @@ make install-hooks
 ## 路线图
 
 - 完善 Now Playing 信息展示（封面/艺人/专辑）
-- 本地音源 + 多音源插件化（`SourceHub` / `TrackKey` / multi-lib）
 - 可配置快捷键与主题
 - MPRIS 与系统媒体键集成
 - 桌面通知与可选封面

@@ -9,7 +9,6 @@ mod messages;
 mod netease;
 mod player_state;
 mod settings;
-mod source;
 mod ui;
 
 use app::{App, AppSnapshot};

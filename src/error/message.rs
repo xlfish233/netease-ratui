@@ -110,7 +110,6 @@ pub enum ErrorContext {
     Lyric,
     Settings,
     Cache,
-    Source,
 }
 
 impl std::fmt::Display for ErrorContext {
@@ -123,7 +122,6 @@ impl std::fmt::Display for ErrorContext {
             ErrorContext::Lyric => write!(f, "歌词"),
             ErrorContext::Settings => write!(f, "设置"),
             ErrorContext::Cache => write!(f, "缓存"),
-            ErrorContext::Source => write!(f, "音源"),
         }
     }
 }
@@ -150,6 +148,7 @@ pub enum MessageError {
 
     /// 带上下文的错误
     #[error("{context}: {message}")]
+    #[allow(dead_code)]
     WithContext {
         context: ErrorContext,
         message: String,
@@ -184,6 +183,7 @@ impl MessageError {
     }
 
     /// 创建带上下文的错误
+    #[allow(dead_code)]
     pub fn with_context(context: ErrorContext, message: impl Into<String>) -> Self {
         MessageError::WithContext {
             context,
