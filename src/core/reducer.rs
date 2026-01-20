@@ -8,7 +8,7 @@ use crate::settings as app_settings;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::core::effects::{CoreDispatch, CoreEffects, CoreEffect, run_effects};
+use crate::core::effects::{CoreDispatch, CoreEffect, CoreEffects, run_effects};
 use crate::core::infra::{NextSongCacheManager, PreloadManager, RequestKey, RequestTracker};
 
 use crate::features::settings as settings_handlers;

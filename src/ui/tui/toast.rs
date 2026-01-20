@@ -1,9 +1,9 @@
 use crate::app::{Toast, ToastLevel};
 use ratatui::{
+    Frame,
     prelude::Rect,
     style::{Color, Style},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
 };
 
 /// 绘制 Toast 通知
@@ -14,17 +14,14 @@ pub fn draw_toast(f: &mut Frame, area: Rect, toast: &Toast) {
         ToastLevel::Info => ("ℹ️ ", Color::Gray, ""),
     };
 
-    let paragraph = Paragraph::new(format!(
-        "{} {}  {}",
-        icon, &toast.message, close_hint
-    ))
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .style(Style::default().fg(color)),
-    )
-    .wrap(Wrap { trim: true })
-    .style(Style::default().fg(color));
+    let paragraph = Paragraph::new(format!("{} {}  {}", icon, &toast.message, close_hint))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .style(Style::default().fg(color)),
+        )
+        .wrap(Wrap { trim: true })
+        .style(Style::default().fg(color));
 
     f.render_widget(paragraph, area);
 }

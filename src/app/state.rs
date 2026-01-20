@@ -9,17 +9,17 @@ pub use crate::domain::model::{Playlist, Song};
 /// Toast 通知级别
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToastLevel {
-    Error,   // 红色，需手动关闭
+    Error, // 红色，需手动关闭
     #[allow(dead_code)]
     Warning, // 黄色，5秒自动消失
-    Info,    // 灰色，3秒自动消失
+    Info,  // 灰色，3秒自动消失
 }
 
 impl ToastLevel {
     /// 获取自动消失的持续时间（毫秒）
     pub fn duration_ms(&self) -> Option<u64> {
         match self {
-            Self::Error => None,     // 不自动消失
+            Self::Error => None, // 不自动消失
             Self::Warning => Some(5000),
             Self::Info => Some(3000),
         }

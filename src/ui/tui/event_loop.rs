@@ -38,10 +38,10 @@ pub(super) async fn run_tui_internal(
         }
 
         // 检查 Toast 是否过期
-        if let Some(toast) = &app.toast {
-            if toast.is_expired() {
-                app.toast = None;
-            }
+        if let Some(toast) = &app.toast
+            && toast.is_expired()
+        {
+            app.toast = None;
         }
 
         terminal.draw(|f| draw_ui(f, &app))?;
