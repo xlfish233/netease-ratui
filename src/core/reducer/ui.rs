@@ -29,6 +29,11 @@ pub async fn handle_ui(
             effects.emit_state(&state.app);
             UiAction::Handled
         }
+        AppCommand::ToastDismiss => {
+            state.app.toast = None;
+            effects.emit_state(&state.app);
+            UiAction::Handled
+        }
         _ => UiAction::NotHandled,
     }
 }

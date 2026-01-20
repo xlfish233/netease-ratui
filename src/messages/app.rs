@@ -50,6 +50,7 @@ pub enum AppCommand {
     SettingsItemPrev,
     SettingsItemNext,
     Quit,
+    ToastDismiss,
 }
 
 #[derive(Debug)]

@@ -8,7 +8,7 @@ use crate::settings as app_settings;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::core::effects::{CoreDispatch, CoreEffects, run_effects};
+use crate::core::effects::{CoreDispatch, CoreEffects, CoreEffect, run_effects};
 use crate::core::infra::{NextSongCacheManager, PreloadManager, RequestKey, RequestTracker};
 
 use crate::features::settings as settings_handlers;
@@ -316,6 +316,12 @@ pub fn spawn_app_actor(
 
             let mut effects = CoreEffects::default();
             let should_quit = reduce(msg, &mut state, &mut effects, &data_dir).await;
+            // 处理 SetToast 效果（直接修改 state）
+            for effect in &effects.actions {
+                if let CoreEffect::SetToast(toast) = effect {
+                    state.app.toast = Some(toast.clone());
+                }
+            }
             run_effects(effects, &dispatch).await;
             if should_quit {
                 // ========== 保存播放状态 ==========

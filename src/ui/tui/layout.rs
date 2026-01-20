@@ -2,10 +2,12 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 const HEADER_HEIGHT: u16 = 3;
 const FOOTER_HEIGHT: u16 = 3;
+const TOAST_HEIGHT: u16 = 3;
 
 pub(super) struct CanvasLayout {
     pub header: Rect,
     pub body: Rect,
+    pub toast: Rect,
     pub footer: Rect,
 }
 
@@ -27,12 +29,15 @@ pub(super) struct RightLayout {
 }
 
 pub(super) fn split_canvas(canvas: Rect) -> CanvasLayout {
-    let body_height = canvas.height.saturating_sub(HEADER_HEIGHT + FOOTER_HEIGHT);
+    let body_height = canvas
+        .height
+        .saturating_sub(HEADER_HEIGHT + FOOTER_HEIGHT + TOAST_HEIGHT);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(HEADER_HEIGHT),
             Constraint::Length(body_height),
+            Constraint::Length(TOAST_HEIGHT),
             Constraint::Length(FOOTER_HEIGHT),
         ])
         .split(canvas);
@@ -40,7 +45,8 @@ pub(super) fn split_canvas(canvas: Rect) -> CanvasLayout {
     CanvasLayout {
         header: chunks[0],
         body: chunks[1],
-        footer: chunks[2],
+        toast: chunks[2],
+        footer: chunks[3],
     }
 }
 

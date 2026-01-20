@@ -2,7 +2,7 @@ use super::guard::TuiGuard;
 use super::keyboard::handle_key;
 use super::mouse::handle_mouse;
 use super::views::draw_ui;
-use crate::app::{AppSnapshot, AppViewSnapshot, View};
+use crate::app::{AppSnapshot, Toast};
 use crate::messages::app::{AppCommand, AppEvent};
 use crossterm::event::{self, Event};
 use ratatui::{Terminal, backend::CrosstermBackend};
@@ -28,8 +28,19 @@ pub(super) async fn run_tui_internal(
         while let Ok(evt) = rx.try_recv() {
             match evt {
                 AppEvent::State(s) => app = *s,
-                AppEvent::Toast(s) => apply_status_message(&mut app, s),
-                AppEvent::Error(e) => apply_status_message(&mut app, format!("错误: {e}")),
+                AppEvent::Toast(s) => {
+                    app.toast = Some(Toast::info(s));
+                }
+                AppEvent::Error(e) => {
+                    app.toast = Some(Toast::error(format!("错误: {e}")));
+                }
+            }
+        }
+
+        // 检查 Toast 是否过期
+        if let Some(toast) = &app.toast {
+            if toast.is_expired() {
+                app.toast = None;
             }
         }
 
@@ -56,15 +67,4 @@ pub(super) async fn run_tui_internal(
     }
 
     Ok(())
-}
-
-fn apply_status_message(app: &mut AppSnapshot, message: String) {
-    match (&app.view, &mut app.view_state) {
-        (View::Login, AppViewSnapshot::Login(state)) => state.login_status = message,
-        (View::Playlists, AppViewSnapshot::Playlists(state)) => state.playlists_status = message,
-        (View::Search, AppViewSnapshot::Search(state)) => state.search_status = message,
-        (View::Lyrics, AppViewSnapshot::Lyrics(state)) => state.lyrics_status = message,
-        (View::Settings, AppViewSnapshot::Settings(state)) => state.settings_status = message,
-        _ => {}
-    }
 }

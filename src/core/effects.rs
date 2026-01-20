@@ -1,5 +1,4 @@
-use crate::app::App;
-use crate::app::AppSnapshot;
+use crate::app::{App, AppSnapshot, Toast};
 use crate::audio_worker::AudioCommand;
 use crate::error::MessageError;
 use crate::messages::app::AppEvent;
@@ -14,6 +13,8 @@ pub struct CoreEffects {
 #[derive(Debug)]
 pub enum CoreEffect {
     EmitState(Box<AppSnapshot>),
+    #[allow(dead_code)]
+    SetToast(Toast),
     EmitToast(String),
     EmitError(MessageError),
     SendNeteaseHi {
@@ -34,6 +35,11 @@ impl CoreEffects {
     pub fn emit_state(&mut self, app: &App) {
         self.actions
             .push(CoreEffect::EmitState(Box::new(AppSnapshot::from_app(app))));
+    }
+
+    #[allow(dead_code)]
+    pub fn set_toast(&mut self, toast: Toast) {
+        self.actions.push(CoreEffect::SetToast(toast));
     }
 
     pub fn send_netease_hi(&mut self, cmd: NeteaseCommand) {
@@ -91,6 +97,9 @@ pub struct CoreDispatch<'a> {
 pub async fn run_effects(effects: CoreEffects, dispatch: &CoreDispatch<'_>) {
     for effect in effects.actions {
         match effect {
+            CoreEffect::SetToast(_) => {
+                // 已在 reducer 循环中处理，跳过
+            }
             CoreEffect::EmitState(app) => {
                 let _ = dispatch.tx_evt.send(AppEvent::State(app)).await;
             }

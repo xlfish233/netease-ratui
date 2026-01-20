@@ -8,6 +8,7 @@ use super::player_status::draw_footer;
 use super::playlists_view::draw_playlists;
 use super::search_view::draw_search;
 use super::settings_view::draw_settings;
+use super::toast::draw_toast;
 use super::utils::{MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, canvas_rect};
 use crate::app::{AppSnapshot, AppViewSnapshot, UiFocus, View};
 use ratatui::{
@@ -58,6 +59,11 @@ pub(super) fn draw_ui(f: &mut Frame, app: &AppSnapshot) {
             );
         }
         _ => {}
+    }
+
+    // 绘制 Toast（如果有）
+    if let Some(toast) = &app.toast {
+        draw_toast(f, canvas_layout.toast, toast);
     }
 
     let view_status = match &app.view_state {

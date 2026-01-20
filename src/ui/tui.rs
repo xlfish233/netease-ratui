@@ -14,6 +14,7 @@ mod playlists_view;
 mod search_view;
 mod settings_view;
 mod styles;
+mod toast;
 mod utils;
 mod views;
 mod widgets;

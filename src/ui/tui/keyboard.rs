@@ -13,6 +13,17 @@ pub(super) async fn handle_key(
         return false;
     }
 
+    // Toast 优先处理：Esc 或 Space 关闭 Toast（关闭后不继续处理其他输入）
+    if app.toast.is_some() {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char(' ') => {
+                let _ = tx.send(AppCommand::ToastDismiss).await;
+                return false;
+            }
+            _ => {}
+        }
+    }
+
     if app.help_visible {
         match key.code {
             KeyCode::Char('?') | KeyCode::Esc => {

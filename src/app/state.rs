@@ -6,6 +6,66 @@ use crate::domain::model::LyricLine;
 
 pub use crate::domain::model::{Playlist, Song};
 
+/// Toast 通知级别
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToastLevel {
+    Error,   // 红色，需手动关闭
+    #[allow(dead_code)]
+    Warning, // 黄色，5秒自动消失
+    Info,    // 灰色，3秒自动消失
+}
+
+impl ToastLevel {
+    /// 获取自动消失的持续时间（毫秒）
+    pub fn duration_ms(&self) -> Option<u64> {
+        match self {
+            Self::Error => None,     // 不自动消失
+            Self::Warning => Some(5000),
+            Self::Info => Some(3000),
+        }
+    }
+}
+
+/// Toast 通知消息
+#[derive(Debug, Clone)]
+pub struct Toast {
+    pub message: String,
+    pub level: ToastLevel,
+    pub timestamp: Instant,
+}
+
+impl Toast {
+    pub fn new(message: impl Into<String>, level: ToastLevel) -> Self {
+        Self {
+            message: message.into(),
+            level,
+            timestamp: Instant::now(),
+        }
+    }
+
+    pub fn error(message: impl Into<String>) -> Self {
+        Self::new(message, ToastLevel::Error)
+    }
+
+    #[allow(dead_code)]
+    pub fn warning(message: impl Into<String>) -> Self {
+        Self::new(message, ToastLevel::Warning)
+    }
+
+    pub fn info(message: impl Into<String>) -> Self {
+        Self::new(message, ToastLevel::Info)
+    }
+
+    /// 检查是否已过期
+    pub fn is_expired(&self) -> bool {
+        if let Some(duration) = self.level.duration_ms() {
+            self.timestamp.elapsed().as_millis() >= duration as u128
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Login,
@@ -116,6 +176,7 @@ pub struct App {
     pub view: View,
     pub ui_focus: UiFocus,
     pub help_visible: bool,
+    pub toast: Option<Toast>,
 
     pub login_qr_url: Option<String>,
     pub login_qr_ascii: Option<String>,
@@ -177,6 +238,7 @@ impl Default for App {
             view: View::Login,
             ui_focus: UiFocus::BodyCenter,
             help_visible: false,
+            toast: None,
             login_qr_url: None,
             login_qr_ascii: None,
             login_unikey: None,
@@ -236,6 +298,7 @@ pub struct AppSnapshot {
     pub logged_in: bool,
     pub ui_focus: UiFocus,
     pub help_visible: bool,
+    pub toast: Option<Toast>,
     pub search_input: String,
     pub player: PlayerSnapshot,
     pub queue: Vec<Song>,
@@ -417,6 +480,7 @@ impl AppSnapshot {
             logged_in: app.logged_in,
             ui_focus: app.ui_focus,
             help_visible: app.help_visible,
+            toast: app.toast.clone(),
             search_input: app.search_input.clone(),
             player,
             queue: app.play_queue.ordered_songs(),
