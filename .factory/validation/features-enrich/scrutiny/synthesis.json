@@ -1,0 +1,50 @@
+{
+  "milestone": "features-enrich",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --all-targets -- -D warnings", "exitCode": 0 },
+    "fmt": { "passed": true, "command": "cargo fmt --check", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Added reducer-effects-patterns.md documenting SetToast effect handling pattern (toast not immediately available after set_toast in reducer)",
+      "sourceFeature": "action-menu"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add note about centered_rect() duplication between menu.rs and overlays.rs. Consider extracting to a shared utility module to avoid maintenance burden. Workers creating new overlay components should use the shared version.",
+      "evidence": "action-menu review found identical centered_rect() in src/ui/tui/overlays.rs:50-57 and src/ui/tui/menu.rs:56-63",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the established pattern for adding list navigation commands: (1) AppCommand variants in messages/app.rs, (2) keyboard routing in keyboard.rs per view/focus, (3) reducer routing in core/reducer/<feature>.rs, (4) boundary-safe logic in features/<feature>/mod.rs with saturating_sub/min. This pattern is used consistently for all 12 pagination commands.",
+      "evidence": "pagination-support review found this pattern used identically across Search, Playlists, and PlaylistTracks",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "help_visible check is before menu_visible in keyboard.rs, so help blocks menu open",
+      "reason": "Already observable from reading keyboard.rs code; not actionable guidance for workers"
+    },
+    {
+      "observation": "PAGE_SIZE=10 defined separately in search/mod.rs and playlists/mod.rs",
+      "reason": "Minor duplication; modules may intentionally maintain separate constants for future flexibility"
+    }
+  ],
+  "previousRound": null
+}

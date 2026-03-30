@@ -1,0 +1,50 @@
+{
+  "featureId": "action-menu",
+  "reviewedAt": "2026-03-31T00:00:00Z",
+  "commitId": "e7ce5d7",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "操作菜单框架实现完整且质量良好。新增 menu_visible/menu_selected/menu_items 到 App 和 AppSnapshot，5 个 AppCommand 变体（MenuOpen/MenuCancel/MenuSelect/MenuMoveUp/MenuMoveDown），菜单覆盖层渲染、键盘处理优先级正确（menu > help > view），reducer 逻辑边界安全，选中后显示 toast。13 个测试覆盖全部 6 个验证断言。代码风格与项目现有模式一致。",
+    "issues": [
+      {
+        "file": "src/ui/tui/menu.rs",
+        "line": 58,
+        "severity": "non_blocking",
+        "description": "menu.rs 和 overlays.rs 各有一个同名私有函数 centered_rect()，代码重复。两个函数逻辑完全相同。建议提取到公共 utils 模块或保留一个 pub(super) 版本共享使用。不影响功能，但会增加维护负担。"
+      },
+      {
+        "file": "src/ui/tui/views.rs",
+        "line": 79,
+        "severity": "non_blocking",
+        "description": "菜单覆盖层在帮助覆盖层之后绘制（菜单在最上层），但如果同时打开帮助和菜单，两者的交互优先级不一致。keyboard.rs 中 help_visible 检查在 menu_visible 之前，所以帮助可见时菜单无法打开。这是合理行为但未明确测试。"
+      },
+      {
+        "file": "src/core/reducer/ui.rs",
+        "line": 44,
+        "severity": "non_blocking",
+        "description": "MenuSelect 在菜单不可见时（menu_visible=false）仍会执行但不会产生任何效果（if 条件不满足），这不会造成 bug，但添加 guard 或 early return 更清晰。"
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "overlays.rs 和 menu.rs 各有一个同名的私有函数 centered_rect()，完全相同的实现。项目中 popup/overlay 居中计算是常见模式，但无共享工具函数。",
+      "evidence": "src/ui/tui/overlays.rs:50-57 和 src/ui/tui/menu.rs:56-63 两个 centered_rect 函数实现相同"
+    },
+    {
+      "area": "conventions",
+      "observation": "SetToast 效果的处理方式：reducer 中调用 effects.set_toast()，然后在主循环（reducer.rs spawn_app_actor）中遍历 effects.actions 并直接设置 state.app.toast = Some(toast.clone())，之后再调用 run_effects()。这个模式对后续 worker 写 reducer 时需要了解——不能假设 set_toast 后 app.toast 立即可用。",
+      "evidence": "src/core/reducer.rs:223-226 — 'for effect in &effects.actions { if let CoreEffect::SetToast(toast) = effect { state.app.toast = Some(toast.clone()); } }' 发生在 run_effects 之前"
+    },
+    {
+      "area": "knowledge",
+      "observation": "帮助覆盖层（help）和菜单覆盖层（menu）的优先级关系：keyboard.rs 中 help_visible 检查在 menu_visible 之前，意味着帮助可见时无法打开菜单。绘制顺序是先帮助后菜单（views.rs），所以菜单覆盖帮助。",
+      "evidence": "src/ui/tui/keyboard.rs:15-22 (help check) vs line 24-39 (menu check); src/ui/tui/views.rs:76-82 (draw order)"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "操作菜单框架实现通过审查。实现完整覆盖了所有 6 个验证断言（VAL-MENU-001~006）：按 m 键打开菜单、4 个占位选项、Esc 关闭、Enter 选中并显示 toast、j/k 边界安全移动、键盘不穿透到底层视图。代码遵循项目架构模式（Actor + message-driven，reducer 唯一写入状态，CoreEffects 收集副作用）。13 个测试远超要求的 6 个，覆盖了键盘处理、reducer 逻辑和渲染三个层面。发现 3 个非阻断问题：centered_rect 代码重复、帮助与菜单同时显示的交互未明确测试、MenuSelect 在菜单不可见时的 guard。无阻断问题。"
+}
