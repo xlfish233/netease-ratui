@@ -114,9 +114,15 @@ pub(super) async fn handle_key(
                 return false;
             }
         }
+        // Space: 在搜索框中作为字符输入，其他场景为播放控制
         (KeyCode::Char(' '), _) => {
-            tracing::debug!("🎵 [Keyboard] 检测到空格键，发送 PlayerTogglePause 命令");
-            let _ = tx.send(AppCommand::PlayerTogglePause).await;
+            if matches!(app.view, View::Search) && matches!(app.ui_focus, UiFocus::HeaderSearch) {
+                // 搜索框焦点下，Space 作为字符输入
+                let _ = tx.send(AppCommand::SearchInputChar { c: ' ' }).await;
+            } else {
+                tracing::debug!("🎵 [Keyboard] 检测到空格键，发送 PlayerTogglePause 命令");
+                let _ = tx.send(AppCommand::PlayerTogglePause).await;
+            }
             return false;
         }
         (KeyCode::Char('['), _) => {
@@ -554,5 +560,159 @@ mod tests {
             );
             assert!(rx.try_recv().is_err());
         }
+    }
+
+    // ============================================================
+    // VAL-SPACE-001 ~ VAL-SPACE-005: 空格键冲突修复测试
+    // ============================================================
+
+    /// VAL-SPACE-001: 搜索框中按 Space 输入空格字符
+    #[tokio::test]
+    async fn space_in_search_input_sends_search_input_char() {
+        let app = App {
+            view: View::Search,
+            ui_focus: UiFocus::HeaderSearch,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        // 唯一发送的命令应为 SearchInputChar { c: ' ' }
+        let cmd = rx.try_recv().expect("应发送一个命令");
+        assert!(
+            matches!(cmd, AppCommand::SearchInputChar { c } if c == ' '),
+            "期望 SearchInputChar {{ c: ' ' }}，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// VAL-SPACE-002: 搜索框中按 Space 不触发播放/暂停
+    #[tokio::test]
+    async fn space_in_search_input_does_not_send_toggle_pause() {
+        let app = App {
+            view: View::Search,
+            ui_focus: UiFocus::HeaderSearch,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let _ = handle_key(&snapshot, key, &tx).await;
+
+        // 遍历所有已发送命令，断言无 PlayerTogglePause
+        while let Ok(cmd) = rx.try_recv() {
+            assert!(
+                !matches!(cmd, AppCommand::PlayerTogglePause),
+                "搜索框中不应发送 PlayerTogglePause，但收到了 {:?}",
+                cmd
+            );
+        }
+    }
+
+    /// VAL-SPACE-003: 搜索视图非搜索焦点时 Space 为播放/暂停
+    #[tokio::test]
+    async fn space_in_search_body_center_sends_toggle_pause() {
+        for focus in [UiFocus::BodyCenter, UiFocus::BodyLeft, UiFocus::BodyRight] {
+            let app = App {
+                view: View::Search,
+                ui_focus: focus,
+                ..Default::default()
+            };
+            let snapshot = AppSnapshot::from_app(&app);
+            let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+            let key = KeyEvent {
+                code: KeyCode::Char(' '),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            };
+
+            let should_quit = handle_key(&snapshot, key, &tx).await;
+            assert!(!should_quit);
+            let cmd = rx.try_recv().expect("应发送一个命令");
+            assert!(
+                matches!(cmd, AppCommand::PlayerTogglePause),
+                "焦点 {:?} 下期望 PlayerTogglePause，实际收到 {:?}",
+                focus,
+                cmd
+            );
+            assert!(rx.try_recv().is_err(), "不应发送其他命令");
+        }
+    }
+
+    /// VAL-SPACE-004: 歌单页中 Space 为播放/暂停
+    #[tokio::test]
+    async fn space_in_playlists_sends_toggle_pause() {
+        let app = App {
+            view: View::Playlists,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送一个命令");
+        assert!(
+            matches!(cmd, AppCommand::PlayerTogglePause),
+            "歌单页期望 PlayerTogglePause，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// VAL-SPACE-005: 歌词页中 Space 为播放/暂停
+    #[tokio::test]
+    async fn space_in_lyrics_sends_toggle_pause() {
+        let app = App {
+            view: View::Lyrics,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送一个命令");
+        assert!(
+            matches!(cmd, AppCommand::PlayerTogglePause),
+            "歌词页期望 PlayerTogglePause，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
     }
 }
