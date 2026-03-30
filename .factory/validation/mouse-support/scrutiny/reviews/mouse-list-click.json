@@ -1,0 +1,45 @@
+{
+  "featureId": "mouse-list-click",
+  "reviewedAt": "2026-03-30T17:45:00.000Z",
+  "commitId": "beac800",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation correctly adds left-click list item selection for playlists, playlist tracks, and search results. Three new MoveTo commands (PlaylistsMoveTo, PlaylistTracksMoveTo, SearchMoveTo) are added to AppCommand, properly routed through the reducer layer, and handled in the feature handlers with bounds checking. The mouse coordinate-to-item-index mapping correctly accounts for canvas centering offset, header/footer/toast areas, body panel positions, and border offsets. 9 unit tests cover all 3 VAL-MOUSE assertions plus 6 edge cases.",
+    "issues": [
+      {
+        "file": "src/ui/tui/mouse.rs",
+        "line": 12,
+        "severity": "non_blocking",
+        "description": "Layout constants (HEADER_HEIGHT=3, FOOTER_HEIGHT=3, TOAST_HEIGHT=3, LEFT_WIDTH=24, CENTER_WIDTH=58) are duplicated from layout.rs. If layout.rs values change, mouse.rs constants could drift. However, this is pragmatic since layout.rs uses private consts and the values are fundamental layout dimensions unlikely to change independently."
+      },
+      {
+        "file": "src/ui/tui/mouse.rs",
+        "line": 100,
+        "severity": "non_blocking",
+        "description": "body_end calculation uses canvas.height.saturating_sub(FOOTER_HEIGHT + TOAST_HEIGHT), which computes the end of the body area BEFORE footer+toast. In layout.rs, the canvas layout order is [header, body, toast, footer], so body ends at HEADER_HEIGHT + body_height. The mouse.rs calculation is mathematically equivalent (canvas.height - FOOTER_HEIGHT - TOAST_HEIGHT == HEADER_HEIGHT + body_height when canvas.height >= HEADER_HEIGHT + FOOTER_HEIGHT + TOAST_HEIGHT), so this is correct but reads slightly differently from layout.rs's split approach."
+      },
+      {
+        "file": "src/ui/tui/mouse.rs",
+        "line": 115,
+        "severity": "non_blocking",
+        "description": "row_to_item_index assumes a top border of exactly 1 row. This works for ratatui::widgets::Block borders but would break if a panel ever uses a different border style (e.g., no border or bordered on all sides). This is an acceptable assumption given the current codebase."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Layout constants (HEADER_HEIGHT, FOOTER_HEIGHT, TOAST_HEIGHT, LEFT_WIDTH, CENTER_WIDTH) in layout.rs are module-private (no pub). The mouse handler had to duplicate these constants. Other modules needing layout dimensions would face the same issue.",
+      "evidence": "src/ui/tui/layout.rs:3-6 defines consts without pub; src/ui/tui/mouse.rs:12-16 duplicates the same constants. AGENTS.md does not mention this pattern."
+    },
+    {
+      "area": "conventions",
+      "observation": "The pattern of adding MoveTo { index: usize } variants to AppCommand and routing them through reducer + feature handler is established. Future features (e.g., page navigation, jump-to-top/bottom) may benefit from documenting this pattern as it's now used in 3 places (playlists, search, playlist tracks).",
+      "evidence": "src/messages/app.rs has PlaylistsMoveTo, PlaylistTracksMoveTo, SearchMoveTo — all with identical structure. AGENTS.md mentions future commands like PlaylistsPageDown etc. but doesn't document the MoveTo pattern."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The implementation is clean, well-structured, and fully covers the feature requirements. All 3 VAL-MOUSE assertions (001: playlist list click, 002: track list click, 003: search result click) are correctly implemented and tested. The code follows the project's actor+message architecture: mouse events → AppCommand (MoveTo) → reducer routing → feature handler → state update. Bounds checking is consistent between mouse.rs (row_to_item_index) and feature handlers (index < list.len()). Edge cases are well-handled: border rows, clicks below items, wrong panel clicks, footer clicks, empty lists, and playlist List mode center panel. 9 tests provide good coverage. The only observation is duplicated layout constants between layout.rs and mouse.rs, which is a pragmatic choice but could be addressed by making layout constants pub in a future refactor."
+}

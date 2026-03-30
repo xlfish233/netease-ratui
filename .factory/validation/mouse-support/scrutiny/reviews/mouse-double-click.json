@@ -1,0 +1,34 @@
+{
+  "featureId": "mouse-double-click",
+  "reviewedAt": "2026-03-31T00:00:00Z",
+  "commitId": "88aa999",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "实现了完整的双击检测机制，使用 thread-local DoubleClickDetector 追踪上次点击的面板、索引和时间戳。单击发送 MoveTo 命令选中，双击同一列表项在 500ms 窗口内触发 PlaySelected/OpenSelected。所有无效区域（header、footer、空白列表、不同面板、不同项）正确 invalidate 状态。10 个测试覆盖了三个验证断言。",
+    "issues": [
+      {
+        "file": "src/ui/tui/mouse.rs",
+        "line": 68,
+        "severity": "non_blocking",
+        "description": "DoubleClickDetector 使用 thread_local! + RefCell，由于 handle_mouse 是 async 函数，TUI 事件循环运行在单线程上这不会有问题，但如果未来引入多线程事件处理则需要重构。当前设计对 TUI 场景是正确的。"
+      },
+      {
+        "file": "src/ui/tui/mouse.rs",
+        "line": 40,
+        "severity": "non_blocking",
+        "description": "Panel::Right 变体标记为 #[allow(dead_code)] 但目前未使用。这是合理的预留设计，但值得注意。"
+      },
+      {
+        "file": "src/ui/tui/mouse.rs",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "双击检测基于 item_index 而非像素精确位置。描述中提到维护上次点击的行/列/时间戳，但实际实现使用 panel + item_index。这在当前列表场景中是正确且更好的设计（因为列表项可变高度），但与描述的'行列'略有偏差——不构成问题，实际上更健壮。"
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "双击检测功能实现质量良好。DoubleClickDetector 结构清晰，使用 Panel + item_index + timestamp 三元组判断双击，避免了像素级别的脆弱性。所有边界情况处理完备：跨面板点击重置、不同项点击重置、空白区域点击重置、header/footer/tab 点击重置。测试覆盖全面：VAL-MOUSE-004（双击歌曲播放）、VAL-MOUSE-005（双击搜索播放）、VAL-MOUSE-013（跨面板隔离）以及额外覆盖双击不同项、双击歌单打开、canvas 外点击、4 个 DoubleClickDetector 单元测试。实现遵循项目 actor + message-driven 架构，通过 AppCommand 通信，UI 不直接写状态。代码通过了 clippy、fmt 和全部 132 个测试。"
+}

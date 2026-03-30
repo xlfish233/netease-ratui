@@ -1,0 +1,54 @@
+{
+  "milestone": "mouse-support",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --all-targets -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Document the AppCommand 4-file pattern: new command variants require changes in messages/app.rs (variant), core/reducer/player.rs (routing), features/player/control.rs (dispatch), and features/player/playback.rs (implementation).",
+      "sourceFeature": "mouse-progress-seek"
+    },
+    {
+      "target": "library",
+      "description": "Document the seek timing model: when seeking, must set play_started_at=now-target, if paused set play_paused_at=now, reset play_paused_accum_ms=0.",
+      "sourceFeature": "mouse-progress-seek"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Expand the '允许修改的范围' to include src/features/player/control.rs and src/features/player/playback.rs for features that need new player commands. The current boundary is too restrictive — the pattern requires modifying these files to handle new AppCommand variants like PlayerSeekAbsoluteMs.",
+      "evidence": "Feature mouse-progress-seek needed to modify src/features/player/control.rs and src/features/player/playback.rs to implement PlayerSeekAbsoluteMs. AGENTS.md doesn't list these in allowed scope. All 3 mouse features used the 4-file command pattern.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Recommend making layout constants (HEADER_HEIGHT, FOOTER_HEIGHT, TOAST_HEIGHT, LEFT_WIDTH, CENTER_WIDTH) in src/ui/tui/layout.rs public (pub const) so other modules can reference them instead of duplicating. This would prevent drift between layout.rs and mouse.rs.",
+      "evidence": "Feature mouse-list-click had to duplicate layout constants in mouse.rs because they're private in layout.rs. Future mouse or layout-dependent features would face the same issue.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "DoubleClickDetector uses thread_local! + RefCell which could be problematic in multi-threaded scenarios.",
+      "reason": "TUI event loop is single-threaded by design. The observation is speculative about a scenario that doesn't apply."
+    },
+    {
+      "observation": "Panel::Right variant marked #[allow(dead_code)] but unused.",
+      "reason": "This is a reasonable forward-looking design choice. Not an issue requiring action."
+    }
+  ],
+  "previousRound": null
+}
