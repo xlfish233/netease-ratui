@@ -21,7 +21,7 @@ UI (keyboard/mouse) → AppCommand → core::reducer → Features → CoreEffect
 ## UI Layer (src/ui/tui/)
 
 - `event_loop.rs`: 主循环 200ms tick，处理 AppEvent + 用户输入
-- `keyboard.rs`: handle_key() 按优先级分发（Toast > Help > 全局 > 视图特定）
+- `keyboard.rs`: handle_key() 按优先级分发（Help > 全局 > 视图特定）。**关键设计约束**：全局 match 分支（如 Space 的 PlayerTogglePause）必须在 View-specific match 之前截获并 `return false`，否则按键会落入 View 分支导致双重发送。例如 Space 键在搜索框中必须在全局分支返回，否则会同时发送 SearchInputChar 和 PlayerTogglePause。
 - `mouse.rs`: handle_mouse() 当前仅支持标签页点击
 - `views.rs`: draw_ui() 主绘制入口
 - `player_status.rs`: 底部 footer 渲染

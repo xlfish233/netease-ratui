@@ -1,0 +1,28 @@
+{
+  "featureId": "toast-non-blocking",
+  "reviewedAt": "2026-03-31T00:30:00Z",
+  "commitId": "c2edb64",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Toast 非阻断改造实现完整且正确。keyboard.rs 中 Toast 对 Esc/Space 的拦截逻辑被完全移除，所有按键穿透 Toast 层正常处理。Error Toast 的 duration_ms 从 None 改为 Some(8000)，所有 Toast 级别现在都通过自动超时消失。toast.rs 渲染中移除了 [Esc 关闭] 提示文本。ToastDismiss 变体保留但标记为 #[allow(dead_code)]，reducer 中仍保留其处理逻辑以便将来可能的使用。测试覆盖充分，共 9 个新增测试覆盖全部 7 个 VAL-TOAST 断言。",
+    "issues": [
+      {
+        "file": "src/ui/tui/keyboard.rs",
+        "line": 840,
+        "severity": "non_blocking",
+        "description": "VAL-TOAST-007 测试 (new_toast_replaces_old_toast) 仅验证了 Toast 结构体的字段，并未真正测试 reducer 中 '新 Toast 替换旧 Toast' 的覆盖行为。`let _toast1 = Toast::info(\"first\"); let current = Toast::error(\"second\");` 只是将 toast2 赋值给 current，并未模拟实际的覆盖语义（如 option = Some(new_toast)）。虽然 event_loop.rs 和 reducer.rs 中的覆盖逻辑（`app.toast = Some(toast)`）本身简单可靠，此测试作为文档价值有限。建议在 reducer 层面测试或直接验证 `Option<Toast>` 的替换行为。"
+      },
+      {
+        "file": "src/messages/app.rs",
+        "line": 68,
+        "severity": "non_blocking",
+        "description": "ToastDismiss 变体保留在 AppCommand 枚举中并标记 #[allow(dead_code)]。reducer/ui.rs 中仍有其处理逻辑（state.app.toast = None）。这是一个合理的设计决策（保留 API 兼容性），但如果确认永远不会再用到，未来应考虑清理。"
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Toast 非阻断改造通过审查。核心改动：(1) 移除 keyboard.rs 中 Toast 的 Esc/Space 拦截，所有按键正常穿透；(2) Error Toast 改为 8 秒自动消失（从 None 改为 Some(8000)）；(3) 移除渲染中的 [Esc 关闭] 提示。生产代码改动干净简洁，符合项目架构（keyboard 只管按键映射，Toast 过期由 event_loop 轮询处理）。9 个新增测试覆盖 VAL-TOAST-001~007 全部断言，测试通过，clippy 无警告，格式正确。有两个非阻断观察：VAL-TOAST-007 测试的实际覆盖较弱（未真正测试 reducer 层的替换行为）；ToastDismiss 变体保留为 dead code。整体质量良好，通过审查。"
+}

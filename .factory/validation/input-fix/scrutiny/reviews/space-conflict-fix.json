@@ -1,0 +1,26 @@
+{
+  "featureId": "space-conflict-fix",
+  "reviewedAt": "2026-03-31T00:30:00.000Z",
+  "commitId": "494506e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "干净利落的修复，改动集中在 keyboard.rs 一个文件（+162 行，-2 行）。生产代码修改仅 8 行：在全局 Space 处理分支中添加 View::Search + UiFocus::HeaderSearch 的前置检查，将 SearchInputChar 发送逻辑放在 PlayerTogglePause 之前。测试覆盖完整，5 个测试严格对应 VAL-SPACE-001 至 VAL-SPACE-005 全部断言。VAL-SPACE-003 额外覆盖了 BodyLeft 和 BodyRight 两种焦点。代码风格与项目现有惯例一致。",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "keyboard.rs 中对 Space 键使用 KeyCode::Char(' ') 而非单独的 KeyCode 常量。crossterm 对空格键的报告方式是 KeyCode::Char(' ')，这在项目中已有一致使用模式，但未在 AGENTS.md 或 library/ 中记录。如果未来有更多特殊字符需要类似处理，这个模式值得记录。",
+      "evidence": "keyboard.rs:107 匹配 (KeyCode::Char(' '), _)，所有测试也统一使用 KeyCode::Char(' ')。AGENTS.md 未提及 crossterm 的 Space 键表示方式。"
+    },
+    {
+      "area": "conventions",
+      "observation": "keyboard.rs 的全局 match 分支执行顺序至关重要——Space 分支必须在 View-specific match 之前截获并 return false，否则 Space 会继续落入 View::Search 的 (UiFocus::HeaderSearch, KeyCode::Char(c)) 分支导致双重发送。当前实现正确，但这种依赖 match 执行顺序的模式没有在 AGENTS.md 或 architecture.md 中明确记录为设计约束。",
+      "evidence": "keyboard.rs:89-122 全局 match 在第 122 行 return false，之后的 View-specific match（line ~260 View::Search）永远不会看到 Space 键。如果有人重构将 Space 处理移到 View-specific match 之后，会导致 Space 同时发送 SearchInputChar 和 PlayerTogglePause。"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature 通过审查。修复逻辑简洁正确——在全局 Space 处理分支中前置检查 Search+HeaderSearch 条件，确保搜索框中 Space 发送 SearchInputChar 而非 PlayerTogglePause。5 个单元测试完整覆盖所有验证断言（VAL-SPACE-001 至 VAL-SPACE-005），测试结构清晰，断言严格（验证唯一命令 + 无多余命令）。无 bug、无遗漏边界情况。代码风格与项目惯例一致，clippy/fmt 全部通过。"
+}

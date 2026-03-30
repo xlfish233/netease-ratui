@@ -1,0 +1,33 @@
+{
+  "milestone": "input-fix",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --all-targets -- -D warnings", "exitCode": 0 },
+    "fmt": { "passed": true, "command": "cargo fmt --check", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Updated architecture.md: documented that keyboard.rs global match arm ordering is a critical design constraint — global branches must intercept and return false before View-specific match to prevent double-sending. Also updated Toast priority note (no longer intercepts keys).",
+      "sourceFeature": "space-conflict-fix"
+    }
+  ],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [
+    {
+      "observation": "crossterm 的 Space 键使用 KeyCode::Char(' ') 而非单独的 KeyCode 常量，值得文档化",
+      "reason": "already-documented via code pattern: all tests and production code consistently use KeyCode::Char(' '). This is a crossterm library detail, not a project convention that workers need to know."
+    }
+  ],
+  "previousRound": null
+}
