@@ -5,17 +5,25 @@ use crate::error::MessageError;
 pub enum AppCommand {
     Bootstrap,
     TabNext,
-    TabTo { index: usize },
+    TabTo {
+        index: usize,
+    },
     UiFocusNext,
     UiFocusPrev,
-    UiFocusSet { focus: UiFocus },
+    UiFocusSet {
+        focus: UiFocus,
+    },
     UiToggleHelp,
     LoginGenerateQr,
     LoginToggleCookieInput,
-    LoginCookieInputChar { c: char },
+    LoginCookieInputChar {
+        c: char,
+    },
     LoginCookieInputBackspace,
     LoginCookieSubmit,
-    SearchInputChar { c: char },
+    SearchInputChar {
+        c: char,
+    },
     SearchInputBackspace,
     SearchSubmit,
     SearchMoveUp,
@@ -32,8 +40,12 @@ pub enum AppCommand {
     PlayerStop,
     PlayerPrev,
     PlayerNext,
-    PlayerSeekBackwardMs { ms: u64 },
-    PlayerSeekForwardMs { ms: u64 },
+    PlayerSeekBackwardMs {
+        ms: u64,
+    },
+    PlayerSeekForwardMs {
+        ms: u64,
+    },
     PlayerVolumeDown,
     PlayerVolumeUp,
     PlayerCycleMode,
@@ -41,7 +53,9 @@ pub enum AppCommand {
     LyricsMoveUp,
     LyricsMoveDown,
     LyricsGotoCurrent,
-    LyricsOffsetAddMs { ms: i64 },
+    LyricsOffsetAddMs {
+        ms: i64,
+    },
     SettingsDecrease,
     SettingsIncrease,
     SettingsActivate,
@@ -50,6 +64,7 @@ pub enum AppCommand {
     SettingsItemPrev,
     SettingsItemNext,
     Quit,
+    #[allow(dead_code)]
     ToastDismiss,
 }
 
