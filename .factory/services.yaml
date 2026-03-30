@@ -1,0 +1,10 @@
+commands:
+  install: cargo build
+  test: cargo test
+  typecheck: cargo check
+  build: cargo build
+  lint: cargo clippy --all-targets -- -D warnings
+  fmt-check: cargo fmt --check
+  fmt: cargo fmt
+
+services: {}
