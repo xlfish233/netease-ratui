@@ -16,6 +16,10 @@ pub async fn handle_ui(
         AppCommand::SearchMoveUp => AppCommand::SearchMoveUp,
         AppCommand::SearchMoveDown => AppCommand::SearchMoveDown,
         AppCommand::SearchMoveTo { index } => AppCommand::SearchMoveTo { index: *index },
+        AppCommand::SearchPageDown => AppCommand::SearchPageDown,
+        AppCommand::SearchPageUp => AppCommand::SearchPageUp,
+        AppCommand::SearchJumpTop => AppCommand::SearchJumpTop,
+        AppCommand::SearchJumpBottom => AppCommand::SearchJumpBottom,
         AppCommand::SearchPlaySelected => AppCommand::SearchPlaySelected,
         _ => return UiAction::NotHandled,
     };

@@ -15,10 +15,18 @@ pub async fn handle_ui(
         AppCommand::PlaylistsMoveUp
         | AppCommand::PlaylistsMoveDown
         | AppCommand::PlaylistsMoveTo { .. }
+        | AppCommand::PlaylistsPageDown
+        | AppCommand::PlaylistsPageUp
+        | AppCommand::PlaylistsJumpTop
+        | AppCommand::PlaylistsJumpBottom
         | AppCommand::PlaylistsOpenSelected
         | AppCommand::PlaylistTracksMoveUp
         | AppCommand::PlaylistTracksMoveDown
         | AppCommand::PlaylistTracksMoveTo { .. }
+        | AppCommand::PlaylistTracksPageDown
+        | AppCommand::PlaylistTracksPageUp
+        | AppCommand::PlaylistTracksJumpTop
+        | AppCommand::PlaylistTracksJumpBottom
         | AppCommand::PlaylistTracksPlaySelected => {
             let playlist_cmd = match cmd {
                 AppCommand::PlaylistsMoveUp => AppCommand::PlaylistsMoveUp,
@@ -26,12 +34,20 @@ pub async fn handle_ui(
                 AppCommand::PlaylistsMoveTo { index } => {
                     AppCommand::PlaylistsMoveTo { index: *index }
                 }
+                AppCommand::PlaylistsPageDown => AppCommand::PlaylistsPageDown,
+                AppCommand::PlaylistsPageUp => AppCommand::PlaylistsPageUp,
+                AppCommand::PlaylistsJumpTop => AppCommand::PlaylistsJumpTop,
+                AppCommand::PlaylistsJumpBottom => AppCommand::PlaylistsJumpBottom,
                 AppCommand::PlaylistsOpenSelected => AppCommand::PlaylistsOpenSelected,
                 AppCommand::PlaylistTracksMoveUp => AppCommand::PlaylistTracksMoveUp,
                 AppCommand::PlaylistTracksMoveDown => AppCommand::PlaylistTracksMoveDown,
                 AppCommand::PlaylistTracksMoveTo { index } => {
                     AppCommand::PlaylistTracksMoveTo { index: *index }
                 }
+                AppCommand::PlaylistTracksPageDown => AppCommand::PlaylistTracksPageDown,
+                AppCommand::PlaylistTracksPageUp => AppCommand::PlaylistTracksPageUp,
+                AppCommand::PlaylistTracksJumpTop => AppCommand::PlaylistTracksJumpTop,
+                AppCommand::PlaylistTracksJumpBottom => AppCommand::PlaylistTracksJumpBottom,
                 AppCommand::PlaylistTracksPlaySelected => AppCommand::PlaylistTracksPlaySelected,
                 _ => unreachable!("checked by outer match"),
             };

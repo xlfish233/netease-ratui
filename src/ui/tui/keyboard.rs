@@ -258,6 +258,18 @@ pub(super) async fn handle_key(
                     KeyCode::Down => {
                         let _ = tx.send(AppCommand::PlaylistsMoveDown).await;
                     }
+                    KeyCode::PageDown => {
+                        let _ = tx.send(AppCommand::PlaylistsPageDown).await;
+                    }
+                    KeyCode::PageUp => {
+                        let _ = tx.send(AppCommand::PlaylistsPageUp).await;
+                    }
+                    KeyCode::Home => {
+                        let _ = tx.send(AppCommand::PlaylistsJumpTop).await;
+                    }
+                    KeyCode::End => {
+                        let _ = tx.send(AppCommand::PlaylistsJumpBottom).await;
+                    }
                     KeyCode::Enter => {
                         if matches!(playlist_mode, PlaylistMode::Tracks) {
                             let _ = tx.send(AppCommand::Back).await;
@@ -289,6 +301,38 @@ pub(super) async fn handle_key(
                             let _ = tx.send(AppCommand::PlaylistTracksMoveDown).await;
                         }
                     },
+                    KeyCode::PageDown => match playlist_mode {
+                        PlaylistMode::List => {
+                            let _ = tx.send(AppCommand::PlaylistsPageDown).await;
+                        }
+                        PlaylistMode::Tracks => {
+                            let _ = tx.send(AppCommand::PlaylistTracksPageDown).await;
+                        }
+                    },
+                    KeyCode::PageUp => match playlist_mode {
+                        PlaylistMode::List => {
+                            let _ = tx.send(AppCommand::PlaylistsPageUp).await;
+                        }
+                        PlaylistMode::Tracks => {
+                            let _ = tx.send(AppCommand::PlaylistTracksPageUp).await;
+                        }
+                    },
+                    KeyCode::Home => match playlist_mode {
+                        PlaylistMode::List => {
+                            let _ = tx.send(AppCommand::PlaylistsJumpTop).await;
+                        }
+                        PlaylistMode::Tracks => {
+                            let _ = tx.send(AppCommand::PlaylistTracksJumpTop).await;
+                        }
+                    },
+                    KeyCode::End => match playlist_mode {
+                        PlaylistMode::List => {
+                            let _ = tx.send(AppCommand::PlaylistsJumpBottom).await;
+                        }
+                        PlaylistMode::Tracks => {
+                            let _ = tx.send(AppCommand::PlaylistTracksJumpBottom).await;
+                        }
+                    },
                     _ => {}
                 },
                 _ => {}
@@ -314,6 +358,18 @@ pub(super) async fn handle_key(
             }
             (UiFocus::BodyCenter, KeyCode::Down) => {
                 let _ = tx.send(AppCommand::SearchMoveDown).await;
+            }
+            (UiFocus::BodyCenter, KeyCode::PageDown) => {
+                let _ = tx.send(AppCommand::SearchPageDown).await;
+            }
+            (UiFocus::BodyCenter, KeyCode::PageUp) => {
+                let _ = tx.send(AppCommand::SearchPageUp).await;
+            }
+            (UiFocus::BodyCenter, KeyCode::Home) => {
+                let _ = tx.send(AppCommand::SearchJumpTop).await;
+            }
+            (UiFocus::BodyCenter, KeyCode::End) => {
+                let _ = tx.send(AppCommand::SearchJumpBottom).await;
             }
             _ => {}
         },
@@ -404,7 +460,7 @@ pub(super) async fn handle_key(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::App;
+    use crate::app::{App, PlaylistMode};
 
     #[tokio::test]
     async fn tab_release_is_ignored() {
@@ -1103,5 +1159,227 @@ mod tests {
         let should_quit = handle_key(&snapshot, key_q, &tx).await;
         assert!(!should_quit, "菜单可见时 q 不应退出");
         assert!(rx.try_recv().is_err(), "菜单可见时 q 不应穿透到底层视图");
+    }
+
+    // ============================================================
+    // VAL-PAGE-001 ~ VAL-PAGE-004: 分页支持测试
+    // ============================================================
+
+    /// VAL-PAGE-001: PageDown 在搜索结果中发送 SearchPageDown
+    #[tokio::test]
+    async fn page_down_in_search_sends_search_page_down() {
+        let app = App {
+            view: View::Search,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::PageDown,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 SearchPageDown 命令");
+        assert!(
+            matches!(cmd, AppCommand::SearchPageDown),
+            "期望 SearchPageDown，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// VAL-PAGE-002: PageUp 在搜索结果中发送 SearchPageUp
+    #[tokio::test]
+    async fn page_up_in_search_sends_search_page_up() {
+        let app = App {
+            view: View::Search,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::PageUp,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 SearchPageUp 命令");
+        assert!(
+            matches!(cmd, AppCommand::SearchPageUp),
+            "期望 SearchPageUp，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// VAL-PAGE-003: Home 在搜索结果中发送 SearchJumpTop
+    #[tokio::test]
+    async fn home_in_search_sends_search_jump_top() {
+        let app = App {
+            view: View::Search,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Home,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 SearchJumpTop 命令");
+        assert!(
+            matches!(cmd, AppCommand::SearchJumpTop),
+            "期望 SearchJumpTop，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// VAL-PAGE-004: End 在搜索结果中发送 SearchJumpBottom
+    #[tokio::test]
+    async fn end_in_search_sends_search_jump_bottom() {
+        let app = App {
+            view: View::Search,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::End,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 SearchJumpBottom 命令");
+        assert!(
+            matches!(cmd, AppCommand::SearchJumpBottom),
+            "期望 SearchJumpBottom，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// PageDown 在歌单页 BodyLeft 发送 PlaylistsPageDown
+    #[tokio::test]
+    async fn page_down_in_playlists_left_sends_playlists_page_down() {
+        let app = App {
+            view: View::Playlists,
+            ui_focus: UiFocus::BodyLeft,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::PageDown,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 PlaylistsPageDown 命令");
+        assert!(
+            matches!(cmd, AppCommand::PlaylistsPageDown),
+            "期望 PlaylistsPageDown，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    /// PageDown 在歌单页 BodyCenter (Tracks 模式) 发送 PlaylistTracksPageDown
+    #[tokio::test]
+    async fn page_down_in_playlist_tracks_sends_tracks_page_down() {
+        let mut app = App {
+            view: View::Playlists,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        app.playlist_mode = PlaylistMode::Tracks;
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::PageDown,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 PlaylistTracksPageDown 命令");
+        assert!(
+            matches!(cmd, AppCommand::PlaylistTracksPageDown),
+            "期望 PlaylistTracksPageDown，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    /// Home/End 在歌单页 BodyLeft 发送 JumpTop/JumpBottom
+    #[tokio::test]
+    async fn home_end_in_playlists_left_sends_jump_commands() {
+        let app = App {
+            view: View::Playlists,
+            ui_focus: UiFocus::BodyLeft,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+
+        // Home
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+        let key_home = KeyEvent {
+            code: KeyCode::Home,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        let should_quit = handle_key(&snapshot, key_home, &tx).await;
+        assert!(!should_quit);
+        assert!(
+            matches!(rx.try_recv(), Ok(AppCommand::PlaylistsJumpTop)),
+            "期望 PlaylistsJumpTop"
+        );
+        assert!(rx.try_recv().is_err());
+
+        // End
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+        let key_end = KeyEvent {
+            code: KeyCode::End,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        let should_quit = handle_key(&snapshot, key_end, &tx).await;
+        assert!(!should_quit);
+        assert!(
+            matches!(rx.try_recv(), Ok(AppCommand::PlaylistsJumpBottom)),
+            "期望 PlaylistsJumpBottom"
+        );
+        assert!(rx.try_recv().is_err());
     }
 }

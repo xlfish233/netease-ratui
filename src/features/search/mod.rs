@@ -9,6 +9,9 @@ use crate::core::utils;
 use crate::domain::model::Song;
 use crate::netease::actor::{NeteaseCommand, NeteaseEvent};
 
+/// 分页大小：PageDown/PageUp 一次跳转的行数
+const PAGE_SIZE: usize = 10;
+
 /// 处理搜索相关的 AppCommand
 /// 返回 true 表示命令已处理，false 表示未处理
 #[allow(clippy::too_many_arguments)]
@@ -68,6 +71,40 @@ pub async fn handle_search_command(
             if !app.search_results.is_empty() && index < app.search_results.len() {
                 app.search_selected = index;
                 effects.emit_state(app);
+            }
+        }
+        AppCommand::SearchPageDown => {
+            if !app.search_results.is_empty() {
+                let new_idx = (app.search_selected + PAGE_SIZE)
+                    .min(app.search_results.len().saturating_sub(1));
+                if new_idx != app.search_selected {
+                    app.search_selected = new_idx;
+                    effects.emit_state(app);
+                }
+            }
+        }
+        AppCommand::SearchPageUp => {
+            if !app.search_results.is_empty() {
+                let new_idx = app.search_selected.saturating_sub(PAGE_SIZE);
+                if new_idx != app.search_selected {
+                    app.search_selected = new_idx;
+                    effects.emit_state(app);
+                }
+            }
+        }
+        AppCommand::SearchJumpTop => {
+            if !app.search_results.is_empty() && app.search_selected != 0 {
+                app.search_selected = 0;
+                effects.emit_state(app);
+            }
+        }
+        AppCommand::SearchJumpBottom => {
+            if !app.search_results.is_empty() {
+                let last = app.search_results.len().saturating_sub(1);
+                if app.search_selected != last {
+                    app.search_selected = last;
+                    effects.emit_state(app);
+                }
             }
         }
         AppCommand::SearchPlaySelected => {

@@ -10,6 +10,9 @@ mod tracks;
 
 pub use tracks::PlaylistTracksLoad;
 
+/// 分页大小：PageDown/PageUp 一次跳转的行数
+const PAGE_SIZE: usize = 10;
+
 /// 处理歌单相关的 AppCommand
 /// 返回 true 表示命令已处理，false 表示未处理
 #[allow(clippy::too_many_arguments)]
@@ -41,6 +44,40 @@ pub async fn handle_playlists_command(
             if !app.playlists.is_empty() && index < app.playlists.len() {
                 app.playlists_selected = index;
                 effects.emit_state(app);
+            }
+        }
+        AppCommand::PlaylistsPageDown => {
+            if !app.playlists.is_empty() {
+                let new_idx =
+                    (app.playlists_selected + PAGE_SIZE).min(app.playlists.len().saturating_sub(1));
+                if new_idx != app.playlists_selected {
+                    app.playlists_selected = new_idx;
+                    effects.emit_state(app);
+                }
+            }
+        }
+        AppCommand::PlaylistsPageUp => {
+            if !app.playlists.is_empty() {
+                let new_idx = app.playlists_selected.saturating_sub(PAGE_SIZE);
+                if new_idx != app.playlists_selected {
+                    app.playlists_selected = new_idx;
+                    effects.emit_state(app);
+                }
+            }
+        }
+        AppCommand::PlaylistsJumpTop => {
+            if !app.playlists.is_empty() && app.playlists_selected != 0 {
+                app.playlists_selected = 0;
+                effects.emit_state(app);
+            }
+        }
+        AppCommand::PlaylistsJumpBottom => {
+            if !app.playlists.is_empty() {
+                let last = app.playlists.len().saturating_sub(1);
+                if app.playlists_selected != last {
+                    app.playlists_selected = last;
+                    effects.emit_state(app);
+                }
             }
         }
         AppCommand::PlaylistsOpenSelected => {
@@ -131,6 +168,40 @@ pub async fn handle_playlists_command(
             if !app.playlist_tracks.is_empty() && index < app.playlist_tracks.len() {
                 app.playlist_tracks_selected = index;
                 effects.emit_state(app);
+            }
+        }
+        AppCommand::PlaylistTracksPageDown => {
+            if !app.playlist_tracks.is_empty() {
+                let new_idx = (app.playlist_tracks_selected + PAGE_SIZE)
+                    .min(app.playlist_tracks.len().saturating_sub(1));
+                if new_idx != app.playlist_tracks_selected {
+                    app.playlist_tracks_selected = new_idx;
+                    effects.emit_state(app);
+                }
+            }
+        }
+        AppCommand::PlaylistTracksPageUp => {
+            if !app.playlist_tracks.is_empty() {
+                let new_idx = app.playlist_tracks_selected.saturating_sub(PAGE_SIZE);
+                if new_idx != app.playlist_tracks_selected {
+                    app.playlist_tracks_selected = new_idx;
+                    effects.emit_state(app);
+                }
+            }
+        }
+        AppCommand::PlaylistTracksJumpTop => {
+            if !app.playlist_tracks.is_empty() && app.playlist_tracks_selected != 0 {
+                app.playlist_tracks_selected = 0;
+                effects.emit_state(app);
+            }
+        }
+        AppCommand::PlaylistTracksJumpBottom => {
+            if !app.playlist_tracks.is_empty() {
+                let last = app.playlist_tracks.len().saturating_sub(1);
+                if app.playlist_tracks_selected != last {
+                    app.playlist_tracks_selected = last;
+                    effects.emit_state(app);
+                }
             }
         }
         AppCommand::PlaylistTracksPlaySelected => {
