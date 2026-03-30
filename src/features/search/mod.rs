@@ -64,6 +64,12 @@ pub async fn handle_search_command(
                 effects.emit_state(app);
             }
         }
+        AppCommand::SearchMoveTo { index } => {
+            if !app.search_results.is_empty() && index < app.search_results.len() {
+                app.search_selected = index;
+                effects.emit_state(app);
+            }
+        }
         AppCommand::SearchPlaySelected => {
             if let Some(s) = app.search_results.get(app.search_selected) {
                 app.play_status = "获取播放链接...".to_owned();

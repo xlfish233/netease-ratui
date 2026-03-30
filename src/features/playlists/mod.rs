@@ -37,6 +37,12 @@ pub async fn handle_playlists_command(
                 effects.emit_state(app);
             }
         }
+        AppCommand::PlaylistsMoveTo { index } => {
+            if !app.playlists.is_empty() && index < app.playlists.len() {
+                app.playlists_selected = index;
+                effects.emit_state(app);
+            }
+        }
         AppCommand::PlaylistsOpenSelected => {
             if matches!(app.playlist_mode, PlaylistMode::List) {
                 let Some(playlist_id) = app.playlists.get(app.playlists_selected).map(|p| p.id)
@@ -118,6 +124,12 @@ pub async fn handle_playlists_command(
                 && app.playlist_tracks_selected + 1 < app.playlist_tracks.len()
             {
                 app.playlist_tracks_selected += 1;
+                effects.emit_state(app);
+            }
+        }
+        AppCommand::PlaylistTracksMoveTo { index } => {
+            if !app.playlist_tracks.is_empty() && index < app.playlist_tracks.len() {
+                app.playlist_tracks_selected = index;
                 effects.emit_state(app);
             }
         }

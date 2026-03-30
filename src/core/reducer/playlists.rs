@@ -14,16 +14,24 @@ pub async fn handle_ui(
     match cmd {
         AppCommand::PlaylistsMoveUp
         | AppCommand::PlaylistsMoveDown
+        | AppCommand::PlaylistsMoveTo { .. }
         | AppCommand::PlaylistsOpenSelected
         | AppCommand::PlaylistTracksMoveUp
         | AppCommand::PlaylistTracksMoveDown
+        | AppCommand::PlaylistTracksMoveTo { .. }
         | AppCommand::PlaylistTracksPlaySelected => {
             let playlist_cmd = match cmd {
                 AppCommand::PlaylistsMoveUp => AppCommand::PlaylistsMoveUp,
                 AppCommand::PlaylistsMoveDown => AppCommand::PlaylistsMoveDown,
+                AppCommand::PlaylistsMoveTo { index } => {
+                    AppCommand::PlaylistsMoveTo { index: *index }
+                }
                 AppCommand::PlaylistsOpenSelected => AppCommand::PlaylistsOpenSelected,
                 AppCommand::PlaylistTracksMoveUp => AppCommand::PlaylistTracksMoveUp,
                 AppCommand::PlaylistTracksMoveDown => AppCommand::PlaylistTracksMoveDown,
+                AppCommand::PlaylistTracksMoveTo { index } => {
+                    AppCommand::PlaylistTracksMoveTo { index: *index }
+                }
                 AppCommand::PlaylistTracksPlaySelected => AppCommand::PlaylistTracksPlaySelected,
                 _ => unreachable!("checked by outer match"),
             };

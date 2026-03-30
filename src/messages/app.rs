@@ -28,12 +28,21 @@ pub enum AppCommand {
     SearchSubmit,
     SearchMoveUp,
     SearchMoveDown,
+    SearchMoveTo {
+        index: usize,
+    },
     SearchPlaySelected,
     PlaylistsMoveUp,
     PlaylistsMoveDown,
+    PlaylistsMoveTo {
+        index: usize,
+    },
     PlaylistsOpenSelected,
     PlaylistTracksMoveUp,
     PlaylistTracksMoveDown,
+    PlaylistTracksMoveTo {
+        index: usize,
+    },
     PlaylistTracksPlaySelected,
     Back,
     PlayerTogglePause,
