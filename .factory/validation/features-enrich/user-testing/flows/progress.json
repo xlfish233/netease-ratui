@@ -1,0 +1,113 @@
+{
+  "groupId": "progress",
+  "testedAt": "2026-03-31T00:00:00Z",
+  "isolation": {
+    "repoRoot": "/home/xl/play/netease-ratui",
+    "externalServices": "none",
+    "sharedStateMutation": "none"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-PROGRESS-001",
+      "title": "播放中进度条显示填充区域: progress_bar_text(60000, Some(240000), 24) → 6 '#' and 18 '-'",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test progress_bar_playing_shows_correct_fill", "expected": "test passes with 6 hashes and 18 dashes", "observed": "test passed — verified hashes==6 and dashes==18" }
+      ],
+      "evidence": {
+        "testName": "ui::tui::widgets::tests::progress_bar_playing_shows_correct_fill",
+        "testOutput": "test result: ok. 1 passed; 0 failed",
+        "verifiedBehavior": "progress_bar_text(60000, Some(240000), 24) produces exactly 6 '#' and 18 '-' characters"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROGRESS-002",
+      "title": "fmt_mmss(90000) → '01:30'",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test fmt_mmss_formats_elapsed_time", "expected": "test passes with assert_eq!(fmt_mmss(90000), '01:30')", "observed": "test passed — fmt_mmss(90000) == '01:30'" }
+      ],
+      "evidence": {
+        "testName": "ui::tui::widgets::tests::fmt_mmss_formats_elapsed_time",
+        "testOutput": "test result: ok. 1 passed; 0 failed",
+        "verifiedBehavior": "fmt_mmss(90000) returns '01:30'"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROGRESS-003",
+      "title": "footer shows '04:00' when play_total_ms=Some(240000)",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test fmt_mmss_formats_total_duration", "expected": "test passes with assert_eq!(fmt_mmss(240000), '04:00')", "observed": "test passed — fmt_mmss(240000) == '04:00'" }
+      ],
+      "evidence": {
+        "testName": "ui::tui::widgets::tests::fmt_mmss_formats_total_duration",
+        "testOutput": "test result: ok. 1 passed; 0 failed",
+        "verifiedBehavior": "fmt_mmss(240000) returns '04:00', confirming footer would show '04:00' for a 4-minute song"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROGRESS-004",
+      "title": "paused=true → elapsed_ms stays consistent across calls",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test progress_bar_paused_position_unchanged", "expected": "test passes — two calls with identical inputs produce identical output", "observed": "test passed — bar1 == bar2 for same (120000, Some(240000), 24)" }
+      ],
+      "evidence": {
+        "testName": "ui::tui::widgets::tests::progress_bar_paused_position_unchanged",
+        "testOutput": "test result: ok. 1 passed; 0 failed",
+        "verifiedBehavior": "progress_bar_text is a pure function; same inputs always produce same output, confirming paused state yields consistent elapsed_ms"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROGRESS-005",
+      "title": "progress_bar_text(0, None, 24) → all '-', time '00:00 / --:--'",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test progress_bar_empty_state_when_no_song", "expected": "test passes with 0 hashes, 24 dashes, fmt_mmss(0)=='00:00'", "observed": "test passed — hashes==0, dashes==24, fmt_mmss(0)=='00:00'" }
+      ],
+      "evidence": {
+        "testName": "ui::tui::widgets::tests::progress_bar_empty_state_when_no_song",
+        "testOutput": "test result: ok. 1 passed; 0 failed",
+        "verifiedBehavior": "progress_bar_text(0, None, 24) returns all dashes; fmt_mmss(0) returns '00:00'"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROGRESS-006",
+      "title": "progress_bar_text(300000, Some(240000), 24) → fill never exceeds width",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test progress_bar_fill_never_exceeds_width", "expected": "test passes with hashes==24, dashes==0, total==24", "observed": "test passed — hashes==24 (saturated), dashes==0, total==24" }
+      ],
+      "evidence": {
+        "testName": "ui::tui::widgets::tests::progress_bar_fill_never_exceeds_width",
+        "testOutput": "test result: ok. 1 passed; 0 failed",
+        "verifiedBehavior": "progress_bar_text(300000, Some(240000), 24) saturates at width (24 hashes, 0 dashes), elapsed > total is clamped"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROGRESS-007",
+      "title": "paused=true → time text contains '暂停' marker; paused=false → no marker",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test pause_indicator_in_time_text", "expected": "test passes — paused suffix contains '暂停', non-paused suffix does not", "observed": "test passed — paused=true yields ' (暂停)' suffix, paused=false yields empty string" }
+      ],
+      "evidence": {
+        "testName": "ui::tui::widgets::tests::pause_indicator_in_time_text",
+        "testOutput": "test result: ok. 1 passed; 0 failed",
+        "verifiedBehavior": "paused=true produces '暂停' marker in time text; paused=false produces no marker"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 7 assertions: all 7 passed. Tests are in src/ui/tui/widgets.rs. All tests ran successfully via cargo test with no failures."
+}

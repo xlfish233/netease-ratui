@@ -1,0 +1,120 @@
+{
+  "groupId": "pagination",
+  "testedAt": "2026-03-31T00:00:00Z",
+  "isolation": {
+    "repoRoot": "/home/xl/play/netease-ratui",
+    "method": "cargo test (read-only test execution)",
+    "noExternalServices": true,
+    "noSharedStateMutation": true
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-PAGE-001",
+      "title": "PageDown 在歌曲列表中翻页",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test page_down_in_search_sends_search_page_down",
+          "expected": "Test passes, asserting PageDown key in Search view sends SearchPageDown command",
+          "observed": "Test passed. handle_key receives KeyCode::PageDown with view=Search, ui_focus=BodyCenter → sends AppCommand::SearchPageDown. No other commands sent."
+        },
+        {
+          "action": "Verify reducer handles SearchPageDown correctly",
+          "expected": "search_selected increases by PAGE_SIZE (10), clamped to last index",
+          "observed": "src/features/search/mod.rs line 76-84: SearchPageDown sets search_selected = (search_selected + 10).min(len-1), confirming page-size increment with boundary clamping."
+        }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::keyboard::tests::page_down_in_search_sends_search_page_down"
+        ],
+        "testOutput": "test result: ok. 4 passed; 0 failed",
+        "reducerCode": "src/features/search/mod.rs:76-84 (PAGE_SIZE=10, saturating add with max clamp)",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PAGE-002",
+      "title": "PageUp 在歌曲列表中翻页",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test page_up_in_search_sends_search_page_up",
+          "expected": "Test passes, asserting PageUp key in Search view sends SearchPageUp command",
+          "observed": "Test passed. handle_key receives KeyCode::PageUp with view=Search, ui_focus=BodyCenter → sends AppCommand::SearchPageUp. No other commands sent."
+        },
+        {
+          "action": "Verify reducer handles SearchPageUp correctly",
+          "expected": "search_selected decreases by PAGE_SIZE (10), floored at 0",
+          "observed": "src/features/search/mod.rs line 86-93: SearchPageUp sets search_selected = search_selected.saturating_sub(10), confirming page-size decrement with floor at 0."
+        }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::keyboard::tests::page_up_in_search_sends_search_page_up"
+        ],
+        "testOutput": "test result: ok. 4 passed; 0 failed",
+        "reducerCode": "src/features/search/mod.rs:86-93 (PAGE_SIZE=10, saturating_sub)",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PAGE-003",
+      "title": "Home 跳到列表顶部",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test home_in_search_sends_search_jump_top",
+          "expected": "Test passes, asserting Home key in Search view sends SearchJumpTop command",
+          "observed": "Test passed. handle_key receives KeyCode::Home with view=Search, ui_focus=BodyCenter → sends AppCommand::SearchJumpTop. No other commands sent."
+        },
+        {
+          "action": "Verify reducer handles SearchJumpTop correctly",
+          "expected": "search_selected set to 0",
+          "observed": "src/features/search/mod.rs line 95-100: SearchJumpTop sets search_selected = 0 when list is non-empty and current != 0."
+        }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::keyboard::tests::home_in_search_sends_search_jump_top"
+        ],
+        "testOutput": "test result: ok. 3 passed; 0 failed (via 'cargo test jump')",
+        "reducerCode": "src/features/search/mod.rs:95-100 (sets search_selected = 0)",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PAGE-004",
+      "title": "End 跳到列表底部",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test end_in_search_sends_search_jump_bottom",
+          "expected": "Test passes, asserting End key in Search view sends SearchJumpBottom command",
+          "observed": "Test passed. handle_key receives KeyCode::End with view=Search, ui_focus=BodyCenter → sends AppCommand::SearchJumpBottom. No other commands sent."
+        },
+        {
+          "action": "Verify reducer handles SearchJumpBottom correctly",
+          "expected": "search_selected set to last index (len - 1)",
+          "observed": "src/features/search/mod.rs line 102-108: SearchJumpBottom sets search_selected = search_results.len().saturating_sub(1) when list is non-empty."
+        }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::keyboard::tests::end_in_search_sends_search_jump_bottom"
+        ],
+        "testOutput": "test result: ok. 3 passed; 0 failed (via 'cargo test jump')",
+        "reducerCode": "src/features/search/mod.rs:102-108 (sets search_selected = len - 1)",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 4 assertions: all 4 passed. VAL-PAGE-001 (PageDown) verified by page_down_in_search_sends_search_page_down test + reducer code confirming +PAGE_SIZE clamped to last index. VAL-PAGE-002 (PageUp) verified by page_up_in_search_sends_search_page_up test + reducer code confirming -PAGE_SIZE floored at 0. VAL-PAGE-003 (Home/JumpTop) verified by home_in_search_sends_search_jump_top test + reducer code confirming search_selected=0. VAL-PAGE-004 (End/JumpBottom) verified by end_in_search_sends_search_jump_bottom test + reducer code confirming search_selected=last index. All tests ran in both lib.rs and main.rs targets with 0 failures."
+}

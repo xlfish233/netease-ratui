@@ -1,0 +1,34 @@
+{
+  "milestone": "features-enrich",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 17,
+    "passed": 17,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-PROGRESS-001",
+    "VAL-PROGRESS-002",
+    "VAL-PROGRESS-003",
+    "VAL-PROGRESS-004",
+    "VAL-PROGRESS-005",
+    "VAL-PROGRESS-006",
+    "VAL-PROGRESS-007",
+    "VAL-MENU-001",
+    "VAL-MENU-002",
+    "VAL-MENU-003",
+    "VAL-MENU-004",
+    "VAL-MENU-005",
+    "VAL-MENU-006",
+    "VAL-PAGE-001",
+    "VAL-PAGE-002",
+    "VAL-PAGE-003",
+    "VAL-PAGE-004"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}

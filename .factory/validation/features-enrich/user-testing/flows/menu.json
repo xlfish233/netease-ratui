@@ -1,0 +1,117 @@
+{
+  "groupId": "menu",
+  "testedAt": "2026-03-31T00:00:00Z",
+  "isolation": {
+    "repoRoot": "/home/xl/play/netease-ratui",
+    "noExternalServices": true,
+    "noSharedStateMutation": true
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-MENU-001",
+      "title": "按 m 键弹出操作菜单",
+      "status": "pass",
+      "steps": [
+        { "action": "Run keyboard test m_key_sends_menu_open", "expected": "handle_key sends AppCommand::MenuOpen", "observed": "MenuOpen received, no other commands sent" },
+        { "action": "Run reducer test menu_open_sets_visible_and_resets_selected", "expected": "handle_ui sets menu_visible=true, menu_selected=0", "observed": "menu_visible=true, menu_selected=0, menu_items not empty" }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::keyboard::tests::m_key_sends_menu_open",
+          "core::reducer::ui::tests::menu_open_sets_visible_and_resets_selected"
+        ],
+        "testOutput": "13 tests passed, 0 failed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MENU-002",
+      "title": "操作菜单显示占位选项（至少4个，含收藏、下载等）",
+      "status": "pass",
+      "steps": [
+        { "action": "Run menu test default_menu_items_has_at_least_4", "expected": "default_menu_items().len() >= 4 and contains 收藏/下载", "observed": "len >= 4, items contain 收藏 and 下载" },
+        { "action": "Run reducer test default_menu_items_len_at_least_4", "expected": "default_menu_items().len() >= 4", "observed": "len >= 4" }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::menu::tests::default_menu_items_has_at_least_4",
+          "core::reducer::ui::tests::default_menu_items_len_at_least_4"
+        ],
+        "testOutput": "13 tests passed, 0 failed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MENU-003",
+      "title": "Esc 关闭操作菜单",
+      "status": "pass",
+      "steps": [
+        { "action": "Run keyboard test menu_esc_sends_menu_cancel", "expected": "handle_key sends AppCommand::MenuCancel only", "observed": "MenuCancel received, no other commands" },
+        { "action": "Run reducer test menu_cancel_hides_menu", "expected": "handle_ui sets menu_visible=false", "observed": "menu_visible=false after MenuCancel" }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::keyboard::tests::menu_esc_sends_menu_cancel",
+          "core::reducer::ui::tests::menu_cancel_hides_menu"
+        ],
+        "testOutput": "13 tests passed, 0 failed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MENU-004",
+      "title": "Enter 选择菜单项后关闭并显示 toast",
+      "status": "pass",
+      "steps": [
+        { "action": "Run keyboard test menu_enter_sends_menu_select", "expected": "handle_key sends AppCommand::MenuSelect with menu_selected=1", "observed": "MenuSelect received, no other commands" },
+        { "action": "Run reducer test menu_select_closes_and_shows_toast", "expected": "menu_visible=false and effects contain SetToast", "observed": "menu_visible=false, SetToast effect present" }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::keyboard::tests::menu_enter_sends_menu_select",
+          "core::reducer::ui::tests::menu_select_closes_and_shows_toast"
+        ],
+        "testOutput": "13 tests passed, 0 failed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MENU-005",
+      "title": "j/k 在菜单中移动高亮，边界安全",
+      "status": "pass",
+      "steps": [
+        { "action": "Run keyboard test menu_jk_moves_highlight", "expected": "j sends MenuMoveDown, k sends MenuMoveUp, Down arrow sends MenuMoveDown", "observed": "All three commands received correctly" },
+        { "action": "Run reducer test menu_move_up_down_boundary_safe", "expected": "menu_selected increments/decrements, clamped at boundaries", "observed": "index 0 stays 0 on up, does not exceed last index on down" }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::keyboard::tests::menu_jk_moves_highlight",
+          "core::reducer::ui::tests::menu_move_up_down_boundary_safe"
+        ],
+        "testOutput": "13 tests passed, 0 failed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MENU-006",
+      "title": "菜单操作不影响底层 UI 状态（view/ui_focus/search_selected）",
+      "status": "pass",
+      "steps": [
+        { "action": "Run keyboard test menu_visible_keys_do_not_penetrate", "expected": "Space and q do not send PlayerTogglePause or Quit when menu_visible=true", "observed": "No commands received for Space or q" },
+        { "action": "Run reducer test menu_operations_do_not_affect_underlying_state", "expected": "view/ui_focus/search_selected unchanged after MenuOpen, MenuMoveDown, MenuCancel", "observed": "All three fields remain unchanged" }
+      ],
+      "evidence": {
+        "testNames": [
+          "ui::tui::keyboard::tests::menu_visible_keys_do_not_penetrate",
+          "core::reducer::ui::tests::menu_operations_do_not_affect_underlying_state"
+        ],
+        "testOutput": "13 tests passed, 0 failed"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 6 assertions: all 6 passed. 13 cargo tests covering keyboard mapping, reducer state changes, and menu rendering all pass."
+}
