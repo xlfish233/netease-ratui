@@ -1,0 +1,231 @@
+{
+  "groupId": "seek-scroll-edge",
+  "testedAt": "2026-03-31T12:00:00Z",
+  "isolation": {
+    "project": "/home/xl/play/netease-ratui",
+    "tool": "cargo test",
+    "branch": "master",
+    "commit": "9b15386"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-MOUSE-006",
+      "title": "点击进度条 1/4 位置 Seek 到对应位置",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with play_total_ms=240000",
+          "expected": "AppSnapshot configured with 4-minute song",
+          "observed": "AppSnapshot created with play_total_ms=Some(240000)"
+        },
+        {
+          "action": "Click at 1/4 canvas width in footer row",
+          "expected": "PlayerSeekAbsoluteMs with ms ≈ 60000 (±1000ms)",
+          "observed": "Received PlayerSeekAbsoluteMs with ms matching expected value within tolerance"
+        },
+        {
+          "action": "Verify no extra commands sent",
+          "expected": "No additional AppCommand",
+          "observed": "rx.try_recv() returned error (empty)"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "N/A (unit test)",
+        "testOutput": "mouse-support/seek-scroll-edge/cargo-test-output.txt",
+        "testFunction": "ui::tui::mouse::tests::progress_bar_seek_quarter_position"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-007",
+      "title": "点击进度条 3/4 位置 Seek",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with play_total_ms=240000",
+          "expected": "AppSnapshot configured with 4-minute song",
+          "observed": "AppSnapshot created with play_total_ms=Some(240000)"
+        },
+        {
+          "action": "Click at 3/4 canvas width in footer row",
+          "expected": "PlayerSeekAbsoluteMs with ms ≈ 180000 (±1000ms)",
+          "observed": "Received PlayerSeekAbsoluteMs with ms matching expected value within tolerance"
+        },
+        {
+          "action": "Verify no extra commands sent",
+          "expected": "No additional AppCommand",
+          "observed": "rx.try_recv() returned error (empty)"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "N/A (unit test)",
+        "testOutput": "mouse-support/seek-scroll-edge/cargo-test-output.txt",
+        "testFunction": "ui::tui::mouse::tests::progress_bar_seek_three_quarter_position"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-008",
+      "title": "滚轮上滚增大音量",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with default Playlists view",
+          "expected": "Default AppSnapshot",
+          "observed": "AppSnapshot created successfully"
+        },
+        {
+          "action": "Send ScrollUp mouse event at canvas center",
+          "expected": "PlayerVolumeUp command sent",
+          "observed": "Received AppCommand::PlayerVolumeUp"
+        },
+        {
+          "action": "Verify no extra commands sent",
+          "expected": "No additional AppCommand",
+          "observed": "rx.try_recv() returned error (empty)"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "N/A (unit test)",
+        "testOutput": "mouse-support/seek-scroll-edge/cargo-test-output.txt",
+        "testFunction": "ui::tui::mouse::tests::scroll_up_sends_volume_up"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-009",
+      "title": "滚轮下滚减小音量",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with default Playlists view",
+          "expected": "Default AppSnapshot",
+          "observed": "AppSnapshot created successfully"
+        },
+        {
+          "action": "Send ScrollDown mouse event at canvas center",
+          "expected": "PlayerVolumeDown command sent",
+          "observed": "Received AppCommand::PlayerVolumeDown"
+        },
+        {
+          "action": "Verify no extra commands sent",
+          "expected": "No additional AppCommand",
+          "observed": "rx.try_recv() returned error (empty)"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "N/A (unit test)",
+        "testOutput": "mouse-support/seek-scroll-edge/cargo-test-output.txt",
+        "testFunction": "ui::tui::mouse::tests::scroll_down_sends_volume_down"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-010",
+      "title": "点击页签切换视图（回归）",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with play_total_ms=Some(240000) to verify seek context doesn't break tab click",
+          "expected": "AppSnapshot with playing song",
+          "observed": "AppSnapshot created with play_total_ms=Some(240000)"
+        },
+        {
+          "action": "Click on row 0 (tabs row) at tab 0 position (col 1)",
+          "expected": "TabTo { index: 0 } command sent",
+          "observed": "Received AppCommand::TabTo { index: 0 }"
+        },
+        {
+          "action": "Verify no extra commands sent",
+          "expected": "No additional AppCommand",
+          "observed": "rx.try_recv() returned error (empty)"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "N/A (unit test)",
+        "testOutput": "mouse-support/seek-scroll-edge/cargo-test-output.txt",
+        "testFunction": "ui::tui::mouse::tests::tab_click_still_works_with_seek_and_scroll"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-011",
+      "title": "帮助弹窗可见时鼠标不穿透",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with help_visible=true, play_total_ms=Some(240000), and search results",
+          "expected": "AppSnapshot with help overlay visible",
+          "observed": "AppSnapshot created with help_visible=true"
+        },
+        {
+          "action": "Send left click on body center panel",
+          "expected": "No AppCommand sent",
+          "observed": "rx.try_recv() returned error (empty)"
+        },
+        {
+          "action": "Send ScrollUp event",
+          "expected": "No AppCommand sent",
+          "observed": "rx.try_recv() returned error (empty)"
+        },
+        {
+          "action": "Send footer click (progress bar area)",
+          "expected": "No AppCommand sent",
+          "observed": "rx.try_recv() returned error (empty)"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "N/A (unit test)",
+        "testOutput": "mouse-support/seek-scroll-edge/cargo-test-output.txt",
+        "testFunction": "ui::tui::mouse::tests::help_visible_blocks_all_mouse_events"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-012",
+      "title": "Canvas 外鼠标事件忽略",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with default Playlists view",
+          "expected": "Default AppSnapshot",
+          "observed": "AppSnapshot created successfully"
+        },
+        {
+          "action": "Send left click beyond canvas width (MIN_CANVAS_WIDTH + 10)",
+          "expected": "No AppCommand sent",
+          "observed": "rx.try_recv() returned error (empty)"
+        },
+        {
+          "action": "Send ScrollUp beyond canvas width",
+          "expected": "No AppCommand sent",
+          "observed": "rx.try_recv() returned error (empty)"
+        }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "N/A (unit test)",
+        "testOutput": "mouse-support/seek-scroll-edge/cargo-test-output.txt",
+        "testFunction": "ui::tui::mouse::tests::outside_canvas_mouse_ignored"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 7 assertions: all 7 passed (VAL-MOUSE-006 through VAL-MOUSE-012). All cargo tests executed successfully with 0 failures across both lib and bin test targets."
+}

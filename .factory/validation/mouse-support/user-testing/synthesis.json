@@ -1,0 +1,30 @@
+{
+  "milestone": "mouse-support",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-MOUSE-001",
+    "VAL-MOUSE-002",
+    "VAL-MOUSE-003",
+    "VAL-MOUSE-004",
+    "VAL-MOUSE-005",
+    "VAL-MOUSE-006",
+    "VAL-MOUSE-007",
+    "VAL-MOUSE-008",
+    "VAL-MOUSE-009",
+    "VAL-MOUSE-010",
+    "VAL-MOUSE-011",
+    "VAL-MOUSE-012",
+    "VAL-MOUSE-013"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}

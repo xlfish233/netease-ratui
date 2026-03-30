@@ -1,0 +1,87 @@
+{
+  "groupId": "click-selection",
+  "testedAt": "2026-03-31T00:00:00Z",
+  "isolation": {
+    "project": "/home/xl/play/netease-ratui",
+    "tool": "cargo test",
+    "note": "Unit tests are self-contained, no special isolation needed"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-MOUSE-001",
+      "title": "左键单击歌单列表项选中",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with View::Playlists, 3 playlists, logged_in=true",
+          "expected": "AppSnapshot ready for mouse click testing",
+          "observed": "AppSnapshot created successfully"
+        },
+        {
+          "action": "Simulate left-click on left panel (col=5, row=HEADER_HEIGHT+3) mapping to playlist item index 2",
+          "expected": "AppCommand::PlaylistsMoveTo { index: 2 } sent, playlists_selected updates to index 2",
+          "observed": "Received AppCommand::PlaylistsMoveTo { index: 2 }, no other commands sent"
+        }
+      ],
+      "evidence": {
+        "testName": "click_playlist_list_selects_item",
+        "testOutput": "test ui::tui::mouse::tests::click_playlist_list_selects_item ... ok",
+        "outputFile": "evidence/mouse-support/click-selection/test-output.txt",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-002",
+      "title": "左键单击歌曲列表项选中",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with View::Playlists, PlaylistMode::Tracks, 4 songs, logged_in=true",
+          "expected": "AppSnapshot ready for mouse click testing",
+          "observed": "AppSnapshot created successfully"
+        },
+        {
+          "action": "Simulate left-click on center panel (col=LEFT_WIDTH+10, row=HEADER_HEIGHT+4) mapping to track item index 3",
+          "expected": "AppCommand::PlaylistTracksMoveTo { index: 3 } sent, playlist_tracks_selected updates to index 3",
+          "observed": "Received AppCommand::PlaylistTracksMoveTo { index: 3 }, no other commands sent"
+        }
+      ],
+      "evidence": {
+        "testName": "click_playlist_tracks_selects_item",
+        "testOutput": "test ui::tui::mouse::tests::click_playlist_tracks_selects_item ... ok",
+        "outputFile": "evidence/mouse-support/click-selection/test-output.txt",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-003",
+      "title": "左键单击搜索结果选中",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with View::Search, 3 search results, logged_in=true",
+          "expected": "AppSnapshot ready for mouse click testing",
+          "observed": "AppSnapshot created successfully"
+        },
+        {
+          "action": "Simulate left-click on center panel (col=LEFT_WIDTH+10, row=HEADER_HEIGHT+2) mapping to search result index 1",
+          "expected": "AppCommand::SearchMoveTo { index: 1 } sent, search_selected updates to index 1",
+          "observed": "Received AppCommand::SearchMoveTo { index: 1 }, no other commands sent"
+        }
+      ],
+      "evidence": {
+        "testName": "click_search_result_selects_item",
+        "testOutput": "test ui::tui::mouse::tests::click_search_result_selects_item ... ok",
+        "outputFile": "evidence/mouse-support/click-selection/test-output.txt",
+        "consoleErrors": "none"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 3 assertions: all 3 passed. VAL-MOUSE-001 (playlist list click select), VAL-MOUSE-002 (playlist tracks click select), VAL-MOUSE-003 (search result click select) all confirmed working correctly via cargo test."
+}

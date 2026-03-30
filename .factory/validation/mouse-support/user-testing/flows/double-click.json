@@ -1,0 +1,74 @@
+{
+  "groupId": "double-click",
+  "testedAt": "2026-03-31T00:00:00Z",
+  "isolation": {
+    "project": "/home/xl/play/netease-ratui",
+    "tool": "cargo test",
+    "note": "Unit tests are self-contained, no special isolation needed"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-MOUSE-004",
+      "title": "双击歌曲列表项触发播放",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test mouse::tests::double_click_playlist_tracks_plays_selected",
+          "expected": "Test passes: first click sends PlaylistTracksMoveTo, second click sends PlaylistTracksPlaySelected",
+          "observed": "Test passed. First click sent PlaylistTracksMoveTo { index: 1 }, second click sent PlaylistTracksPlaySelected."
+        },
+        {
+          "action": "Run cargo test mouse::tests::double_click_detector_same_item_double_click",
+          "expected": "Test passes: DoubleClickDetector returns false on first click, true on second click for same panel+item",
+          "observed": "Test passed. Detector correctly identified double-click on same item."
+        }
+      ],
+      "evidence": {
+        "testOutput": "mouse-support/double-click/cargo-test-output.txt",
+        "consoleErrors": "none",
+        "network": "N/A (unit test)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-005",
+      "title": "双击搜索结果触发播放",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test mouse::tests::double_click_search_result_plays_selected",
+          "expected": "Test passes: first click sends SearchMoveTo, second click sends SearchPlaySelected",
+          "observed": "Test passed. First click sent SearchMoveTo { index: 2 }, second click sent SearchPlaySelected."
+        }
+      ],
+      "evidence": {
+        "testOutput": "mouse-support/double-click/cargo-test-output.txt",
+        "consoleErrors": "none",
+        "network": "N/A (unit test)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MOUSE-013",
+      "title": "跨面板点击不误触发双击",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Run cargo test mouse::tests::cross_panel_clicks_do_not_trigger_double_click",
+          "expected": "Test passes: clicking left panel then center panel does NOT trigger play command",
+          "observed": "Test passed. First click sent PlaylistsMoveTo { index: 0 }, second click sent PlaylistTracksMoveTo { index: 0 } (select only, no play). No play command was sent."
+        }
+      ],
+      "evidence": {
+        "testOutput": "mouse-support/double-click/cargo-test-output.txt",
+        "consoleErrors": "none",
+        "network": "N/A (unit test)"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 3 assertions (4 tests total): all passed. VAL-MOUSE-004 verified by double_click_playlist_tracks_plays_selected and double_click_detector_same_item_double_click. VAL-MOUSE-005 verified by double_click_search_result_plays_selected. VAL-MOUSE-013 verified by cross_panel_clicks_do_not_trigger_double_click."
+}
