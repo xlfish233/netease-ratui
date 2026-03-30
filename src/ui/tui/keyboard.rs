@@ -1414,4 +1414,164 @@ mod tests {
         );
         assert!(rx.try_recv().is_err());
     }
+
+    // ============================================================
+    // VAL-CROSS-001 ~ VAL-CROSS-003: 跨区域流程集成测试
+    // ============================================================
+
+    /// Helper: create a press KeyEvent
+    fn press_key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
+    }
+
+    /// VAL-CROSS-001: 搜索框输入空格 → Tab 切换到 BodyCenter → m 弹出菜单 → Esc 关闭菜单
+    /// 验证多个 UI 功能在不同组合下正确协作：
+    /// 1. Space 在搜索框输入空格（非 PlayerTogglePause）
+    /// 2. Tab 切换焦点到 BodyCenter
+    /// 3. m 弹出菜单
+    /// 4. Esc 关闭菜单
+    #[tokio::test]
+    async fn cross_area_search_space_tab_menu_esc_flow() {
+        // Step 1: 搜索框焦点下按 Space → 输入空格
+        let app_search = App {
+            view: View::Search,
+            ui_focus: UiFocus::HeaderSearch,
+            ..Default::default()
+        };
+        let snapshot_search = AppSnapshot::from_app(&app_search);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(16);
+
+        let should_quit = handle_key(&snapshot_search, press_key(KeyCode::Char(' ')), &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("Step 1: 应发送 SearchInputChar");
+        assert!(
+            matches!(cmd, AppCommand::SearchInputChar { c } if c == ' '),
+            "Step 1: 期望 SearchInputChar {{ c: ' ' }}，实际 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "Step 1: 不应发送其他命令");
+
+        // Step 2: Tab 切换焦点到 BodyCenter
+        let should_quit = handle_key(&snapshot_search, press_key(KeyCode::Tab), &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("Step 2: 应发送 UiFocusNext");
+        assert!(
+            matches!(cmd, AppCommand::UiFocusNext),
+            "Step 2: 期望 UiFocusNext，实际 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "Step 2: 不应发送其他命令");
+
+        // Step 3: BodyCenter 焦点下按 m → 弹出菜单
+        let app_results = App {
+            view: View::Search,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        let snapshot_results = AppSnapshot::from_app(&app_results);
+
+        let should_quit = handle_key(&snapshot_results, press_key(KeyCode::Char('m')), &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("Step 3: 应发送 MenuOpen");
+        assert!(
+            matches!(cmd, AppCommand::MenuOpen),
+            "Step 3: 期望 MenuOpen，实际 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "Step 3: 不应发送其他命令");
+
+        // Step 4: 菜单可见时按 Esc → 关闭菜单
+        let mut app_menu = App {
+            view: View::Search,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        app_menu.menu_visible = true;
+        app_menu.menu_items = crate::app::default_menu_items();
+        let snapshot_menu = AppSnapshot::from_app(&app_menu);
+
+        let should_quit = handle_key(&snapshot_menu, press_key(KeyCode::Esc), &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("Step 4: 应发送 MenuCancel");
+        assert!(
+            matches!(cmd, AppCommand::MenuCancel),
+            "Step 4: 期望 MenuCancel，实际 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "Step 4: 仅应收到 MenuCancel");
+    }
+
+    /// VAL-CROSS-003: 自定义 Space 后搜索框仍可输入空格
+    /// 当 PlayerTogglePause 绑定为 'p' 而非 Space 时，搜索框中 Space 仍应发送 SearchInputChar
+    #[tokio::test]
+    async fn cross_area_custom_space_search_input_still_works() {
+        use crate::keybindings::{KeyAction, KeyBindings};
+
+        // 创建自定义 keybindings：PlayerTogglePause 绑定到 'p'，Space 无绑定
+        let mut custom_bindings = KeyBindings::default();
+        custom_bindings.unbind_action(&KeyAction::PlayerTogglePause);
+        custom_bindings.bind_key(KeyCode::Char('p'), KeyAction::PlayerTogglePause);
+
+        let mut app = App {
+            view: View::Search,
+            ui_focus: UiFocus::HeaderSearch,
+            ..Default::default()
+        };
+        app.keybindings = std::sync::Arc::new(custom_bindings);
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        // 搜索框按 Space → 应发送 SearchInputChar（不发送 PlayerTogglePause）
+        let should_quit = handle_key(&snapshot, press_key(KeyCode::Char(' ')), &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 SearchInputChar");
+        assert!(
+            matches!(cmd, AppCommand::SearchInputChar { c } if c == ' '),
+            "自定义 Space 后搜索框按 Space 应发送 SearchInputChar {{ c: ' ' }}，实际 {:?}",
+            cmd
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "不应发送其他命令（尤其是 PlayerTogglePause）"
+        );
+
+        // 验证 'p' 在非搜索框焦点下触发 PlayerTogglePause
+        let mut app_body = App {
+            view: View::Search,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        // 重新创建 custom bindings（Arc is cloned by snapshot）
+        let mut custom_bindings2 = KeyBindings::default();
+        custom_bindings2.unbind_action(&KeyAction::PlayerTogglePause);
+        custom_bindings2.bind_key(KeyCode::Char('p'), KeyAction::PlayerTogglePause);
+        app_body.keybindings = std::sync::Arc::new(custom_bindings2);
+        let snapshot_body = AppSnapshot::from_app(&app_body);
+
+        let (tx2, mut rx2) = mpsc::channel::<AppCommand>(8);
+        let should_quit = handle_key(&snapshot_body, press_key(KeyCode::Char(' ')), &tx2).await;
+        assert!(!should_quit);
+        // Space 不再绑定到 PlayerTogglePause，所以在非搜索焦点下也不应触发 toggle
+        assert!(
+            rx2.try_recv().is_err(),
+            "自定义 Space 后非搜索焦点下 Space 不应触发任何命令"
+        );
+
+        // 验证 'p' 触发 PlayerTogglePause
+        let should_quit = handle_key(&snapshot_body, press_key(KeyCode::Char('p')), &tx2).await;
+        assert!(!should_quit);
+        let cmd = rx2.try_recv().expect("'p' 应发送 PlayerTogglePause");
+        assert!(
+            matches!(cmd, AppCommand::PlayerTogglePause),
+            "自定义 'p' 应触发 PlayerTogglePause，实际 {:?}",
+            cmd
+        );
+        assert!(rx2.try_recv().is_err(), "不应发送其他命令");
+    }
 }

@@ -1294,4 +1294,53 @@ mod tests {
 
         assert!(rx.try_recv().is_err(), "canvas 外鼠标事件不应发送命令");
     }
+
+    // ==================== Cross-area flow tests ====================
+
+    /// VAL-CROSS-002: Toast 显示时鼠标点击列表项不受影响
+    /// 验证 Toast 不阻断鼠标事件：当 Toast 可见时，鼠标点击列表项应正常发送选中命令
+    #[tokio::test]
+    async fn cross_area_toast_visible_mouse_click_still_works() {
+        let mut app = App {
+            view: View::Search,
+            logged_in: true,
+            ..Default::default()
+        };
+        app.search_results = vec![
+            Song {
+                id: 1,
+                name: "Result A".to_owned(),
+                artists: "Artist A".to_owned(),
+            },
+            Song {
+                id: 2,
+                name: "Result B".to_owned(),
+                artists: "Artist B".to_owned(),
+            },
+            Song {
+                id: 3,
+                name: "Result C".to_owned(),
+                artists: "Artist C".to_owned(),
+            },
+        ];
+        app.toast = Some(crate::app::Toast::info("test toast"));
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        // Click on search result item 1 (Result B) — should work despite Toast being visible
+        let mouse = make_mouse_event(LEFT_WIDTH + 10, HEADER_HEIGHT + 2, 0, 0);
+        run_mouse(&snapshot, mouse, &tx).await;
+
+        let cmd = rx.try_recv().expect("Toast 显示时鼠标点击应发送选中命令");
+        assert!(
+            matches!(cmd, AppCommand::SearchMoveTo { index } if index == 1),
+            "Toast 显示时期望 SearchMoveTo {{ index: 1 }}，实际收到 {:?}",
+            cmd
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "Toast 显示时鼠标操作不应发送额外命令"
+        );
+    }
 }
