@@ -2,6 +2,7 @@ use super::header::draw_header;
 use super::layout::{split_body, split_canvas, split_header, split_right};
 use super::login_view::draw_login;
 use super::lyrics_view::draw_lyrics;
+use super::menu::draw_menu_overlay;
 use super::overlays::draw_help_overlay;
 use super::panels::{draw_context_panel, draw_left_panel, draw_now_panel};
 use super::player_status::draw_footer;
@@ -77,6 +78,10 @@ pub(super) fn draw_ui(f: &mut Frame, app: &AppSnapshot) {
 
     if app.help_visible {
         draw_help_overlay(f, canvas);
+    }
+
+    if app.menu_visible {
+        draw_menu_overlay(f, canvas, app);
     }
 }
 

@@ -23,6 +23,26 @@ pub(super) async fn handle_key(
         return false;
     }
 
+    // Menu overlay: captures all keys when visible
+    if app.menu_visible {
+        match key.code {
+            KeyCode::Esc => {
+                let _ = tx.send(AppCommand::MenuCancel).await;
+            }
+            KeyCode::Enter => {
+                let _ = tx.send(AppCommand::MenuSelect).await;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let _ = tx.send(AppCommand::MenuMoveUp).await;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let _ = tx.send(AppCommand::MenuMoveDown).await;
+            }
+            _ => {}
+        }
+        return false;
+    }
+
     match key {
         KeyEvent {
             code: KeyCode::Char('q'),
@@ -36,6 +56,14 @@ pub(super) async fn handle_key(
             ..
         } => {
             let _ = tx.send(AppCommand::UiToggleHelp).await;
+            return false;
+        }
+        KeyEvent {
+            code: KeyCode::Char('m'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            let _ = tx.send(AppCommand::MenuOpen).await;
             return false;
         }
         KeyEvent {
@@ -866,5 +894,214 @@ mod tests {
             rx.try_recv().is_err(),
             "Esc 在 Playlists BodyCenter 不应产生命令"
         );
+    }
+
+    // ============================================================
+    // VAL-MENU-001 ~ VAL-MENU-006: 操作菜单测试
+    // ============================================================
+
+    /// Helper: 创建带菜单可见的 AppSnapshot
+    fn make_snapshot_with_menu() -> AppSnapshot {
+        let mut app = App {
+            view: View::Playlists,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        app.menu_visible = true;
+        app.menu_selected = 0;
+        app.menu_items = crate::app::default_menu_items();
+        AppSnapshot::from_app(&app)
+    }
+
+    /// VAL-MENU-001: 按 m 键弹出操作菜单
+    #[tokio::test]
+    async fn m_key_sends_menu_open() {
+        let app = App {
+            view: View::Playlists,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Char('m'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 MenuOpen 命令");
+        assert!(
+            matches!(cmd, AppCommand::MenuOpen),
+            "期望 MenuOpen，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// VAL-MENU-003: Esc 关闭操作菜单
+    #[tokio::test]
+    async fn menu_esc_sends_menu_cancel() {
+        let snapshot = make_snapshot_with_menu();
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 MenuCancel 命令");
+        assert!(
+            matches!(cmd, AppCommand::MenuCancel),
+            "期望 MenuCancel，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "仅应收到 MenuCancel");
+    }
+
+    /// VAL-MENU-004: Enter 选择菜单项后关闭（通过 MenuSelect 命令）
+    #[tokio::test]
+    async fn menu_enter_sends_menu_select() {
+        let mut app = App {
+            view: View::Playlists,
+            ui_focus: UiFocus::BodyCenter,
+            ..Default::default()
+        };
+        app.menu_visible = true;
+        app.menu_selected = 1;
+        app.menu_items = crate::app::default_menu_items();
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("应发送 MenuSelect 命令");
+        assert!(
+            matches!(cmd, AppCommand::MenuSelect),
+            "期望 MenuSelect，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// VAL-MENU-005: j/k 在菜单中移动高亮
+    #[tokio::test]
+    async fn menu_jk_moves_highlight() {
+        let snapshot = make_snapshot_with_menu();
+
+        // j (down) should send MenuMoveDown
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+        let key_down = KeyEvent {
+            code: KeyCode::Char('j'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        let should_quit = handle_key(&snapshot, key_down, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("j 应发送 MenuMoveDown");
+        assert!(
+            matches!(cmd, AppCommand::MenuMoveDown),
+            "期望 MenuMoveDown，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err());
+
+        // k (up) should send MenuMoveUp
+        let key_up = KeyEvent {
+            code: KeyCode::Char('k'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        let should_quit = handle_key(&snapshot, key_up, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("k 应发送 MenuMoveUp");
+        assert!(
+            matches!(cmd, AppCommand::MenuMoveUp),
+            "期望 MenuMoveUp，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err());
+
+        // Up arrow should also send MenuMoveUp
+        let key_up_arrow = KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        let should_quit = handle_key(&snapshot, key_up_arrow, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("Up 应发送 MenuMoveUp");
+        assert!(
+            matches!(cmd, AppCommand::MenuMoveUp),
+            "期望 MenuMoveUp，实际收到 {:?}",
+            cmd
+        );
+
+        // Down arrow should also send MenuMoveDown
+        let key_down_arrow = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        let should_quit = handle_key(&snapshot, key_down_arrow, &tx).await;
+        assert!(!should_quit);
+        let cmd = rx.try_recv().expect("Down 应发送 MenuMoveDown");
+        assert!(
+            matches!(cmd, AppCommand::MenuMoveDown),
+            "期望 MenuMoveDown，实际收到 {:?}",
+            cmd
+        );
+    }
+
+    /// VAL-MENU-006: 菜单可见时其他按键不穿透到视图
+    #[tokio::test]
+    async fn menu_visible_keys_do_not_penetrate() {
+        let snapshot = make_snapshot_with_menu();
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        // Press Space — should NOT send PlayerTogglePause when menu is visible
+        let key = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        let should_quit = handle_key(&snapshot, key, &tx).await;
+        assert!(!should_quit);
+        // Menu captures all keys not explicitly mapped, so no command should be sent
+        assert!(
+            rx.try_recv().is_err(),
+            "菜单可见时 Space 不应穿透到底层视图"
+        );
+
+        // Press q — should NOT quit when menu is visible
+        let key_q = KeyEvent {
+            code: KeyCode::Char('q'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+        let should_quit = handle_key(&snapshot, key_q, &tx).await;
+        assert!(!should_quit, "菜单可见时 q 不应退出");
+        assert!(rx.try_recv().is_err(), "菜单可见时 q 不应穿透到底层视图");
     }
 }

@@ -78,6 +78,11 @@ pub enum AppCommand {
     Quit,
     #[allow(dead_code)]
     ToastDismiss,
+    MenuOpen,
+    MenuCancel,
+    MenuSelect,
+    MenuMoveUp,
+    MenuMoveDown,
 }
 
 #[derive(Debug)]

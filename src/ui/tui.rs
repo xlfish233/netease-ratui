@@ -6,6 +6,7 @@ mod keyboard;
 mod layout;
 mod login_view;
 mod lyrics_view;
+mod menu;
 mod mouse;
 mod overlays;
 mod panels;

@@ -6,6 +6,16 @@ use crate::domain::model::LyricLine;
 
 pub use crate::domain::model::{Playlist, Song};
 
+/// 默认操作菜单选项
+pub fn default_menu_items() -> Vec<String> {
+    vec![
+        "收藏到我喜欢".to_owned(),
+        "下载歌曲".to_owned(),
+        "加入歌单".to_owned(),
+        "分享".to_owned(),
+    ]
+}
+
 /// Toast 通知级别
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToastLevel {
@@ -178,6 +188,10 @@ pub struct App {
     pub help_visible: bool,
     pub toast: Option<Toast>,
 
+    pub menu_visible: bool,
+    pub menu_selected: usize,
+    pub menu_items: Vec<String>,
+
     pub login_qr_url: Option<String>,
     pub login_qr_ascii: Option<String>,
     pub login_unikey: Option<String>,
@@ -239,6 +253,9 @@ impl Default for App {
             ui_focus: UiFocus::BodyCenter,
             help_visible: false,
             toast: None,
+            menu_visible: false,
+            menu_selected: 0,
+            menu_items: default_menu_items(),
             login_qr_url: None,
             login_qr_ascii: None,
             login_unikey: None,
@@ -299,6 +316,9 @@ pub struct AppSnapshot {
     pub ui_focus: UiFocus,
     pub help_visible: bool,
     pub toast: Option<Toast>,
+    pub menu_visible: bool,
+    pub menu_selected: usize,
+    pub menu_items: Vec<String>,
     pub search_input: String,
     pub player: PlayerSnapshot,
     pub queue: Vec<Song>,
@@ -481,6 +501,9 @@ impl AppSnapshot {
             ui_focus: app.ui_focus,
             help_visible: app.help_visible,
             toast: app.toast.clone(),
+            menu_visible: app.menu_visible,
+            menu_selected: app.menu_selected,
+            menu_items: app.menu_items.clone(),
             search_input: app.search_input.clone(),
             player,
             queue: app.play_queue.ordered_songs(),
