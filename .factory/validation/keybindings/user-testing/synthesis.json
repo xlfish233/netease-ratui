@@ -1,0 +1,27 @@
+{
+  "milestone": "keybindings",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-KEYBIND-001",
+    "VAL-KEYBIND-002",
+    "VAL-KEYBIND-003",
+    "VAL-KEYBIND-004",
+    "VAL-KEYBIND-005",
+    "VAL-KEYBIND-006",
+    "VAL-KEYBIND-007",
+    "VAL-CROSS-001",
+    "VAL-CROSS-002",
+    "VAL-CROSS-003"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
