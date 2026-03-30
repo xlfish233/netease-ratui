@@ -197,6 +197,11 @@ pub fn spawn_app_actor(
 
     tokio::spawn(async move {
         let mut state = CoreState::new_with_settings(&data_dir, settings);
+
+        // 加载 keybindings.toml（失败时回退到默认绑定）
+        state.app.keybindings =
+            std::sync::Arc::new(crate::keybindings::load_keybindings(&data_dir));
+
         let mut state_save_task: Option<tokio::task::JoinHandle<()>> = None;
 
         // ========== 加载保存的状态 ==========

@@ -4,6 +4,7 @@ mod core;
 mod domain;
 mod error;
 mod features;
+mod keybindings;
 mod logging;
 mod messages;
 mod netease;

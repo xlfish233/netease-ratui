@@ -1,4 +1,5 @@
 use crate::app::{AppSnapshot, AppViewSnapshot, PlaylistMode, UiFocus, View};
+use crate::keybindings::KeyAction;
 use crate::messages::app::AppCommand;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tokio::sync::mpsc;
@@ -15,8 +16,18 @@ pub(super) async fn handle_key(
 
     if app.help_visible {
         match key.code {
-            KeyCode::Char('?') | KeyCode::Esc => {
+            KeyCode::Esc => {
                 let _ = tx.send(AppCommand::UiToggleHelp).await;
+            }
+            KeyCode::Char('?') => {
+                // Only toggle help if '?' is still bound to UiToggleHelp
+                if app
+                    .keybindings
+                    .resolve(KeyCode::Char('?'))
+                    .is_some_and(|a| a == KeyAction::UiToggleHelp)
+                {
+                    let _ = tx.send(AppCommand::UiToggleHelp).await;
+                }
             }
             _ => {}
         }
@@ -43,29 +54,56 @@ pub(super) async fn handle_key(
         return false;
     }
 
+    // Configurable global keybindings (Quit, Help, Menu, PlayerPrev/Next, CycleMode)
+    // These are resolved via the keybindings HashMap instead of hardcoded match branches.
+    if key.modifiers == KeyModifiers::NONE
+        && let Some(action) = app.keybindings.resolve(key.code)
+    {
+        match action {
+            KeyAction::Quit => {
+                let _ = tx.send(AppCommand::Quit).await;
+                return true;
+            }
+            KeyAction::UiToggleHelp => {
+                let _ = tx.send(AppCommand::UiToggleHelp).await;
+                return false;
+            }
+            KeyAction::MenuOpen => {
+                let _ = tx.send(AppCommand::MenuOpen).await;
+                return false;
+            }
+            KeyAction::PlayerPrev => {
+                let _ = tx.send(AppCommand::PlayerPrev).await;
+                return false;
+            }
+            KeyAction::PlayerNext => {
+                let _ = tx.send(AppCommand::PlayerNext).await;
+                return false;
+            }
+            KeyAction::PlayerCycleMode => {
+                let _ = tx.send(AppCommand::PlayerCycleMode).await;
+                return false;
+            }
+            KeyAction::PlayerStop => {
+                // Ctrl+s is the default; if user binds a plain key, handle it here
+                let _ = tx.send(AppCommand::PlayerStop).await;
+                return false;
+            }
+            KeyAction::PlayerTogglePause => {
+                // Space key has special handling below for search input
+                if key.code == KeyCode::Char(' ') {
+                    // Will be handled in the global player controls section below
+                    // which checks for search input focus
+                } else {
+                    let _ = tx.send(AppCommand::PlayerTogglePause).await;
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Non-configurable global keys (Tab, BackTab, F-keys)
     match key {
-        KeyEvent {
-            code: KeyCode::Char('q'),
-            ..
-        } => {
-            let _ = tx.send(AppCommand::Quit).await;
-            return true;
-        }
-        KeyEvent {
-            code: KeyCode::Char('?'),
-            ..
-        } => {
-            let _ = tx.send(AppCommand::UiToggleHelp).await;
-            return false;
-        }
-        KeyEvent {
-            code: KeyCode::Char('m'),
-            modifiers: KeyModifiers::NONE,
-            ..
-        } => {
-            let _ = tx.send(AppCommand::MenuOpen).await;
-            return false;
-        }
         KeyEvent {
             code: KeyCode::Tab,
             modifiers,
@@ -131,27 +169,21 @@ pub(super) async fn handle_key(
                 return false;
             }
         }
-        // Space: 在搜索框中作为字符输入，其他场景为播放控制
+        // Space: special context-aware handling
+        // - In search input: sends SearchInputChar
+        // - Otherwise: checks if PlayerTogglePause is bound to Space
         (KeyCode::Char(' '), _) => {
             if matches!(app.view, View::Search) && matches!(app.ui_focus, UiFocus::HeaderSearch) {
                 // 搜索框焦点下，Space 作为字符输入
                 let _ = tx.send(AppCommand::SearchInputChar { c: ' ' }).await;
-            } else {
+            } else if app
+                .keybindings
+                .resolve(KeyCode::Char(' '))
+                .is_some_and(|a| a == KeyAction::PlayerTogglePause)
+            {
                 tracing::debug!("🎵 [Keyboard] 检测到空格键，发送 PlayerTogglePause 命令");
                 let _ = tx.send(AppCommand::PlayerTogglePause).await;
             }
-            return false;
-        }
-        (KeyCode::Char('['), _) => {
-            let _ = tx.send(AppCommand::PlayerPrev).await;
-            return false;
-        }
-        (KeyCode::Char(']'), _) => {
-            let _ = tx.send(AppCommand::PlayerNext).await;
-            return false;
-        }
-        (KeyCode::Char('M'), _) => {
-            let _ = tx.send(AppCommand::PlayerCycleMode).await;
             return false;
         }
         (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => {

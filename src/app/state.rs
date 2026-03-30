@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 use super::PlayQueue;
 use crate::domain::model::LyricLine;
+use crate::keybindings::{KeyBindings, SharedKeyBindings};
 
 pub use crate::domain::model::{Playlist, Song};
 
@@ -244,6 +246,9 @@ pub struct App {
     pub settings_selected: usize,
     pub settings_group_selected: usize,
     pub settings_status: String,
+
+    /// Shared keybindings (immutable after startup, cheap to clone via Arc).
+    pub keybindings: SharedKeyBindings,
 }
 
 impl Default for App {
@@ -305,6 +310,8 @@ impl Default for App {
             settings_selected: 0,
             settings_group_selected: 0,
             settings_status: "←→ 调整 | Enter 操作 | Ctrl+Tab 切换".to_owned(),
+
+            keybindings: Arc::new(KeyBindings::default()),
         }
     }
 }
@@ -324,6 +331,7 @@ pub struct AppSnapshot {
     pub queue: Vec<Song>,
     pub queue_pos: Option<usize>,
     pub view_state: AppViewSnapshot,
+    pub keybindings: SharedKeyBindings,
 }
 
 #[derive(Debug, Clone)]
@@ -509,6 +517,7 @@ impl AppSnapshot {
             queue: app.play_queue.ordered_songs(),
             queue_pos: app.play_queue.cursor_pos(),
             view_state,
+            keybindings: app.keybindings.clone(),
         }
     }
 }

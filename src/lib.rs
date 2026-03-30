@@ -4,6 +4,7 @@ pub mod core;
 pub mod domain;
 pub mod error;
 pub mod features;
+pub mod keybindings;
 pub mod logging;
 pub mod messages;
 pub mod netease;
