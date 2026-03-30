@@ -55,6 +55,9 @@ pub enum AppCommand {
     PlayerSeekForwardMs {
         ms: u64,
     },
+    PlayerSeekAbsoluteMs {
+        ms: u64,
+    },
     PlayerVolumeDown,
     PlayerVolumeUp,
     PlayerCycleMode,

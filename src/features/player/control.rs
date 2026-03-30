@@ -5,7 +5,7 @@ use crate::core::prelude::{
     infra::{NextSongCacheManager, RequestKey, RequestTracker},
     messages::AppCommand,
 };
-use crate::features::player::playback::{play_next, play_prev, seek_relative};
+use crate::features::player::playback::{play_next, play_prev, seek_absolute, seek_relative};
 
 pub struct PlayerControlCtx<'a> {
     pub req_id: &'a mut u64,
@@ -82,6 +82,10 @@ pub async fn handle_player_control_command(
         }
         AppCommand::PlayerSeekForwardMs { ms } => {
             seek_relative(app, ctx.effects, ms as i64);
+            ctx.effects.emit_state(app);
+        }
+        AppCommand::PlayerSeekAbsoluteMs { ms } => {
+            seek_absolute(app, ctx.effects, ms);
             ctx.effects.emit_state(app);
         }
         _ => return false,

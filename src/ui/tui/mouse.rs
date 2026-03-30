@@ -109,6 +109,11 @@ async fn handle_mouse_with_canvas(
     canvas: &Rect,
     tx: &mpsc::Sender<AppCommand>,
 ) {
+    // Help overlay blocks all mouse events
+    if app.help_visible {
+        return;
+    }
+
     if mouse.column < canvas.x
         || mouse.row < canvas.y
         || mouse.column >= canvas.x + canvas.width
@@ -120,8 +125,18 @@ async fn handle_mouse_with_canvas(
     let column = mouse.column - canvas.x;
     let row = mouse.row - canvas.y;
 
-    if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-        return;
+    // Handle scroll events for volume control (anywhere in canvas)
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            let _ = tx.send(AppCommand::PlayerVolumeUp).await;
+            return;
+        }
+        MouseEventKind::ScrollDown => {
+            let _ = tx.send(AppCommand::PlayerVolumeDown).await;
+            return;
+        }
+        MouseEventKind::Down(MouseButton::Left) => {}
+        _ => return,
     }
 
     // Tabs row (row 0 within header)
@@ -129,6 +144,21 @@ async fn handle_mouse_with_canvas(
         DOUBLE_CLICK.with(|dc| dc.borrow_mut().invalidate());
         if let Some(tab_index) = calculate_tab_index(app, column) {
             let _ = tx.send(AppCommand::TabTo { index: tab_index }).await;
+        }
+        return;
+    }
+
+    // Footer area: last FOOTER_HEIGHT rows
+    let footer_start = canvas.height.saturating_sub(FOOTER_HEIGHT);
+    if row >= footer_start {
+        DOUBLE_CLICK.with(|dc| dc.borrow_mut().invalidate());
+        // Progress bar seek: click anywhere in footer when playing
+        if app.player.play_total_ms.is_some() {
+            let ratio = column as f64 / canvas.width as f64;
+            let target_ms = (ratio * app.player.play_total_ms.unwrap() as f64).round() as u64;
+            let _ = tx
+                .send(AppCommand::PlayerSeekAbsoluteMs { ms: target_ms })
+                .await;
         }
         return;
     }
@@ -538,7 +568,7 @@ mod tests {
         assert!(rx.try_recv().is_err(), "右侧面板点击不应发送命令");
     }
 
-    /// Click in footer area should not trigger anything
+    /// Click in footer area without a playing song should not trigger anything
     #[tokio::test]
     async fn click_footer_does_not_trigger() {
         let mut app = App {
@@ -559,7 +589,7 @@ mod tests {
         let mouse = make_mouse_event(LEFT_WIDTH + 10, MIN_CANVAS_HEIGHT - FOOTER_HEIGHT, 0, 0);
         run_mouse(&snapshot, mouse, &tx).await;
 
-        assert!(rx.try_recv().is_err(), "页脚区域点击不应发送命令");
+        assert!(rx.try_recv().is_err(), "无播放时页脚区域点击不应发送命令");
     }
 
     /// Empty list should not trigger selection
@@ -953,5 +983,315 @@ mod tests {
             !dc.check_and_update(Panel::Center, 0),
             "invalidate 后不应触发双击"
         );
+    }
+
+    // ==================== Progress bar seek tests ====================
+
+    /// VAL-MOUSE-006: 点击进度条 1/4 位置 Seek 到对应位置
+    #[tokio::test]
+    async fn progress_bar_seek_quarter_position() {
+        let mut app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        app.play_total_ms = Some(240_000); // 4 minutes
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        // Click at 1/4 of canvas width in the footer row
+        let quarter_col = MIN_CANVAS_WIDTH / 4;
+        let footer_row = MIN_CANVAS_HEIGHT - FOOTER_HEIGHT;
+        let mouse = make_mouse_event(quarter_col, footer_row, 0, 0);
+        run_mouse(&snapshot, mouse, &tx).await;
+
+        let cmd = rx.try_recv().expect("应发送 PlayerSeekAbsoluteMs 命令");
+        if let AppCommand::PlayerSeekAbsoluteMs { ms } = cmd {
+            let expected =
+                (240_000.0 * (quarter_col as f64 / MIN_CANVAS_WIDTH as f64)).round() as u64;
+            assert!(
+                (ms as i64 - expected as i64).unsigned_abs() <= 1000,
+                "seek 目标时间应 ≈ {expected}ms（±1000ms），实际 {ms}ms"
+            );
+        } else {
+            panic!("期望 PlayerSeekAbsoluteMs，实际收到 {:?}", cmd);
+        }
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// VAL-MOUSE-007: 点击进度条 3/4 位置 Seek
+    #[tokio::test]
+    async fn progress_bar_seek_three_quarter_position() {
+        let mut app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        app.play_total_ms = Some(240_000); // 4 minutes
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        // Click at 3/4 of canvas width in the footer row
+        let three_quarter_col = (MIN_CANVAS_WIDTH * 3) / 4;
+        let footer_row = MIN_CANVAS_HEIGHT - FOOTER_HEIGHT;
+        let mouse = make_mouse_event(three_quarter_col, footer_row, 0, 0);
+        run_mouse(&snapshot, mouse, &tx).await;
+
+        let cmd = rx.try_recv().expect("应发送 PlayerSeekAbsoluteMs 命令");
+        if let AppCommand::PlayerSeekAbsoluteMs { ms } = cmd {
+            let expected =
+                (240_000.0 * (three_quarter_col as f64 / MIN_CANVAS_WIDTH as f64)).round() as u64;
+            assert!(
+                (ms as i64 - expected as i64).unsigned_abs() <= 1000,
+                "seek 目标时间应 ≈ {expected}ms（±1000ms），实际 {ms}ms"
+            );
+        } else {
+            panic!("期望 PlayerSeekAbsoluteMs，实际收到 {:?}", cmd);
+        }
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// Click at the very start of the footer seeks to ~0ms
+    #[tokio::test]
+    async fn progress_bar_seek_start_position() {
+        let mut app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        app.play_total_ms = Some(240_000);
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let footer_row = MIN_CANVAS_HEIGHT - FOOTER_HEIGHT;
+        let mouse = make_mouse_event(0, footer_row, 0, 0);
+        run_mouse(&snapshot, mouse, &tx).await;
+
+        let cmd = rx.try_recv().expect("应发送 PlayerSeekAbsoluteMs 命令");
+        assert!(
+            matches!(cmd, AppCommand::PlayerSeekAbsoluteMs { ms } if ms < 2000),
+            "点击进度条开头应 seek 到接近 0ms，实际 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// Click at the very end of the footer seeks to near total_ms
+    #[tokio::test]
+    async fn progress_bar_seek_end_position() {
+        let mut app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        app.play_total_ms = Some(240_000);
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let footer_row = MIN_CANVAS_HEIGHT - FOOTER_HEIGHT;
+        let mouse = make_mouse_event(MIN_CANVAS_WIDTH - 1, footer_row, 0, 0);
+        run_mouse(&snapshot, mouse, &tx).await;
+
+        let cmd = rx.try_recv().expect("应发送 PlayerSeekAbsoluteMs 命令");
+        if let AppCommand::PlayerSeekAbsoluteMs { ms } = cmd {
+            assert!(
+                ms >= 238_000,
+                "点击进度条末尾应 seek 到接近 240000ms，实际 {ms}ms"
+            );
+        } else {
+            panic!("期望 PlayerSeekAbsoluteMs，实际收到 {:?}", cmd);
+        }
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// No seek when play_total_ms is None
+    #[tokio::test]
+    async fn progress_bar_seek_no_song_no_seek() {
+        let mut app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        app.play_total_ms = None;
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let footer_row = MIN_CANVAS_HEIGHT - FOOTER_HEIGHT;
+        let mouse = make_mouse_event(MIN_CANVAS_WIDTH / 2, footer_row, 0, 0);
+        run_mouse(&snapshot, mouse, &tx).await;
+
+        assert!(rx.try_recv().is_err(), "无播放时页脚点击不应发送命令");
+    }
+
+    // ==================== Scroll volume tests ====================
+
+    /// VAL-MOUSE-008: 滚轮上滚增大音量
+    #[tokio::test]
+    async fn scroll_up_sends_volume_up() {
+        let app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let scroll_mouse = MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: MIN_CANVAS_WIDTH / 2,
+            row: MIN_CANVAS_HEIGHT / 2,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        run_mouse(&snapshot, scroll_mouse, &tx).await;
+
+        let cmd = rx.try_recv().expect("应发送 PlayerVolumeUp 命令");
+        assert!(
+            matches!(cmd, AppCommand::PlayerVolumeUp),
+            "期望 PlayerVolumeUp，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    /// VAL-MOUSE-009: 滚轮下滚减小音量
+    #[tokio::test]
+    async fn scroll_down_sends_volume_down() {
+        let app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let scroll_mouse = MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: MIN_CANVAS_WIDTH / 2,
+            row: MIN_CANVAS_HEIGHT / 2,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        run_mouse(&snapshot, scroll_mouse, &tx).await;
+
+        let cmd = rx.try_recv().expect("应发送 PlayerVolumeDown 命令");
+        assert!(
+            matches!(cmd, AppCommand::PlayerVolumeDown),
+            "期望 PlayerVolumeDown，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    // ==================== Tab click regression test ====================
+
+    /// VAL-MOUSE-010: 点击页签切换视图（回归测试）
+    #[tokio::test]
+    async fn tab_click_still_works_with_seek_and_scroll() {
+        let mut app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        app.play_total_ms = Some(240_000);
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        // Click on row 0 (tabs row), at a tab position
+        // Tab configs for logged_in: ["歌单", "搜索", "歌词", "设置"]
+        // Tab 0 "歌单" starts at col 0, padding_left(1) + "歌单"(2 chars) + padding_right(1) = cols 0-3
+        let mouse = make_mouse_event(1, 0, 0, 0);
+        run_mouse(&snapshot, mouse, &tx).await;
+
+        let cmd = rx.try_recv().expect("应发送 TabTo 命令");
+        assert!(
+            matches!(cmd, AppCommand::TabTo { index } if index == 0),
+            "期望 TabTo {{ index: 0 }}，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    // ==================== Help dialog mouse blocking ====================
+
+    /// VAL-MOUSE-011: 帮助弹窗可见时鼠标不穿透
+    #[tokio::test]
+    async fn help_visible_blocks_all_mouse_events() {
+        let mut app = App {
+            view: View::Playlists,
+            logged_in: true,
+            help_visible: true,
+            ..Default::default()
+        };
+        app.play_total_ms = Some(240_000);
+        app.search_results = vec![Song {
+            id: 1,
+            name: "Song A".to_owned(),
+            artists: "Artist A".to_owned(),
+        }];
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        // Try left click on body
+        let click_mouse = make_mouse_event(LEFT_WIDTH + 10, HEADER_HEIGHT + 1, 0, 0);
+        run_mouse(&snapshot, click_mouse, &tx).await;
+
+        // Try scroll
+        let scroll_mouse = MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: MIN_CANVAS_WIDTH / 2,
+            row: MIN_CANVAS_HEIGHT / 2,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        run_mouse(&snapshot, scroll_mouse, &tx).await;
+
+        // Try footer click
+        let footer_row = MIN_CANVAS_HEIGHT - FOOTER_HEIGHT;
+        let footer_mouse = make_mouse_event(MIN_CANVAS_WIDTH / 2, footer_row, 0, 0);
+        run_mouse(&snapshot, footer_mouse, &tx).await;
+
+        assert!(rx.try_recv().is_err(), "帮助弹窗可见时鼠标不应发送任何命令");
+    }
+
+    // ==================== Canvas outside mouse ignore ====================
+
+    /// VAL-MOUSE-012: Canvas 外鼠标事件忽略
+    #[tokio::test]
+    async fn outside_canvas_mouse_ignored() {
+        let app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        // Click outside canvas (beyond canvas width)
+        let outside_click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: MIN_CANVAS_WIDTH + 10,
+            row: HEADER_HEIGHT + 1,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        run_mouse(&snapshot, outside_click, &tx).await;
+
+        // Scroll outside canvas
+        let outside_scroll = MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: MIN_CANVAS_WIDTH + 10,
+            row: HEADER_HEIGHT + 1,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        run_mouse(&snapshot, outside_scroll, &tx).await;
+
+        assert!(rx.try_recv().is_err(), "canvas 外鼠标事件不应发送命令");
     }
 }

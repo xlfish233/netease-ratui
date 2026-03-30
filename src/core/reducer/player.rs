@@ -18,6 +18,7 @@ pub async fn handle_ui(
         AppCommand::PlayerNext => AppCommand::PlayerNext,
         AppCommand::PlayerSeekBackwardMs { ms } => AppCommand::PlayerSeekBackwardMs { ms: *ms },
         AppCommand::PlayerSeekForwardMs { ms } => AppCommand::PlayerSeekForwardMs { ms: *ms },
+        AppCommand::PlayerSeekAbsoluteMs { ms } => AppCommand::PlayerSeekAbsoluteMs { ms: *ms },
         _ => return UiAction::NotHandled,
     };
 

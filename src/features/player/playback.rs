@@ -75,6 +75,24 @@ pub fn seek_relative(app: &mut App, effects: &mut CoreEffects, delta_ms: i64) {
     effects.send_audio(AudioCommand::SeekToMs(next));
 }
 
+pub fn seek_absolute(app: &mut App, effects: &mut CoreEffects, target_ms: u64) {
+    let Some(total_ms) = app.play_total_ms else {
+        return;
+    };
+    let target = target_ms.min(total_ms);
+
+    let now = std::time::Instant::now();
+    app.play_started_at = Some(now - Duration::from_millis(target));
+    if app.paused {
+        app.play_paused_at = Some(now);
+    } else {
+        app.play_paused_at = None;
+    }
+    app.play_paused_accum_ms = 0;
+
+    effects.send_audio(AudioCommand::SeekToMs(target));
+}
+
 pub(super) async fn request_play_at_index(
     app: &mut App,
     request_tracker: &mut RequestTracker<RequestKey>,
