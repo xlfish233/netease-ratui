@@ -1,0 +1,38 @@
+{
+  "milestone": "input-fix",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-SPACE-001",
+    "VAL-SPACE-002",
+    "VAL-SPACE-003",
+    "VAL-SPACE-004",
+    "VAL-SPACE-005",
+    "VAL-TOAST-001",
+    "VAL-TOAST-002",
+    "VAL-TOAST-003",
+    "VAL-TOAST-004",
+    "VAL-TOAST-005",
+    "VAL-TOAST-006",
+    "VAL-TOAST-007"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "flowReports": [
+    ".factory/validation/input-fix/user-testing/flows/space-assertions.json",
+    ".factory/validation/input-fix/user-testing/flows/toast-assertions.json"
+  ],
+  "testResults": {
+    "cargoTest": "113 passed; 0 failed",
+    "cargoClippy": "0 warnings",
+    "cargoFmt": "passed"
+  }
+}

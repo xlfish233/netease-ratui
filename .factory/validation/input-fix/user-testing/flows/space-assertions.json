@@ -1,0 +1,160 @@
+{
+  "groupId": "space-assertions",
+  "testedAt": "2026-03-31T00:00:00Z",
+  "isolation": {
+    "tool": "cargo test",
+    "workingDirectory": "/home/xl/play/netease-ratui",
+    "noExternalServices": true
+  },
+  "toolsUsed": ["cargo test", "source_code_review"],
+  "assertions": [
+    {
+      "id": "VAL-SPACE-001",
+      "title": "搜索框中按 Space 输入空格字符",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Construct App with view=Search, ui_focus=HeaderSearch",
+          "expected": "AppSnapshot reflects Search view with HeaderSearch focus",
+          "observed": "AppSnapshot created with view=Search, ui_focus=HeaderSearch, toast=None, help_visible=false (default)"
+        },
+        {
+          "action": "Simulate KeyCode::Char(' ') press via handle_key()",
+          "expected": "Single AppCommand::SearchInputChar { c: ' ' } sent",
+          "observed": "rx.try_recv() returned SearchInputChar { c: ' ' }, rx.try_recv() after returned Err (no more commands)"
+        }
+      ],
+      "evidence": {
+        "sourceFile": "src/ui/tui/keyboard.rs",
+        "testFunction": "space_in_search_input_sends_search_input_char",
+        "testCode": "Test constructs App { view: Search, ui_focus: HeaderSearch, ..default }, creates KeyEvent with KeyCode::Char(' '), asserts rx.try_recv() matches SearchInputChar { c: ' ' } and rx.try_recv().is_err() (no other commands). This verifies no PlayerTogglePause or ToastDismiss is sent.",
+        "consoleErrors": "none",
+        "testOutput": "test ui::tui::keyboard::tests::space_in_search_input_sends_search_input_char ... ok"
+      },
+      "testsUsed": ["space_in_search_input_sends_search_input_char"],
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-SPACE-002",
+      "title": "搜索框中按 Space 不触发播放/暂停",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Construct App with view=Search, ui_focus=HeaderSearch",
+          "expected": "AppSnapshot reflects Search view with HeaderSearch focus",
+          "observed": "AppSnapshot created with view=Search, ui_focus=HeaderSearch, toast=None"
+        },
+        {
+          "action": "Simulate KeyCode::Char(' ') press via handle_key()",
+          "expected": "No PlayerTogglePause in any sent command",
+          "observed": "While draining rx with try_recv(), no PlayerTogglePause found. Only SearchInputChar { c: ' ' } was sent."
+        }
+      ],
+      "evidence": {
+        "sourceFile": "src/ui/tui/keyboard.rs",
+        "testFunction": "space_in_search_input_does_not_send_toggle_pause",
+        "testCode": "Test constructs App { view: Search, ui_focus: HeaderSearch }, sends Space key, then iterates ALL received commands via while let Ok(cmd) = rx.try_recv(), asserting !matches!(cmd, PlayerTogglePause) for each. This exhaustively verifies no PlayerTogglePause is sent.",
+        "consoleErrors": "none",
+        "testOutput": "test ui::tui::keyboard::tests::space_in_search_input_does_not_send_toggle_pause ... ok"
+      },
+      "testsUsed": ["space_in_search_input_does_not_send_toggle_pause"],
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-SPACE-003",
+      "title": "非搜索焦点时 Space 仍为播放/暂停",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Construct App with view=Search, ui_focus=BodyCenter",
+          "expected": "Space sends PlayerTogglePause",
+          "observed": "rx.try_recv() returned PlayerTogglePause"
+        },
+        {
+          "action": "Construct App with view=Search, ui_focus=BodyLeft",
+          "expected": "Space sends PlayerTogglePause",
+          "observed": "rx.try_recv() returned PlayerTogglePause"
+        },
+        {
+          "action": "Construct App with view=Search, ui_focus=BodyRight",
+          "expected": "Space sends PlayerTogglePause",
+          "observed": "rx.try_recv() returned PlayerTogglePause"
+        }
+      ],
+      "evidence": {
+        "sourceFile": "src/ui/tui/keyboard.rs",
+        "testFunction": "space_in_search_body_center_sends_toggle_pause",
+        "testCode": "Test iterates over all three focus positions [BodyCenter, BodyLeft, BodyRight] with view=Search. For each, it sends Space key and asserts rx.try_recv() matches PlayerTogglePause AND rx.try_recv().is_err() (no other commands). Covers all three non-search-focus cases in a single test function.",
+        "consoleErrors": "none",
+        "testOutput": "test ui::tui::keyboard::tests::space_in_search_body_center_sends_toggle_pause ... ok"
+      },
+      "testsUsed": ["space_in_search_body_center_sends_toggle_pause"],
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-SPACE-004",
+      "title": "歌单页中 Space 为播放/暂停",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Construct App with view=Playlists, ui_focus=BodyCenter",
+          "expected": "AppSnapshot reflects Playlists view",
+          "observed": "AppSnapshot created with view=Playlists, ui_focus=BodyCenter, toast=None"
+        },
+        {
+          "action": "Simulate KeyCode::Char(' ') press via handle_key()",
+          "expected": "PlayerTogglePause sent as the only command",
+          "observed": "rx.try_recv() returned PlayerTogglePause, rx.try_recv() returned Err (no more commands)"
+        }
+      ],
+      "evidence": {
+        "sourceFile": "src/ui/tui/keyboard.rs",
+        "testFunction": "space_in_playlists_sends_toggle_pause",
+        "testCode": "Test constructs App { view: Playlists, ui_focus: BodyCenter, ..default }, sends Space key, asserts rx.try_recv() matches PlayerTogglePause and rx.try_recv().is_err().",
+        "consoleErrors": "none",
+        "testOutput": "test ui::tui::keyboard::tests::space_in_playlists_sends_toggle_pause ... ok"
+      },
+      "testsUsed": ["space_in_playlists_sends_toggle_pause"],
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-SPACE-005",
+      "title": "歌词页中 Space 为播放/暂停",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Construct App with view=Lyrics, ui_focus=BodyCenter",
+          "expected": "AppSnapshot reflects Lyrics view",
+          "observed": "AppSnapshot created with view=Lyrics, ui_focus=BodyCenter, toast=None"
+        },
+        {
+          "action": "Simulate KeyCode::Char(' ') press via handle_key()",
+          "expected": "PlayerTogglePause sent as the only command",
+          "observed": "rx.try_recv() returned PlayerTogglePause, rx.try_recv() returned Err (no more commands)"
+        }
+      ],
+      "evidence": {
+        "sourceFile": "src/ui/tui/keyboard.rs",
+        "testFunction": "space_in_lyrics_sends_toggle_pause",
+        "testCode": "Test constructs App { view: Lyrics, ui_focus: BodyCenter, ..default }, sends Space key, asserts rx.try_recv() matches PlayerTogglePause and rx.try_recv().is_err().",
+        "consoleErrors": "none",
+        "testOutput": "test ui::tui::keyboard::tests::space_in_lyrics_sends_toggle_pause ... ok"
+      },
+      "testsUsed": ["space_in_lyrics_sends_toggle_pause"],
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions: all 5 passed. Each assertion has a corresponding unit test in src/ui/tui/keyboard.rs that precisely verifies the specified condition. All tests passed via `cargo test space` (6 tests total including one toast-related space test, all OK)."
+}

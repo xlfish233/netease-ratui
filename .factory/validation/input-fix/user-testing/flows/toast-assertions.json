@@ -1,0 +1,178 @@
+{
+  "groupId": "toast-assertions",
+  "testedAt": "2026-03-31T00:00:00Z",
+  "isolation": {
+    "type": "cargo-test",
+    "workingDirectory": "/home/xl/play/netease-ratui",
+    "noExternalServices": true
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-TOAST-001",
+      "title": "Toast 显示时按上下键仍能移动列表",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with view=Playlists, ui_focus=BodyCenter, toast=Some(Toast::info(\"test toast\")), simulate Down key",
+          "expected": "PlaylistsMoveDown sent, no ToastDismiss",
+          "observed": "PlaylistsMoveDown sent, no ToastDismiss (toast_visible_down_key_triggers_list_move)"
+        },
+        {
+          "action": "Same setup, simulate Up key",
+          "expected": "PlaylistsMoveUp sent, no ToastDismiss",
+          "observed": "PlaylistsMoveUp sent, no ToastDismiss (toast_visible_up_key_triggers_list_move)"
+        }
+      ],
+      "evidence": {
+        "testsUsed": [
+          "ui::tui::keyboard::tests::toast_visible_down_key_triggers_list_move",
+          "ui::tui::keyboard::tests::toast_visible_up_key_triggers_list_move"
+        ],
+        "sourceFiles": ["src/ui/tui/keyboard.rs"],
+        "testOutput": "Both tests passed — Down yields PlaylistsMoveDown, Up yields PlaylistsMoveUp, rx.try_recv() after first command returns Err (no ToastDismiss sent)"
+      },
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-TOAST-002",
+      "title": "Toast 显示时按 Space 仍能播放/暂停",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with view=Playlists, ui_focus=BodyCenter, toast=Some(Toast::info(\"test toast\")), simulate Space key",
+          "expected": "PlayerTogglePause sent, no ToastDismiss",
+          "observed": "PlayerTogglePause sent, no ToastDismiss"
+        }
+      ],
+      "evidence": {
+        "testsUsed": [
+          "ui::tui::keyboard::tests::toast_visible_space_triggers_toggle_pause"
+        ],
+        "sourceFiles": ["src/ui/tui/keyboard.rs"],
+        "testOutput": "Test passed — Space yields PlayerTogglePause, rx.try_recv() after returns Err (no extra commands)"
+      },
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-TOAST-003",
+      "title": "Toast 显示时按 q 仍能退出",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create AppSnapshot with view=Playlists, toast=Some(Toast::error(\"err\")), simulate q key",
+          "expected": "handle_key returns true, Quit command sent",
+          "observed": "should_quit == true, Quit command received, no other commands"
+        }
+      ],
+      "evidence": {
+        "testsUsed": [
+          "ui::tui::keyboard::tests::toast_visible_q_triggers_quit"
+        ],
+        "sourceFiles": ["src/ui/tui/keyboard.rs"],
+        "testOutput": "Test passed — q with error toast returns should_quit=true and sends Quit command only"
+      },
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-TOAST-004",
+      "title": "Error Toast 8 秒自动消失",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create Toast::error(\"test error\") and check toast.level.duration_ms()",
+          "expected": "duration_ms() returns Some(8000)",
+          "observed": "duration_ms() returns Some(8000)"
+        }
+      ],
+      "evidence": {
+        "testsUsed": [
+          "ui::tui::toast::tests::test_error_toast_has_8s_duration",
+          "ui::tui::toast::tests::test_toast_error_duration"
+        ],
+        "sourceFiles": ["src/ui/tui/toast.rs", "src/app/state.rs"],
+        "testOutput": "Both tests passed — ToastLevel::Error.duration_ms() == Some(8000)"
+      },
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-TOAST-005",
+      "title": "Info Toast 3 秒自动消失",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create Toast::info(\"test info\") and check toast.level.duration_ms()",
+          "expected": "duration_ms() returns Some(3000)",
+          "observed": "duration_ms() returns Some(3000)"
+        }
+      ],
+      "evidence": {
+        "testsUsed": [
+          "ui::tui::toast::tests::test_info_toast_has_3s_duration",
+          "ui::tui::toast::tests::test_toast_info_duration"
+        ],
+        "sourceFiles": ["src/ui/tui/toast.rs", "src/app/state.rs"],
+        "testOutput": "Both tests passed — ToastLevel::Info.duration_ms() == Some(3000)"
+      },
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-TOAST-006",
+      "title": "Warning Toast 5 秒自动消失",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create Toast::warning(\"test warning\") and check toast.level.duration_ms()",
+          "expected": "duration_ms() returns Some(5000)",
+          "observed": "duration_ms() returns Some(5000)"
+        }
+      ],
+      "evidence": {
+        "testsUsed": [
+          "ui::tui::toast::tests::test_warning_toast_has_5s_duration",
+          "ui::tui::toast::tests::test_toast_warning_duration"
+        ],
+        "sourceFiles": ["src/ui/tui/toast.rs", "src/app/state.rs"],
+        "testOutput": "Both tests passed — ToastLevel::Warning.duration_ms() == Some(5000)"
+      },
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-TOAST-007",
+      "title": "新 Toast 替换旧 Toast",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Create Toast::info(\"first\"), then Toast::error(\"second\"), verify second overwrites first",
+          "expected": "current.message == \"second\"",
+          "observed": "current.message == \"second\", current.level == ToastLevel::Error"
+        }
+      ],
+      "evidence": {
+        "testsUsed": [
+          "ui::tui::keyboard::tests::new_toast_replaces_old_toast"
+        ],
+        "sourceFiles": ["src/ui/tui/keyboard.rs"],
+        "testOutput": "Test passed — after overwriting toast1 with toast2, message is \"second\" and level is Error"
+      },
+      "issues": null,
+      "frictions": [],
+      "blockers": []
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 7 assertions: all 7 passed. 13 toast-related unit tests ran successfully via `cargo test toast`. Each assertion is verified by one or more dedicated test functions with explicit VAL-TOAST-* annotations in the source code."
+}
