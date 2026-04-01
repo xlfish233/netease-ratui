@@ -3,6 +3,7 @@ pub struct Song {
     pub id: i64,
     pub name: String,
     pub artists: String,
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Default, Clone)]

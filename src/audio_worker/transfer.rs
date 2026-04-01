@@ -10,7 +10,10 @@ use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 
 use super::cache::AudioCache;
-use super::download::{download_to_path_with_config, now_ms};
+use super::download::{
+    download_to_path_for_streaming_with_config, download_to_path_with_config, now_ms,
+};
+use super::streaming::StreamingSession;
 use crate::error::DownloadError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -85,6 +88,11 @@ pub enum TransferEvent {
         attempt: u32,
         max_attempts: u32,
     },
+    Playable {
+        token: u64,
+        key: CacheKey,
+        session: StreamingSession,
+    },
     Ready {
         token: u64,
         key: CacheKey,
@@ -136,6 +144,8 @@ struct JobState {
     title: String,
     prio: u8,
     in_flight: bool,
+    playable_emitted: bool,
+    session: Option<StreamingSession>,
 }
 
 #[derive(Debug)]
@@ -150,6 +160,10 @@ enum JobResult {
         attempt: u32,
         max_attempts: u32,
     },
+    Playable {
+        key: CacheKey,
+        session: StreamingSession,
+    },
     Ok {
         key: CacheKey,
         tmp_path: PathBuf,
@@ -162,6 +176,8 @@ enum JobResult {
 
 pub type TransferSender = mpsc::Sender<TransferCommand>;
 pub type TransferReceiver = mpsc::Receiver<TransferEvent>;
+
+const STREAMING_PREBUFFER_BYTES: u64 = 256 * 1024;
 
 /// 传输配置
 #[derive(Debug, Clone)]
@@ -301,11 +317,26 @@ pub fn spawn_transfer_actor_with_config(
                                 title: title.clone(),
                                 prio: priority.as_u8(),
                                 in_flight: false,
+                                playable_emitted: false,
+                                session: None,
                             });
                             st.url = url;
                             st.title = title;
                             st.prio = st.prio.max(priority.as_u8());
                             st.waiters.push(token);
+
+                            if token != 0
+                                && st.playable_emitted
+                                && let Some(session) = st.session.clone()
+                            {
+                                let _ = tx_evt
+                                    .send(TransferEvent::Playable {
+                                        token,
+                                        key,
+                                        session,
+                                    })
+                                    .await;
+                            }
 
                             if !st.in_flight {
                                 heap.push(HeapItem { prio: st.prio, seq, key });
@@ -387,6 +418,21 @@ pub fn spawn_transfer_actor_with_config(
                                             key,
                                             attempt,
                                             max_attempts,
+                                        })
+                                        .await;
+                                }
+                            }
+                        }
+                        JobResult::Playable { key, session } => {
+                            if let Some(st) = jobs.get_mut(&key) {
+                                st.playable_emitted = true;
+                                st.session = Some(session.clone());
+                                for token in st.waiters.iter().copied().filter(|t| *t != 0) {
+                                    let _ = tx_evt
+                                        .send(TransferEvent::Playable {
+                                            token,
+                                            key,
+                                            session: session.clone(),
                                         })
                                         .await;
                                 }
@@ -515,80 +561,171 @@ pub fn spawn_transfer_actor_with_config(
 
                 let url = st.url.clone();
                 let title = st.title.clone();
+                let progressive = st.waiters.iter().any(|t| *t != 0);
                 let http = http.clone();
                 let tx_done = tx_done.clone();
                 let retries = config.download_retries;
                 let backoff_ms = config.download_retry_backoff_ms;
                 let backoff_max_ms = config.download_retry_backoff_max_ms;
+                let streaming_session =
+                    progressive.then(|| StreamingSession::new(tmp_path.clone()));
 
                 tokio::spawn(async move {
                     let _permit = permit;
                     let mut last_progress_at = 0u64;
                     let mut last_progress_bytes = 0u64;
+                    let mut streamed_bytes = 0u64;
+                    let mut playable_emitted = false;
                     tracing::info!(
                         song_id = key.song_id,
                         br = key.br,
                         title = %title,
                         "download start"
                     );
-                    let res = download_to_path_with_config(
-                        &http,
-                        &tmp_path,
-                        &url,
-                        &title,
-                        retries,
-                        backoff_ms,
-                        backoff_max_ms,
-                        |downloaded_bytes, total_bytes| {
-                            let now = now_ms();
-                            let enough_time = now.saturating_sub(last_progress_at) >= 500;
-                            let first_report = last_progress_at == 0;
-                            let byte_advanced = total_bytes.is_none()
-                                && downloaded_bytes.saturating_sub(last_progress_bytes)
-                                    >= 256 * 1024;
-                            let percent_advanced =
-                                total_bytes.filter(|total| *total > 0).is_some_and(|total| {
-                                    let prev_percent =
-                                        last_progress_bytes.saturating_mul(100) / total;
-                                    let current_percent =
-                                        downloaded_bytes.saturating_mul(100) / total;
-                                    current_percent > prev_percent
+                    let res = if let Some(session) = streaming_session.as_ref() {
+                        let session = session.clone();
+                        download_to_path_for_streaming_with_config(
+                            &http,
+                            &tmp_path,
+                            &url,
+                            &title,
+                            retries,
+                            backoff_ms,
+                            backoff_max_ms,
+                            |downloaded_bytes, total_bytes| {
+                                streamed_bytes = downloaded_bytes;
+                                session.mark_available(downloaded_bytes);
+
+                                let playable_threshold = total_bytes
+                                    .map(|total| total.min(STREAMING_PREBUFFER_BYTES))
+                                    .unwrap_or(STREAMING_PREBUFFER_BYTES);
+                                if !playable_emitted && downloaded_bytes >= playable_threshold {
+                                    playable_emitted = true;
+                                    let _ = tx_done.try_send(JobResult::Playable {
+                                        key,
+                                        session: session.clone(),
+                                    });
+                                }
+
+                                let now = now_ms();
+                                let enough_time = now.saturating_sub(last_progress_at) >= 500;
+                                let first_report = last_progress_at == 0;
+                                let byte_advanced = total_bytes.is_none()
+                                    && downloaded_bytes.saturating_sub(last_progress_bytes)
+                                        >= 256 * 1024;
+                                let percent_advanced =
+                                    total_bytes.filter(|total| *total > 0).is_some_and(|total| {
+                                        let prev_percent =
+                                            last_progress_bytes.saturating_mul(100) / total;
+                                        let current_percent =
+                                            downloaded_bytes.saturating_mul(100) / total;
+                                        current_percent > prev_percent
+                                    });
+                                let finished =
+                                    total_bytes.is_some_and(|total| downloaded_bytes >= total);
+
+                                if !(first_report
+                                    || enough_time
+                                    || byte_advanced
+                                    || percent_advanced
+                                    || finished)
+                                {
+                                    return;
+                                }
+
+                                last_progress_at = now;
+                                last_progress_bytes = downloaded_bytes;
+                                let _ = tx_done.try_send(JobResult::Progress {
+                                    key,
+                                    downloaded_bytes,
+                                    total_bytes,
                                 });
-                            let finished =
-                                total_bytes.is_some_and(|total| downloaded_bytes >= total);
+                            },
+                            |attempt| {
+                                let _ = tx_done.try_send(JobResult::Retrying {
+                                    key,
+                                    attempt,
+                                    max_attempts: retries,
+                                });
+                            },
+                        )
+                        .await
+                    } else {
+                        download_to_path_with_config(
+                            &http,
+                            &tmp_path,
+                            &url,
+                            &title,
+                            retries,
+                            backoff_ms,
+                            backoff_max_ms,
+                            |downloaded_bytes, total_bytes| {
+                                let now = now_ms();
+                                let enough_time = now.saturating_sub(last_progress_at) >= 500;
+                                let first_report = last_progress_at == 0;
+                                let byte_advanced = total_bytes.is_none()
+                                    && downloaded_bytes.saturating_sub(last_progress_bytes)
+                                        >= 256 * 1024;
+                                let percent_advanced =
+                                    total_bytes.filter(|total| *total > 0).is_some_and(|total| {
+                                        let prev_percent =
+                                            last_progress_bytes.saturating_mul(100) / total;
+                                        let current_percent =
+                                            downloaded_bytes.saturating_mul(100) / total;
+                                        current_percent > prev_percent
+                                    });
+                                let finished =
+                                    total_bytes.is_some_and(|total| downloaded_bytes >= total);
 
-                            if !(first_report
-                                || enough_time
-                                || byte_advanced
-                                || percent_advanced
-                                || finished)
-                            {
-                                return;
-                            }
+                                if !(first_report
+                                    || enough_time
+                                    || byte_advanced
+                                    || percent_advanced
+                                    || finished)
+                                {
+                                    return;
+                                }
 
-                            last_progress_at = now;
-                            last_progress_bytes = downloaded_bytes;
-                            let _ = tx_done.try_send(JobResult::Progress {
-                                key,
-                                downloaded_bytes,
-                                total_bytes,
-                            });
-                        },
-                        |attempt| {
-                            let _ = tx_done.try_send(JobResult::Retrying {
-                                key,
-                                attempt,
-                                max_attempts: retries,
-                            });
-                        },
-                    )
-                    .await;
+                                last_progress_at = now;
+                                last_progress_bytes = downloaded_bytes;
+                                let _ = tx_done.try_send(JobResult::Progress {
+                                    key,
+                                    downloaded_bytes,
+                                    total_bytes,
+                                });
+                            },
+                            |attempt| {
+                                let _ = tx_done.try_send(JobResult::Retrying {
+                                    key,
+                                    attempt,
+                                    max_attempts: retries,
+                                });
+                            },
+                        )
+                        .await
+                    };
                     match res {
                         Ok(_) => {
+                            if let Some(session) = streaming_session.as_ref() {
+                                if !playable_emitted {
+                                    let _ = tx_done
+                                        .send(JobResult::Playable {
+                                            key,
+                                            session: session.clone(),
+                                        })
+                                        .await;
+                                }
+                                session.finish(streamed_bytes);
+                            }
                             let _ = tx_done.send(JobResult::Ok { key, tmp_path }).await;
                         }
                         Err(e) => {
-                            let _ = tokio::fs::remove_file(&tmp_path).await;
+                            if let Some(session) = streaming_session.as_ref() {
+                                session.fail(e.to_string());
+                            }
+                            if !(progressive && playable_emitted) {
+                                let _ = tokio::fs::remove_file(&tmp_path).await;
+                            }
                             let _ = tx_done.send(JobResult::Err { key, message: e }).await;
                         }
                     }

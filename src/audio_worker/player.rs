@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::streaming::StreamingSession;
+
 pub struct PlayerState {
     mixer: Mixer,
     #[allow(dead_code)]
@@ -15,6 +17,7 @@ pub struct PlayerState {
     play_id: u64,
     paused: bool,
     volume: f32,
+    seekable: bool,
 }
 
 impl PlayerState {
@@ -27,6 +30,7 @@ impl PlayerState {
             play_id: 0,
             paused: false,
             volume: 1.0,
+            seekable: false,
         }
     }
 
@@ -43,6 +47,7 @@ impl PlayerState {
         self.play_id = self.play_id.wrapping_add(1).max(1);
         self.stop_current();
         self.path = None;
+        self.seekable = false;
     }
 
     pub fn stop_keep_play_id(&mut self) {
@@ -72,6 +77,14 @@ impl PlayerState {
         self.path.clone()
     }
 
+    pub fn set_seekable(&mut self, seekable: bool) {
+        self.seekable = seekable;
+    }
+
+    pub fn seekable(&self) -> bool {
+        self.seekable
+    }
+
     pub fn set_paused(&mut self, paused: bool) {
         self.paused = paused;
     }
@@ -97,8 +110,18 @@ impl PlayerState {
         path: &Path,
         seek: Option<Duration>,
         title: &str,
+        fallback_duration_ms: Option<u64>,
     ) -> Result<(Sink, Option<u64>), String> {
-        build_sink_from_path(&self.mixer, path, seek, title)
+        build_sink_from_path(&self.mixer, path, seek, title, fallback_duration_ms)
+    }
+
+    pub fn build_streaming_sink(
+        &self,
+        session: &StreamingSession,
+        title: &str,
+        fallback_duration_ms: Option<u64>,
+    ) -> Result<(Sink, Option<u64>), String> {
+        build_sink_from_streaming_session(&self.mixer, session, title, fallback_duration_ms)
     }
 }
 
@@ -107,10 +130,17 @@ pub(super) fn seek_to_ms(state: &mut PlayerState, position_ms: u64) -> Result<()
         tracing::warn!(position_ms, "seek ignored: no active path");
         return Ok(());
     };
+    if !state.seekable() {
+        tracing::info!(
+            position_ms,
+            "seek ignored: current source is not seekable yet"
+        );
+        return Ok(());
+    }
 
     let seek = Duration::from_millis(position_ms);
     // Build the new sink first; if building fails, keep current playback running.
-    let (sink, _duration_ms) = state.build_sink(&path, Some(seek), "seek")?;
+    let (sink, _duration_ms) = state.build_sink(&path, Some(seek), "seek", None)?;
 
     state.stop_keep_play_id();
 
@@ -137,11 +167,15 @@ fn build_sink_from_path(
     path: &Path,
     seek: Option<Duration>,
     title: &str,
+    fallback_duration_ms: Option<u64>,
 ) -> Result<(Sink, Option<u64>), String> {
     let file = File::open(path).map_err(|e| format!("打开音频文件失败({title}): {e}"))?;
     let decoder =
         Decoder::new(BufReader::new(file)).map_err(|e| format!("解码失败({title}): {e}"))?;
-    let duration_ms = decoder.total_duration().map(|d| d.as_millis() as u64);
+    let duration_ms = decoder
+        .total_duration()
+        .map(|d| d.as_millis() as u64)
+        .or(fallback_duration_ms);
     let source: Box<dyn Source + Send> = if let Some(seek) = seek {
         Box::new(decoder.skip_duration(seek))
     } else {
@@ -150,5 +184,29 @@ fn build_sink_from_path(
 
     let sink = Sink::connect_new(mixer);
     sink.append(source);
+    Ok((sink, duration_ms))
+}
+
+fn build_sink_from_streaming_session(
+    mixer: &Mixer,
+    session: &StreamingSession,
+    title: &str,
+    fallback_duration_ms: Option<u64>,
+) -> Result<(Sink, Option<u64>), String> {
+    let reader = session
+        .open_reader()
+        .map_err(|e| format!("打开流式音频失败({title}): {e}"))?;
+    let decoder = Decoder::builder()
+        .with_data(BufReader::new(reader))
+        .with_seekable(false)
+        .build()
+        .map_err(|e| format!("解码流式音频失败({title}): {e}"))?;
+    let duration_ms = decoder
+        .total_duration()
+        .map(|d| d.as_millis() as u64)
+        .or(fallback_duration_ms);
+
+    let sink = Sink::connect_new(mixer);
+    sink.append(Box::new(decoder) as Box<dyn Source + Send>);
     Ok((sink, duration_ms))
 }

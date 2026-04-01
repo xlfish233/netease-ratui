@@ -49,11 +49,10 @@ pub(super) async fn run_tui_internal(
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
         if event::poll(timeout)? {
             match event::read()? {
-                Event::Key(key) => {
-                    if handle_key(&app, key, &tx).await {
-                        break;
-                    }
+                Event::Key(key) if handle_key(&app, key, &tx).await => {
+                    break;
                 }
+                Event::Key(_) => {}
                 Event::Mouse(mouse) => {
                     handle_mouse(&app, mouse, &tx).await;
                 }

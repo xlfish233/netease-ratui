@@ -1,3 +1,4 @@
+use netease_ratui::core::prelude::audio::{AudioBufferState, AudioStreamHint};
 /// 测试播放器重启后自动恢复播放功能
 ///
 /// 这个测试套件验证以下场景：
@@ -40,15 +41,27 @@ fn test_audio_event_all_variants() {
             song_id: 123,
             title: "Test Song".to_string(),
             stage: AudioLoadStage::PreparingPlayback,
+            stream_hint: None,
         },
         AudioEvent::NowPlaying {
             song_id: 123,
             play_id: 456,
             title: "Test Song".to_string(),
             duration_ms: Some(180000),
+            stream_hint: AudioStreamHint::progressive(
+                AudioBufferState::Buffering,
+                false,
+                256 * 1024,
+                Some(1024 * 1024),
+            ),
         },
         AudioEvent::Paused(true),
         AudioEvent::Paused(false),
+        AudioEvent::PlaybackHint {
+            song_id: 123,
+            play_id: 456,
+            hint: AudioStreamHint::cached_file(Some(1024 * 1024)),
+        },
         AudioEvent::Stopped,
         AudioEvent::Ended { play_id: 789 },
         AudioEvent::CacheCleared {
@@ -62,7 +75,7 @@ fn test_audio_event_all_variants() {
     ];
 
     // 验证事件数量
-    assert_eq!(events.len(), 9, "应该有 9 个事件变体");
+    assert_eq!(events.len(), 10, "应该有 10 个事件变体");
 
     // 对每个事件进行有意义的验证
     for event in events {
@@ -71,6 +84,7 @@ fn test_audio_event_all_variants() {
                 song_id,
                 title,
                 stage,
+                ..
             } => {
                 assert_eq!(song_id, 123);
                 assert_eq!(title, "Test Song");
@@ -81,6 +95,7 @@ fn test_audio_event_all_variants() {
                 play_id,
                 title,
                 duration_ms,
+                ..
             } => {
                 assert_eq!(song_id, 123);
                 assert_eq!(play_id, 456);
@@ -90,6 +105,15 @@ fn test_audio_event_all_variants() {
             AudioEvent::Paused(_paused) => {
                 // 验证 Paused 可以是 true 或 false（任何布尔值都有效）
                 // 这里只是为了匹配该变体，实际值不重要
+            }
+            AudioEvent::PlaybackHint {
+                song_id,
+                play_id,
+                hint,
+            } => {
+                assert_eq!(song_id, 123);
+                assert_eq!(play_id, 456);
+                assert!(hint.seekable);
             }
             AudioEvent::Stopped => {
                 // Stopped 没有字段，只需匹配成功
@@ -121,6 +145,7 @@ fn test_audio_command_all_variants() {
             br: 320000,
             url: "http://example.com/audio.mp3".to_string(),
             title: "Test Song".to_string(),
+            duration_ms: Some(180000),
         },
         AudioCommand::TogglePause,
         AudioCommand::Stop,
@@ -143,11 +168,18 @@ fn test_audio_command_all_variants() {
     // 对每个命令进行有意义的验证
     for cmd in commands {
         match cmd {
-            AudioCommand::PlayTrack { id, br, url, title } => {
+            AudioCommand::PlayTrack {
+                id,
+                br,
+                url,
+                title,
+                duration_ms,
+            } => {
                 assert_eq!(id, 123);
                 assert_eq!(br, 320000);
                 assert_eq!(url, "http://example.com/audio.mp3");
                 assert_eq!(title, "Test Song");
+                assert_eq!(duration_ms, Some(180000));
             }
             AudioCommand::TogglePause => {
                 // TogglePause 没有字段，只需匹配成功

@@ -22,15 +22,14 @@ pub(super) async fn handle_key(
             KeyCode::Esc => {
                 let _ = tx.send(AppCommand::UiToggleHelp).await;
             }
-            KeyCode::Char('?') => {
+            KeyCode::Char('?')
                 // Only toggle help if '?' is still bound to UiToggleHelp
                 if app
                     .keybindings
                     .resolve(KeyCode::Char('?'))
-                    .is_some_and(|a| a == KeyAction::UiToggleHelp)
-                {
-                    let _ = tx.send(AppCommand::UiToggleHelp).await;
-                }
+                    .is_some_and(|a| a == KeyAction::UiToggleHelp) =>
+            {
+                let _ = tx.send(AppCommand::UiToggleHelp).await;
             }
             _ => {}
         }
@@ -126,11 +125,13 @@ pub(super) async fn handle_key(
         KeyEvent {
             code: KeyCode::BackTab,
             ..
-        } => {
-            if !unauth_login_page {
-                let _ = tx.send(AppCommand::UiFocusPrev).await;
-            }
+        } if !unauth_login_page => {
+            let _ = tx.send(AppCommand::UiFocusPrev).await;
         }
+        KeyEvent {
+            code: KeyCode::BackTab,
+            ..
+        } => {}
         KeyEvent {
             code: KeyCode::F(k @ 1..=4),
             ..
@@ -271,11 +272,10 @@ pub(super) async fn handle_key(
                     KeyCode::Backspace => {
                         let _ = tx.send(AppCommand::LoginCookieInputBackspace).await;
                     }
-                    KeyCode::Char(c) => {
-                        if !key.modifiers.contains(KeyModifiers::CONTROL) {
-                            let _ = tx.send(AppCommand::LoginCookieInputChar { c }).await;
-                        }
+                    KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        let _ = tx.send(AppCommand::LoginCookieInputChar { c }).await;
                     }
+                    KeyCode::Char(_) => {}
                     _ => {}
                 }
             } else {
@@ -395,11 +395,12 @@ pub(super) async fn handle_key(
             (UiFocus::HeaderSearch, KeyCode::Backspace) => {
                 let _ = tx.send(AppCommand::SearchInputBackspace).await;
             }
-            (UiFocus::HeaderSearch, KeyCode::Char(c)) => {
-                if !key.modifiers.contains(KeyModifiers::CONTROL) {
-                    let _ = tx.send(AppCommand::SearchInputChar { c }).await;
-                }
+            (UiFocus::HeaderSearch, KeyCode::Char(c))
+                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                let _ = tx.send(AppCommand::SearchInputChar { c }).await;
             }
+            (UiFocus::HeaderSearch, KeyCode::Char(_)) => {}
             (UiFocus::BodyCenter, KeyCode::Char('p')) => {
                 let _ = tx.send(AppCommand::SearchPlaySelected).await;
             }

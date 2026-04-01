@@ -40,6 +40,7 @@ pub(super) fn clear_dir_files(dir: &Path, keep: Option<&Path>) -> (usize, u64) {
     (removed_files, removed_bytes)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn download_to_path_with_config<FP, FR>(
     http: &reqwest::Client,
     out_path: &Path,
@@ -136,6 +137,119 @@ where
 
         if let Some(err) = failed {
             if attempt < retries {
+                on_retry(attempt + 1);
+                sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
+                continue;
+            }
+            return Err(err);
+        }
+
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn download_to_path_for_streaming_with_config<FP, FR>(
+    http: &reqwest::Client,
+    out_path: &Path,
+    url: &str,
+    title: &str,
+    retries: u32,
+    backoff_ms: u64,
+    backoff_max_ms: u64,
+    mut on_progress: FP,
+    mut on_retry: FR,
+) -> Result<(), DownloadError>
+where
+    FP: FnMut(u64, Option<u64>),
+    FR: FnMut(u32),
+{
+    for attempt in 0..=retries {
+        // Streaming sessions may expose the path once enough bytes are buffered,
+        // so we only retry before any payload bytes have been written.
+        let _ = tokio::fs::remove_file(out_path).await;
+
+        let resp = match http.get(url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                if attempt < retries {
+                    on_retry(attempt + 1);
+                    sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
+                    continue;
+                }
+                return Err(DownloadError::Http(e));
+            }
+        };
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            if attempt < retries && is_retryable_status(status) {
+                on_retry(attempt + 1);
+                sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
+                continue;
+            }
+            return Err(DownloadError::StatusCode {
+                status,
+                url: url.to_string(),
+            });
+        }
+
+        let mut file = match tokio::fs::File::create(out_path).await {
+            Ok(f) => f,
+            Err(e) => {
+                if attempt < retries {
+                    on_retry(attempt + 1);
+                    sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
+                    continue;
+                }
+                return Err(DownloadError::CreateFile {
+                    path: out_path.to_path_buf(),
+                    source: e,
+                });
+            }
+        };
+
+        let total_bytes = resp.content_length().filter(|bytes| *bytes > 0);
+        let mut downloaded_bytes = 0u64;
+        let mut started_streaming = false;
+        on_progress(downloaded_bytes, total_bytes);
+
+        let mut stream = resp.bytes_stream();
+        let mut failed = None::<DownloadError>;
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(bytes) => {
+                    if let Err(e) = file.write_all(&bytes).await {
+                        failed = Some(DownloadError::Write {
+                            title: title.to_string(),
+                            source: e,
+                        });
+                        break;
+                    }
+                    downloaded_bytes = downloaded_bytes.saturating_add(bytes.len() as u64);
+                    started_streaming = started_streaming || downloaded_bytes > 0;
+                    on_progress(downloaded_bytes, total_bytes);
+                }
+                Err(e) => {
+                    failed = Some(DownloadError::Http(e));
+                    break;
+                }
+            }
+        }
+
+        if failed.is_none()
+            && let Err(e) = file.flush().await
+        {
+            failed = Some(DownloadError::Write {
+                title: title.to_string(),
+                source: e,
+            });
+        }
+
+        if let Some(err) = failed {
+            if attempt < retries && !started_streaming {
                 on_retry(attempt + 1);
                 sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
                 continue;

@@ -25,6 +25,12 @@ pub(super) fn draw_footer(f: &mut Frame, area: Rect, player: &PlayerSnapshot, vi
         PlayMode::Shuffle => "随机",
     };
 
+    let seek_hint = if player.can_seek() {
+        "Ctrl+Left/Right Seek"
+    } else {
+        "Ctrl+Left/Right Seek(缓存完成后可用)"
+    };
+
     let lines = vec![
         Line::from(format!("提示:{view_status}|Now:{now}")),
         Line::from(format!(
@@ -32,9 +38,9 @@ pub(super) fn draw_footer(f: &mut Frame, area: Rect, player: &PlayerSnapshot, vi
             (player.volume.clamp(0.0, 2.0) * 100.0),
             br_label(player.play_br),
         )),
-        Line::from(
-            "1-4 切换页 | Tab 焦点 | q 退出 | ? 帮助 | 空格 播放/暂停 | [/] 上一首/下一首 | Ctrl+Left/Right Seek | Alt+Up/Down 音量 | M 模式",
-        ),
+        Line::from(format!(
+            "1-4 切换页 | Tab 焦点 | q 退出 | ? 帮助 | 空格 播放/暂停 | [/] 上一首/下一首 | {seek_hint} | Alt+Up/Down 音量 | M 模式"
+        )),
     ];
 
     let footer = Paragraph::new(Text::from(lines));

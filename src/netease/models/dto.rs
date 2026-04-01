@@ -39,6 +39,8 @@ pub struct SongDetailResp {
 pub struct SongInfo {
     pub id: i64,
     pub name: String,
+    #[serde(rename = "dt", default)]
+    pub duration_ms: Option<u64>,
     #[serde(default)]
     pub ar: Vec<ArtistInfo>,
     #[serde(default)]

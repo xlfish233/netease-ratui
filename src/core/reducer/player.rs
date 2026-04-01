@@ -93,6 +93,13 @@ pub async fn handle_netease_event(
             }
 
             if let Some(title) = state.song_request_titles.remove(&song_url.id) {
+                let duration_ms = state
+                    .app
+                    .play_queue
+                    .songs()
+                    .iter()
+                    .find(|song| song.id == song_url.id)
+                    .and_then(|song| song.duration_ms);
                 state.app.play_status = format!("已获取链接，准备缓存: {title}");
                 state.app.play_song_id = Some(song_url.id);
                 effects.emit_state(&state.app);
@@ -102,6 +109,7 @@ pub async fn handle_netease_event(
                         br: state.app.play_br,
                         url: song_url.url.clone(),
                         title,
+                        duration_ms,
                     },
                     "AudioWorker 通道已关闭：PlayTrack 发送失败",
                 );

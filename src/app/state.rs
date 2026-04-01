@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::PlayQueue;
+use crate::audio_worker::AudioStreamHint;
 use crate::domain::model::LyricLine;
 use crate::keybindings::{KeyBindings, SharedKeyBindings};
 
@@ -212,6 +213,7 @@ pub struct App {
     pub paused: bool,
     pub play_started_at: Option<Instant>,
     pub play_total_ms: Option<u64>,
+    pub play_stream_hint: Option<AudioStreamHint>,
     pub play_paused_at: Option<Instant>,
     pub play_paused_accum_ms: u64,
     pub pending_seek_ms: Option<u64>,
@@ -277,6 +279,7 @@ impl Default for App {
             paused: false,
             play_started_at: None,
             play_total_ms: None,
+            play_stream_hint: None,
             play_paused_at: None,
             play_paused_accum_ms: 0,
             pending_seek_ms: None,
@@ -316,6 +319,17 @@ impl Default for App {
     }
 }
 
+impl App {
+    pub fn can_seek(&self) -> bool {
+        self.play_total_ms.is_some()
+            && self
+                .play_stream_hint
+                .as_ref()
+                .map(|hint| hint.seekable)
+                .unwrap_or(true)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AppSnapshot {
     pub view: View,
@@ -341,11 +355,23 @@ pub struct PlayerSnapshot {
     pub paused: bool,
     pub play_started_at: Option<Instant>,
     pub play_total_ms: Option<u64>,
+    pub play_stream_hint: Option<AudioStreamHint>,
     pub play_paused_at: Option<Instant>,
     pub play_paused_accum_ms: u64,
     pub play_mode: PlayMode,
     pub volume: f32,
     pub play_br: i64,
+}
+
+impl PlayerSnapshot {
+    pub fn can_seek(&self) -> bool {
+        self.play_total_ms.is_some()
+            && self
+                .play_stream_hint
+                .as_ref()
+                .map(|hint| hint.seekable)
+                .unwrap_or(true)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -455,6 +481,7 @@ impl AppSnapshot {
             paused: app.paused,
             play_started_at: app.play_started_at,
             play_total_ms: app.play_total_ms,
+            play_stream_hint: app.play_stream_hint.clone(),
             play_paused_at: app.play_paused_at,
             play_paused_accum_ms: app.play_paused_accum_ms,
             play_mode: app.play_mode,

@@ -143,9 +143,11 @@ mod tests {
 
     #[test]
     fn unauth_login_page_uses_full_canvas_without_header() {
-        let mut app = App::default();
-        app.login_qr_url = Some("https://music.163.com/login?codekey=test".to_owned());
-        app.login_qr_ascii = Some("██\n██".to_owned());
+        let app = App {
+            login_qr_url: Some("https://music.163.com/login?codekey=test".to_owned()),
+            login_qr_ascii: Some("██\n██".to_owned()),
+            ..Default::default()
+        };
         let snapshot = AppSnapshot::from_app(&app);
 
         let rendered = render_to_string(&snapshot);
@@ -158,9 +160,11 @@ mod tests {
 
     #[test]
     fn unauth_cookie_login_page_renders_music_u_input() {
-        let mut app = App::default();
-        app.login_cookie_input_visible = true;
-        app.login_cookie_input = "cookie-value".to_owned();
+        let app = App {
+            login_cookie_input_visible: true,
+            login_cookie_input: "cookie-value".to_owned(),
+            ..Default::default()
+        };
         let snapshot = AppSnapshot::from_app(&app);
 
         let rendered = render_to_string(&snapshot);

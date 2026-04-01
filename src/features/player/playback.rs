@@ -1,4 +1,5 @@
 use crate::app::{PlaylistMode, View};
+use crate::audio_worker::{AudioBufferState, AudioPlaybackMode};
 use std::time::Duration;
 
 use crate::core::prelude::{
@@ -56,7 +57,29 @@ fn playback_elapsed_ms(app: &App) -> u64 {
         .saturating_sub(app.play_paused_accum_ms as u128) as u64
 }
 
+fn blocked_seek_status(app: &App) -> Option<String> {
+    if app.can_seek() {
+        return None;
+    }
+    let hint = app.play_stream_hint.as_ref()?;
+
+    match hint.mode {
+        AudioPlaybackMode::CachedFile => None,
+        AudioPlaybackMode::ProgressiveStream => Some(match hint.buffer_state {
+            AudioBufferState::Prebuffering => "预缓冲中，暂不可拖动".to_owned(),
+            AudioBufferState::Buffering | AudioBufferState::Ready => {
+                "边下边播中，暂不可拖动，等待下载完成".to_owned()
+            }
+            AudioBufferState::Stalled => "缓冲不足，暂不可拖动，等待更多数据".to_owned(),
+        }),
+    }
+}
+
 pub fn seek_relative(app: &mut App, effects: &mut CoreEffects, delta_ms: i64) {
+    if let Some(status) = blocked_seek_status(app) {
+        app.play_status = status;
+        return;
+    }
     let Some(total_ms) = app.play_total_ms else {
         return;
     };
@@ -76,6 +99,10 @@ pub fn seek_relative(app: &mut App, effects: &mut CoreEffects, delta_ms: i64) {
 }
 
 pub fn seek_absolute(app: &mut App, effects: &mut CoreEffects, target_ms: u64) {
+    if let Some(status) = blocked_seek_status(app) {
+        app.play_status = status;
+        return;
+    }
     let Some(total_ms) = app.play_total_ms else {
         return;
     };
@@ -193,4 +220,34 @@ pub(super) async fn play_prev(
         effects,
     )
     .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::seek_absolute;
+    use crate::app::App;
+    use crate::audio_worker::{AudioBufferState, AudioStreamHint};
+    use crate::core::CoreEffects;
+
+    #[test]
+    fn seek_absolute_is_blocked_when_streaming_not_seekable() {
+        let mut app = App {
+            play_total_ms: Some(240_000),
+            play_stream_hint: Some(AudioStreamHint::progressive(
+                AudioBufferState::Buffering,
+                false,
+                256 * 1024,
+                Some(1024 * 1024),
+            )),
+            ..Default::default()
+        };
+        let mut effects = CoreEffects::default();
+
+        seek_absolute(&mut app, &mut effects, 120_000);
+
+        assert_eq!(app.play_status, "边下边播中，暂不可拖动，等待下载完成");
+        assert!(app.play_started_at.is_none());
+        assert!(matches!(app.play_stream_hint, Some(AudioStreamHint { .. })));
+        let _ = effects;
+    }
 }

@@ -115,6 +115,7 @@ mod tests {
                 id: 1,
                 name: "old".to_owned(),
                 artists: "a".to_owned(),
+                duration_ms: None,
             }],
         };
         let handled_stale = super::handle_netease_event(&stale_evt, &mut state, &mut effects).await;
@@ -128,6 +129,7 @@ mod tests {
                 id: 2,
                 name: "new".to_owned(),
                 artists: "b".to_owned(),
+                duration_ms: None,
             }],
         };
         let handled_fresh = super::handle_netease_event(&fresh_evt, &mut state, &mut effects).await;

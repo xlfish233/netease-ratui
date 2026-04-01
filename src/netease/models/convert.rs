@@ -76,6 +76,7 @@ fn to_song(s: super::dto::SongInfo) -> Song {
         id: s.id,
         name: s.name,
         artists,
+        duration_ms: s.duration_ms,
     }
 }
 

@@ -158,7 +158,7 @@ async fn handle_mouse_with_canvas(
     if row >= footer_start {
         DOUBLE_CLICK.with(|dc| dc.borrow_mut().invalidate());
         // Progress bar seek: click anywhere in footer when playing
-        if app.player.play_total_ms.is_some() {
+        if app.player.can_seek() {
             let ratio = column as f64 / canvas.width as f64;
             let target_ms = (ratio * app.player.play_total_ms.unwrap() as f64).round() as u64;
             let _ = tx
@@ -321,8 +321,18 @@ fn make_mouse_event(local_col: u16, local_row: u16, canvas_x: u16, canvas_y: u16
 mod tests {
     use super::*;
     use crate::app::{App, Song};
+    use crate::audio_worker::{AudioBufferState, AudioStreamHint};
     use crate::domain::model::Playlist;
     use crate::ui::tui::utils::{MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH};
+
+    fn song(id: i64, name: &str, artists: &str) -> Song {
+        Song {
+            id,
+            name: name.to_owned(),
+            artists: artists.to_owned(),
+            duration_ms: None,
+        }
+    }
 
     /// Helper: create a test canvas at origin (0, 0) with minimum dimensions.
     fn test_canvas() -> Rect {
@@ -416,26 +426,10 @@ mod tests {
         };
         app.playlist_mode = PlaylistMode::Tracks;
         app.playlist_tracks = vec![
-            Song {
-                id: 1,
-                name: "Song A".to_owned(),
-                artists: "Artist A".to_owned(),
-            },
-            Song {
-                id: 2,
-                name: "Song B".to_owned(),
-                artists: "Artist B".to_owned(),
-            },
-            Song {
-                id: 3,
-                name: "Song C".to_owned(),
-                artists: "Artist C".to_owned(),
-            },
-            Song {
-                id: 4,
-                name: "Song D".to_owned(),
-                artists: "Artist D".to_owned(),
-            },
+            song(1, "Song A", "Artist A"),
+            song(2, "Song B", "Artist B"),
+            song(3, "Song C", "Artist C"),
+            song(4, "Song D", "Artist D"),
         ];
         app.playlist_tracks_selected = 0;
         let snapshot = AppSnapshot::from_app(&app);
@@ -467,21 +461,9 @@ mod tests {
             ..Default::default()
         };
         app.search_results = vec![
-            Song {
-                id: 1,
-                name: "Result A".to_owned(),
-                artists: "Artist A".to_owned(),
-            },
-            Song {
-                id: 2,
-                name: "Result B".to_owned(),
-                artists: "Artist B".to_owned(),
-            },
-            Song {
-                id: 3,
-                name: "Result C".to_owned(),
-                artists: "Artist C".to_owned(),
-            },
+            song(1, "Result A", "Artist A"),
+            song(2, "Result B", "Artist B"),
+            song(3, "Result C", "Artist C"),
         ];
         app.search_selected = 0;
         let snapshot = AppSnapshot::from_app(&app);
@@ -509,11 +491,7 @@ mod tests {
             logged_in: true,
             ..Default::default()
         };
-        app.search_results = vec![Song {
-            id: 1,
-            name: "Result A".to_owned(),
-            artists: "Artist A".to_owned(),
-        }];
+        app.search_results = vec![song(1, "Result A", "Artist A")];
         let snapshot = AppSnapshot::from_app(&app);
 
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
@@ -533,11 +511,7 @@ mod tests {
             logged_in: true,
             ..Default::default()
         };
-        app.search_results = vec![Song {
-            id: 1,
-            name: "Result A".to_owned(),
-            artists: "Artist A".to_owned(),
-        }];
+        app.search_results = vec![song(1, "Result A", "Artist A")];
         let snapshot = AppSnapshot::from_app(&app);
 
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
@@ -557,11 +531,7 @@ mod tests {
             logged_in: true,
             ..Default::default()
         };
-        app.search_results = vec![Song {
-            id: 1,
-            name: "Result A".to_owned(),
-            artists: "Artist A".to_owned(),
-        }];
+        app.search_results = vec![song(1, "Result A", "Artist A")];
         let snapshot = AppSnapshot::from_app(&app);
 
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
@@ -581,11 +551,7 @@ mod tests {
             logged_in: true,
             ..Default::default()
         };
-        app.search_results = vec![Song {
-            id: 1,
-            name: "Result A".to_owned(),
-            artists: "Artist A".to_owned(),
-        }];
+        app.search_results = vec![song(1, "Result A", "Artist A")];
         let snapshot = AppSnapshot::from_app(&app);
 
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
@@ -658,21 +624,9 @@ mod tests {
         };
         app.playlist_mode = PlaylistMode::Tracks;
         app.playlist_tracks = vec![
-            Song {
-                id: 1,
-                name: "Song A".to_owned(),
-                artists: "Artist A".to_owned(),
-            },
-            Song {
-                id: 2,
-                name: "Song B".to_owned(),
-                artists: "Artist B".to_owned(),
-            },
-            Song {
-                id: 3,
-                name: "Song C".to_owned(),
-                artists: "Artist C".to_owned(),
-            },
+            song(1, "Song A", "Artist A"),
+            song(2, "Song B", "Artist B"),
+            song(3, "Song C", "Artist C"),
         ];
         let snapshot = AppSnapshot::from_app(&app);
 
@@ -713,21 +667,9 @@ mod tests {
             ..Default::default()
         };
         app.search_results = vec![
-            Song {
-                id: 1,
-                name: "Result A".to_owned(),
-                artists: "Artist A".to_owned(),
-            },
-            Song {
-                id: 2,
-                name: "Result B".to_owned(),
-                artists: "Artist B".to_owned(),
-            },
-            Song {
-                id: 3,
-                name: "Result C".to_owned(),
-                artists: "Artist C".to_owned(),
-            },
+            song(1, "Result A", "Artist A"),
+            song(2, "Result B", "Artist B"),
+            song(3, "Result C", "Artist C"),
         ];
         let snapshot = AppSnapshot::from_app(&app);
 
@@ -774,18 +716,7 @@ mod tests {
             track_count: 10,
             special_type: 0,
         }];
-        app.playlist_tracks = vec![
-            Song {
-                id: 1,
-                name: "Song A".to_owned(),
-                artists: "Artist A".to_owned(),
-            },
-            Song {
-                id: 2,
-                name: "Song B".to_owned(),
-                artists: "Artist B".to_owned(),
-            },
-        ];
+        app.playlist_tracks = vec![song(1, "Song A", "Artist A"), song(2, "Song B", "Artist B")];
         let snapshot = AppSnapshot::from_app(&app);
 
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
@@ -827,16 +758,8 @@ mod tests {
             ..Default::default()
         };
         app.search_results = vec![
-            Song {
-                id: 1,
-                name: "Result A".to_owned(),
-                artists: "Artist A".to_owned(),
-            },
-            Song {
-                id: 2,
-                name: "Result B".to_owned(),
-                artists: "Artist B".to_owned(),
-            },
+            song(1, "Result A", "Artist A"),
+            song(2, "Result B", "Artist B"),
         ];
         let snapshot = AppSnapshot::from_app(&app);
 
@@ -928,11 +851,7 @@ mod tests {
             logged_in: true,
             ..Default::default()
         };
-        app.search_results = vec![Song {
-            id: 1,
-            name: "Result A".to_owned(),
-            artists: "Artist A".to_owned(),
-        }];
+        app.search_results = vec![song(1, "Result A", "Artist A")];
         let snapshot = AppSnapshot::from_app(&app);
 
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
@@ -1133,6 +1052,34 @@ mod tests {
         assert!(rx.try_recv().is_err(), "无播放时页脚点击不应发送命令");
     }
 
+    #[tokio::test]
+    async fn progress_bar_seek_blocked_when_streaming_not_seekable() {
+        let mut app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        app.play_total_ms = Some(240_000);
+        app.play_stream_hint = Some(AudioStreamHint::progressive(
+            AudioBufferState::Buffering,
+            false,
+            256 * 1024,
+            Some(1024 * 1024),
+        ));
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let footer_row = MIN_CANVAS_HEIGHT - FOOTER_HEIGHT;
+        let mouse = make_mouse_event(MIN_CANVAS_WIDTH / 2, footer_row, 0, 0);
+        run_mouse(&snapshot, mouse, &tx).await;
+
+        assert!(
+            rx.try_recv().is_err(),
+            "流式下载中页脚点击不应发送 seek 命令"
+        );
+    }
+
     // ==================== Scroll volume tests ====================
 
     /// VAL-MOUSE-008: 滚轮上滚增大音量
@@ -1261,11 +1208,7 @@ mod tests {
             ..Default::default()
         };
         app.play_total_ms = Some(240_000);
-        app.search_results = vec![Song {
-            id: 1,
-            name: "Song A".to_owned(),
-            artists: "Artist A".to_owned(),
-        }];
+        app.search_results = vec![song(1, "Song A", "Artist A")];
         let snapshot = AppSnapshot::from_app(&app);
 
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
@@ -1338,21 +1281,9 @@ mod tests {
             ..Default::default()
         };
         app.search_results = vec![
-            Song {
-                id: 1,
-                name: "Result A".to_owned(),
-                artists: "Artist A".to_owned(),
-            },
-            Song {
-                id: 2,
-                name: "Result B".to_owned(),
-                artists: "Artist B".to_owned(),
-            },
-            Song {
-                id: 3,
-                name: "Result C".to_owned(),
-                artists: "Artist C".to_owned(),
-            },
+            song(1, "Result A", "Artist A"),
+            song(2, "Result B", "Artist B"),
+            song(3, "Result C", "Artist C"),
         ];
         app.toast = Some(crate::app::Toast::info("test toast"));
         let snapshot = AppSnapshot::from_app(&app);

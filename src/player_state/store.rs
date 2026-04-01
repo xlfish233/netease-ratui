@@ -17,6 +17,8 @@ pub struct SongLite {
     pub id: i64,
     pub name: String,
     pub artists: String,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
 }
 
 impl From<&Song> for SongLite {
@@ -25,6 +27,7 @@ impl From<&Song> for SongLite {
             id: song.id,
             name: song.name.clone(),
             artists: song.artists.clone(),
+            duration_ms: song.duration_ms,
         }
     }
 }
@@ -346,6 +349,7 @@ pub fn apply_snapshot_to_app(
             id: lite.id,
             name: lite.name.clone(),
             artists: lite.artists.clone(),
+            duration_ms: lite.duration_ms,
         })
         .collect();
 
@@ -564,6 +568,15 @@ mod tests {
     use super::*;
     use crate::app::PlayQueue;
 
+    fn song(id: i64, name: &str, artists: &str) -> Song {
+        Song {
+            id,
+            name: name.to_string(),
+            artists: artists.to_string(),
+            duration_ms: None,
+        }
+    }
+
     fn app_playback_elapsed_ms(app: &App) -> u64 {
         let Some(started) = app.play_started_at else {
             return 0;
@@ -583,16 +596,13 @@ mod tests {
 
     #[test]
     fn test_song_lite_from_song() {
-        let song = Song {
-            id: 123,
-            name: "Test Song".to_string(),
-            artists: "Test Artist".to_string(),
-        };
+        let song = song(123, "Test Song", "Test Artist");
 
         let lite = SongLite::from(&song);
         assert_eq!(lite.id, 123);
         assert_eq!(lite.name, "Test Song");
         assert_eq!(lite.artists, "Test Artist");
+        assert_eq!(lite.duration_ms, None);
     }
 
     #[test]
@@ -874,6 +884,7 @@ mod tests {
                         id: 123,
                         name: "Test Song".to_string(),
                         artists: "Test Artist".to_string(),
+                        duration_ms: Some(180000),
                     }],
                     order: vec![0],
                     cursor: Some(0),
@@ -920,18 +931,7 @@ mod tests {
         assert_eq!(queue.cursor_pos(), None);
 
         // 添加歌曲
-        let songs = vec![
-            Song {
-                id: 1,
-                name: "Song 1".to_string(),
-                artists: "Artist 1".to_string(),
-            },
-            Song {
-                id: 2,
-                name: "Song 2".to_string(),
-                artists: "Artist 2".to_string(),
-            },
-        ];
+        let songs = vec![song(1, "Song 1", "Artist 1"), song(2, "Song 2", "Artist 2")];
         queue.set_songs(songs, None);
 
         // 有效位置
@@ -950,11 +950,7 @@ mod tests {
         // 创建包含预加载歌单的快照
         let preload = PlaylistPreload {
             status: PreloadStatus::Completed,
-            songs: vec![Song {
-                id: 101,
-                name: "Preloaded Song".to_string(),
-                artists: "Test Artist".to_string(),
-            }],
+            songs: vec![song(101, "Preloaded Song", "Test Artist")],
         };
 
         // 验证 PlaylistPreload 可以序列化和反序列化
@@ -1008,11 +1004,7 @@ mod tests {
                 1,
                 PlaylistPreload {
                     status: PreloadStatus::Completed,
-                    songs: vec![Song {
-                        id: 201,
-                        name: "Cached Song".to_string(),
-                        artists: "Cached Artist".to_string(),
-                    }],
+                    songs: vec![song(201, "Cached Song", "Cached Artist")],
                 },
             )]
             .into_iter()
@@ -1073,16 +1065,8 @@ mod tests {
                 PlaylistPreload {
                     status: PreloadStatus::Completed,
                     songs: vec![
-                        Song {
-                            id: 301,
-                            name: "Song A".to_string(),
-                            artists: "Artist A".to_string(),
-                        },
-                        Song {
-                            id: 302,
-                            name: "Song B".to_string(),
-                            artists: "Artist B".to_string(),
-                        },
+                        song(301, "Song A", "Artist A"),
+                        song(302, "Song B", "Artist B"),
                     ],
                 },
             )]

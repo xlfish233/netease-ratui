@@ -31,7 +31,16 @@ pub fn parse_search_songs(v: &Value) -> Vec<Song> {
                         .join("/")
                 })
                 .unwrap_or_default();
-            Some(Song { id, name, artists })
+            let duration_ms = s
+                .get("dt")
+                .or_else(|| s.get("duration"))
+                .and_then(|v| v.as_u64());
+            Some(Song {
+                id,
+                name,
+                artists,
+                duration_ms,
+            })
         })
         .collect()
 }

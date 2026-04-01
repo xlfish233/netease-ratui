@@ -140,6 +140,14 @@ pub(super) fn draw_now_panel(f: &mut Frame, area: Rect, player: &PlayerSnapshot,
     let lines = vec![
         Line::from(format!("Now:{now}")),
         Line::from(format!("状态:{}", player.play_status)),
+        Line::from(format!(
+            "拖动:{}",
+            if player.can_seek() {
+                "可用"
+            } else {
+                "不可用"
+            }
+        )),
         Line::from(format!("模式:{mode}")),
         Line::from(format!("音量:{:.0}%", player.volume * 100.0)),
         Line::from(format!("音质:{}", br_label(player.play_br))),

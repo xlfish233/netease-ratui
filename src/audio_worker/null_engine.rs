@@ -3,7 +3,7 @@ use tokio::select;
 use tokio::sync::mpsc;
 
 use super::AudioSettings;
-use super::messages::{AudioCommand, AudioEvent};
+use super::messages::{AudioCommand, AudioEvent, AudioStreamHint};
 use super::transfer::{
     CacheKey, Priority, TransferCommand, TransferConfig, TransferEvent, TransferReceiver,
     TransferSender, spawn_transfer_actor_with_config,
@@ -53,6 +53,7 @@ impl NullEngine {
                         | TransferEvent::DownloadQueued { .. }
                         | TransferEvent::Progress { .. }
                         | TransferEvent::Retrying { .. }
+                        | TransferEvent::Playable { .. }
                         | TransferEvent::Ready { .. }
                         | TransferEvent::Error { .. } => {}
                     }
@@ -79,6 +80,7 @@ impl NullEngine {
                         play_id: self.play_id,
                         title,
                         duration_ms: None,
+                        stream_hint: AudioStreamHint::cached_file(None),
                     })
                     .await;
             }

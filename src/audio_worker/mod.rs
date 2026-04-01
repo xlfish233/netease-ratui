@@ -5,10 +5,15 @@ mod fade;
 mod messages;
 mod null_engine;
 mod player;
+mod streaming;
 mod transfer;
 mod worker;
 
-pub use messages::{AudioCommand, AudioEvent, AudioLoadStage};
+pub use messages::{
+    AudioBufferState, AudioCommand, AudioEvent, AudioLoadStage, AudioPlaybackMode, AudioStreamHint,
+};
+#[allow(unused_imports)]
+pub use streaming::{ProgressiveReader, SessionSnapshot, StreamingSession};
 pub use transfer::TransferConfig;
 
 #[derive(Debug, Clone, Copy)]
