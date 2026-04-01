@@ -8,7 +8,7 @@ mod player;
 mod transfer;
 mod worker;
 
-pub use messages::{AudioCommand, AudioEvent};
+pub use messages::{AudioCommand, AudioEvent, AudioLoadStage};
 pub use transfer::TransferConfig;
 
 #[derive(Debug, Clone, Copy)]

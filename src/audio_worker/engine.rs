@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 
 use super::AudioSettings;
 use super::fade::Crossfade;
-use super::messages::{AudioCommand, AudioEvent};
+use super::messages::{AudioCommand, AudioEvent, AudioLoadStage};
 use super::player::{PlayerState, seek_to_ms};
 use super::transfer::{
     CacheKey, Priority, TransferCommand, TransferConfig, TransferEvent, TransferReceiver,
@@ -133,6 +133,46 @@ impl AudioEngine {
 
     async fn handle_transfer_event(&mut self, evt: TransferEvent) {
         match evt {
+            TransferEvent::CacheHit { token, key } => {
+                self.emit_loading_event(token, key.song_id, AudioLoadStage::CacheHit)
+                    .await;
+            }
+            TransferEvent::DownloadQueued { token, key } => {
+                self.emit_loading_event(token, key.song_id, AudioLoadStage::DownloadQueued)
+                    .await;
+            }
+            TransferEvent::Progress {
+                token,
+                key,
+                downloaded_bytes,
+                total_bytes,
+            } => {
+                self.emit_loading_event(
+                    token,
+                    key.song_id,
+                    AudioLoadStage::Downloading {
+                        downloaded_bytes,
+                        total_bytes,
+                    },
+                )
+                .await;
+            }
+            TransferEvent::Retrying {
+                token,
+                key,
+                attempt,
+                max_attempts,
+            } => {
+                self.emit_loading_event(
+                    token,
+                    key.song_id,
+                    AudioLoadStage::Retrying {
+                        attempt,
+                        max_attempts,
+                    },
+                )
+                .await;
+            }
             TransferEvent::Ready { token, key, path } => {
                 if let Some(pending) = self.pending_play.as_ref()
                     && pending.token != token
@@ -144,6 +184,8 @@ impl AudioEngine {
                         "cache ready token mismatch"
                     );
                 }
+                self.emit_loading_event(token, key.song_id, AudioLoadStage::PreparingPlayback)
+                    .await;
                 let Some(mut p) = self.pending_play.take().filter(|p| p.token == token) else {
                     return;
                 };
@@ -212,6 +254,20 @@ impl AudioEngine {
                     .await;
             }
         }
+    }
+
+    async fn emit_loading_event(&mut self, token: u64, song_id: i64, stage: AudioLoadStage) {
+        let Some(pending) = self.pending_play.as_ref().filter(|p| p.token == token) else {
+            return;
+        };
+        let _ = self
+            .tx_evt
+            .send(AudioEvent::Loading {
+                song_id,
+                title: pending.title.clone(),
+                stage,
+            })
+            .await;
     }
 
     async fn handle_audio_command(&mut self, cmd: AudioCommand) {

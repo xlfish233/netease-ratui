@@ -109,9 +109,9 @@ pub async fn handle_search_command(
         }
         AppCommand::SearchPlaySelected => {
             if let Some(s) = app.search_results.get(app.search_selected) {
-                app.play_status = "获取播放链接...".to_owned();
                 app.play_queue.clear();
                 let title = format!("{} - {}", s.name, s.artists);
+                app.play_status = format!("获取播放链接中: {title}");
                 effects.emit_state(app);
                 song_request_titles.clear();
                 let id =

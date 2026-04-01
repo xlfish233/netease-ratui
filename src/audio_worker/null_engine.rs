@@ -45,8 +45,16 @@ impl NullEngine {
                     let Some(evt) = maybe_evt else {
                         break;
                     };
-                    if let TransferEvent::CacheCleared { files, bytes } = evt {
-                        let _ = self.tx_evt.send(AudioEvent::CacheCleared { files, bytes }).await;
+                    match evt {
+                        TransferEvent::CacheCleared { files, bytes } => {
+                            let _ = self.tx_evt.send(AudioEvent::CacheCleared { files, bytes }).await;
+                        }
+                        TransferEvent::CacheHit { .. }
+                        | TransferEvent::DownloadQueued { .. }
+                        | TransferEvent::Progress { .. }
+                        | TransferEvent::Retrying { .. }
+                        | TransferEvent::Ready { .. }
+                        | TransferEvent::Error { .. } => {}
                     }
                 }
                 maybe_cmd = self.rx_cmd.recv() => {

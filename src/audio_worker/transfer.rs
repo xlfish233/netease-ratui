@@ -65,6 +65,26 @@ pub enum TransferCommand {
 
 #[derive(Debug)]
 pub enum TransferEvent {
+    CacheHit {
+        token: u64,
+        key: CacheKey,
+    },
+    DownloadQueued {
+        token: u64,
+        key: CacheKey,
+    },
+    Progress {
+        token: u64,
+        key: CacheKey,
+        downloaded_bytes: u64,
+        total_bytes: Option<u64>,
+    },
+    Retrying {
+        token: u64,
+        key: CacheKey,
+        attempt: u32,
+        max_attempts: u32,
+    },
     Ready {
         token: u64,
         key: CacheKey,
@@ -120,6 +140,16 @@ struct JobState {
 
 #[derive(Debug)]
 enum JobResult {
+    Progress {
+        key: CacheKey,
+        downloaded_bytes: u64,
+        total_bytes: Option<u64>,
+    },
+    Retrying {
+        key: CacheKey,
+        attempt: u32,
+        max_attempts: u32,
+    },
     Ok {
         key: CacheKey,
         tmp_path: PathBuf,
@@ -247,6 +277,7 @@ pub fn spawn_transfer_actor_with_config(
                                     "cache hit"
                                 );
                                 if token != 0 {
+                                    let _ = tx_evt.send(TransferEvent::CacheHit { token, key }).await;
                                     let _ = tx_evt.send(TransferEvent::Ready { token, key, path }).await;
                                 }
                                 continue;
@@ -259,6 +290,11 @@ pub fn spawn_transfer_actor_with_config(
                                 prio = priority.as_u8(),
                                 "cache miss, enqueue download"
                             );
+                            if token != 0 {
+                                let _ = tx_evt
+                                    .send(TransferEvent::DownloadQueued { token, key })
+                                    .await;
+                            }
                             let st = jobs.entry(key).or_insert(JobState {
                                 waiters: Vec::new(),
                                 url: url.clone(),
@@ -320,6 +356,42 @@ pub fn spawn_transfer_actor_with_config(
                 }
                 Some(done) = rx_done.recv() => {
                     match done {
+                        JobResult::Progress {
+                            key,
+                            downloaded_bytes,
+                            total_bytes,
+                        } => {
+                            if let Some(st) = jobs.get(&key) {
+                                for token in st.waiters.iter().copied().filter(|t| *t != 0) {
+                                    let _ = tx_evt
+                                        .send(TransferEvent::Progress {
+                                            token,
+                                            key,
+                                            downloaded_bytes,
+                                            total_bytes,
+                                        })
+                                        .await;
+                                }
+                            }
+                        }
+                        JobResult::Retrying {
+                            key,
+                            attempt,
+                            max_attempts,
+                        } => {
+                            if let Some(st) = jobs.get(&key) {
+                                for token in st.waiters.iter().copied().filter(|t| *t != 0) {
+                                    let _ = tx_evt
+                                        .send(TransferEvent::Retrying {
+                                            token,
+                                            key,
+                                            attempt,
+                                            max_attempts,
+                                        })
+                                        .await;
+                                }
+                            }
+                        }
                         JobResult::Ok { key, tmp_path } => {
                             let final_path = match cache.commit_tmp_file(key.song_id, key.br, &tmp_path) {
                                 Ok(p) => p,
@@ -451,6 +523,8 @@ pub fn spawn_transfer_actor_with_config(
 
                 tokio::spawn(async move {
                     let _permit = permit;
+                    let mut last_progress_at = 0u64;
+                    let mut last_progress_bytes = 0u64;
                     tracing::info!(
                         song_id = key.song_id,
                         br = key.br,
@@ -465,6 +539,48 @@ pub fn spawn_transfer_actor_with_config(
                         retries,
                         backoff_ms,
                         backoff_max_ms,
+                        |downloaded_bytes, total_bytes| {
+                            let now = now_ms();
+                            let enough_time = now.saturating_sub(last_progress_at) >= 500;
+                            let first_report = last_progress_at == 0;
+                            let byte_advanced = total_bytes.is_none()
+                                && downloaded_bytes.saturating_sub(last_progress_bytes)
+                                    >= 256 * 1024;
+                            let percent_advanced =
+                                total_bytes.filter(|total| *total > 0).is_some_and(|total| {
+                                    let prev_percent =
+                                        last_progress_bytes.saturating_mul(100) / total;
+                                    let current_percent =
+                                        downloaded_bytes.saturating_mul(100) / total;
+                                    current_percent > prev_percent
+                                });
+                            let finished =
+                                total_bytes.is_some_and(|total| downloaded_bytes >= total);
+
+                            if !(first_report
+                                || enough_time
+                                || byte_advanced
+                                || percent_advanced
+                                || finished)
+                            {
+                                return;
+                            }
+
+                            last_progress_at = now;
+                            last_progress_bytes = downloaded_bytes;
+                            let _ = tx_done.try_send(JobResult::Progress {
+                                key,
+                                downloaded_bytes,
+                                total_bytes,
+                            });
+                        },
+                        |attempt| {
+                            let _ = tx_done.try_send(JobResult::Retrying {
+                                key,
+                                attempt,
+                                max_attempts: retries,
+                            });
+                        },
                     )
                     .await;
                     match res {

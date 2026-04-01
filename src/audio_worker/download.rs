@@ -40,7 +40,7 @@ pub(super) fn clear_dir_files(dir: &Path, keep: Option<&Path>) -> (usize, u64) {
     (removed_files, removed_bytes)
 }
 
-pub async fn download_to_path_with_config(
+pub async fn download_to_path_with_config<FP, FR>(
     http: &reqwest::Client,
     out_path: &Path,
     url: &str,
@@ -48,7 +48,13 @@ pub async fn download_to_path_with_config(
     retries: u32,
     backoff_ms: u64,
     backoff_max_ms: u64,
-) -> Result<(), DownloadError> {
+    mut on_progress: FP,
+    mut on_retry: FR,
+) -> Result<(), DownloadError>
+where
+    FP: FnMut(u64, Option<u64>),
+    FR: FnMut(u32),
+{
     for attempt in 0..=retries {
         // Ensure each attempt starts from a clean file.
         let _ = tokio::fs::remove_file(out_path).await;
@@ -57,6 +63,7 @@ pub async fn download_to_path_with_config(
             Ok(r) => r,
             Err(e) => {
                 if attempt < retries {
+                    on_retry(attempt + 1);
                     sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
                     continue;
                 }
@@ -67,6 +74,7 @@ pub async fn download_to_path_with_config(
         if !resp.status().is_success() {
             let status = resp.status();
             if attempt < retries && is_retryable_status(status) {
+                on_retry(attempt + 1);
                 sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
                 continue;
             }
@@ -80,6 +88,7 @@ pub async fn download_to_path_with_config(
             Ok(f) => f,
             Err(e) => {
                 if attempt < retries {
+                    on_retry(attempt + 1);
                     sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
                     continue;
                 }
@@ -89,6 +98,10 @@ pub async fn download_to_path_with_config(
                 });
             }
         };
+
+        let total_bytes = resp.content_length().filter(|bytes| *bytes > 0);
+        let mut downloaded_bytes = 0u64;
+        on_progress(downloaded_bytes, total_bytes);
 
         let mut stream = resp.bytes_stream();
         let mut failed = None::<DownloadError>;
@@ -102,6 +115,8 @@ pub async fn download_to_path_with_config(
                         });
                         break;
                     }
+                    downloaded_bytes = downloaded_bytes.saturating_add(bytes.len() as u64);
+                    on_progress(downloaded_bytes, total_bytes);
                 }
                 Err(e) => {
                     failed = Some(DownloadError::Http(e));
@@ -121,6 +136,7 @@ pub async fn download_to_path_with_config(
 
         if let Some(err) = failed {
             if attempt < retries {
+                on_retry(attempt + 1);
                 sleep_backoff(attempt, backoff_ms, backoff_max_ms).await;
                 continue;
             }

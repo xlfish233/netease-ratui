@@ -111,8 +111,8 @@ pub(super) async fn request_play_at_index(
     if matches!(app.view, View::Playlists) && matches!(app.playlist_mode, PlaylistMode::Tracks) {
         app.playlist_tracks_selected = idx.min(app.playlist_tracks.len().saturating_sub(1));
     }
-    app.play_status = "获取播放链接...".to_owned();
     let title = format!("{} - {}", s.name, s.artists);
+    app.play_status = format!("获取播放链接中: {title}");
     song_request_titles.clear();
     let id = request_tracker.issue(RequestKey::SongUrl, || utils::next_id(req_id));
     song_request_titles.insert(s.id, title);

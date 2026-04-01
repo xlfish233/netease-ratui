@@ -1,12 +1,57 @@
 use crate::core::prelude::{
     app::App,
-    audio::{AudioCommand, AudioEvent},
+    audio::{AudioCommand, AudioEvent, AudioLoadStage},
     effects::CoreEffects,
     infra::{NextSongCacheManager, RequestKey, RequestTracker},
     netease::NeteaseCommand,
 };
 use crate::core::utils;
 use crate::features::player::playback::play_next;
+
+fn format_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = 1024.0 * 1024.0;
+    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
+
+    let value = bytes as f64;
+    if value >= GB {
+        format!("{:.1} GB", value / GB)
+    } else if value >= MB {
+        format!("{:.1} MB", value / MB)
+    } else if value >= KB {
+        format!("{:.1} KB", value / KB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn format_loading_status(title: &str, stage: &AudioLoadStage) -> String {
+    match stage {
+        AudioLoadStage::CacheHit => format!("缓存命中，准备播放: {title}"),
+        AudioLoadStage::DownloadQueued => format!("缓存未命中，开始下载: {title}"),
+        AudioLoadStage::Downloading {
+            downloaded_bytes,
+            total_bytes,
+        } => match total_bytes.filter(|total| *total > 0) {
+            Some(total_bytes) => {
+                let percent = downloaded_bytes.saturating_mul(100) / total_bytes;
+                format!(
+                    "下载中 {percent}% ({}/{}): {title}",
+                    format_bytes(*downloaded_bytes),
+                    format_bytes(total_bytes)
+                )
+            }
+            None => format!("下载中 {}: {title}", format_bytes(*downloaded_bytes)),
+        },
+        AudioLoadStage::PreparingPlayback => format!("下载完成，准备播放: {title}"),
+        AudioLoadStage::Retrying {
+            attempt,
+            max_attempts,
+        } => {
+            format!("下载失败，正在重试({attempt}/{max_attempts}): {title}")
+        }
+    }
+}
 
 pub struct AudioEventCtx<'a> {
     pub request_tracker: &'a mut RequestTracker<RequestKey>,
@@ -23,6 +68,14 @@ pub async fn handle_audio_event(
     effects: &mut CoreEffects,
 ) {
     match evt {
+        AudioEvent::Loading {
+            song_id,
+            title,
+            stage,
+        } => {
+            app.play_song_id = Some(song_id);
+            app.play_status = format_loading_status(&title, &stage);
+        }
         AudioEvent::NowPlaying {
             song_id,
             play_id,
@@ -265,5 +318,72 @@ pub async fn handle_audio_event(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_loading_status, handle_audio_event};
+    use crate::audio_worker::{AudioEvent, AudioLoadStage};
+    use crate::core::CoreEffects;
+    use crate::core::infra::{NextSongCacheManager, RequestKey, RequestTracker};
+    use crate::features::player::audio::AudioEventCtx;
+
+    #[test]
+    fn loading_status_formats_percent_with_total_bytes() {
+        let status = format_loading_status(
+            "Test Song",
+            &AudioLoadStage::Downloading {
+                downloaded_bytes: 512 * 1024,
+                total_bytes: Some(1024 * 1024),
+            },
+        );
+
+        assert!(status.contains("下载中 50%"));
+        assert!(status.contains("512.0 KB/1.0 MB"));
+    }
+
+    #[test]
+    fn loading_status_formats_without_total_bytes() {
+        let status = format_loading_status(
+            "Test Song",
+            &AudioLoadStage::Downloading {
+                downloaded_bytes: 3 * 1024 * 1024,
+                total_bytes: None,
+            },
+        );
+
+        assert_eq!(status, "下载中 3.0 MB: Test Song");
+    }
+
+    #[tokio::test]
+    async fn loading_event_updates_play_status() {
+        let mut app = crate::app::App::default();
+        let mut request_tracker = RequestTracker::<RequestKey>::new();
+        let mut song_request_titles = std::collections::HashMap::new();
+        let mut req_id = 1u64;
+        let mut next_song_cache = NextSongCacheManager::default();
+        let mut effects = CoreEffects::default();
+        let mut ctx = AudioEventCtx {
+            request_tracker: &mut request_tracker,
+            song_request_titles: &mut song_request_titles,
+            req_id: &mut req_id,
+            next_song_cache: &mut next_song_cache,
+        };
+
+        handle_audio_event(
+            &mut app,
+            AudioEvent::Loading {
+                song_id: 7,
+                title: "Test Song".to_owned(),
+                stage: AudioLoadStage::PreparingPlayback,
+            },
+            &mut ctx,
+            &mut effects,
+        )
+        .await;
+
+        assert_eq!(app.play_song_id, Some(7));
+        assert_eq!(app.play_status, "下载完成，准备播放: Test Song");
     }
 }

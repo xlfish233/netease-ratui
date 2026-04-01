@@ -208,11 +208,10 @@ pub async fn handle_playlists_command(
             if matches!(app.playlist_mode, PlaylistMode::Tracks)
                 && let Some(s) = app.playlist_tracks.get(app.playlist_tracks_selected)
             {
-                app.play_status = "获取播放链接...".to_owned();
-
                 // 先保存歌曲信息，因为后续会转移所有权
                 let song_id = s.id;
                 let title = format!("{} - {}", s.name, s.artists);
+                app.play_status = format!("获取播放链接中: {title}");
 
                 // 克隆一份给 play_queue（保留 playlist_tracks 给 UI 显示）
                 let _old = app.play_queue.set_songs(

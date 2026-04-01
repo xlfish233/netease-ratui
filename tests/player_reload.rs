@@ -4,7 +4,7 @@
 /// 1. 应用重启后按空格键，如果 sink 为 None，应该自动发送 NeedsReload 事件
 /// 2. NeedsReload 事件被正确处理，并重新请求播放链接
 /// 3. 正常播放/暂停切换不受影响
-use netease_ratui::core::prelude::{AudioCommand, AudioEvent};
+use netease_ratui::core::prelude::{AudioCommand, AudioEvent, AudioLoadStage};
 
 #[test]
 fn test_needs_reload_event_exists() {
@@ -36,6 +36,11 @@ fn test_toggle_pause_command_exists() {
 fn test_audio_event_all_variants() {
     // 验证所有 AudioEvent 变体都可以创建
     let events = vec![
+        AudioEvent::Loading {
+            song_id: 123,
+            title: "Test Song".to_string(),
+            stage: AudioLoadStage::PreparingPlayback,
+        },
         AudioEvent::NowPlaying {
             song_id: 123,
             play_id: 456,
@@ -57,11 +62,20 @@ fn test_audio_event_all_variants() {
     ];
 
     // 验证事件数量
-    assert_eq!(events.len(), 8, "应该有 8 个事件变体");
+    assert_eq!(events.len(), 9, "应该有 9 个事件变体");
 
     // 对每个事件进行有意义的验证
     for event in events {
         match event {
+            AudioEvent::Loading {
+                song_id,
+                title,
+                stage,
+            } => {
+                assert_eq!(song_id, 123);
+                assert_eq!(title, "Test Song");
+                assert_eq!(stage, AudioLoadStage::PreparingPlayback);
+            }
             AudioEvent::NowPlaying {
                 song_id,
                 play_id,

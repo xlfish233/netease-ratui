@@ -93,7 +93,7 @@ pub async fn handle_netease_event(
             }
 
             if let Some(title) = state.song_request_titles.remove(&song_url.id) {
-                state.app.play_status = "开始播放...".to_owned();
+                state.app.play_status = format!("已获取链接，准备缓存: {title}");
                 state.app.play_song_id = Some(song_url.id);
                 effects.emit_state(&state.app);
                 effects.send_audio_warn(
@@ -167,7 +167,10 @@ mod tests {
         .await;
 
         assert!(handled);
-        assert_eq!(state.app.play_status, "开始播放...");
+        assert_eq!(
+            state.app.play_status,
+            "已获取链接，准备缓存: artist - title"
+        );
         assert_eq!(state.app.play_song_id, Some(7));
         assert!(effects.actions.iter().any(|effect| {
             matches!(
@@ -216,7 +219,7 @@ mod tests {
         let handled_fresh = handle_netease_event(&fresh, &mut state, &mut effects).await;
         assert!(handled_fresh);
         assert_eq!(state.app.play_song_id, Some(1));
-        assert_eq!(state.app.play_status, "开始播放...");
+        assert_eq!(state.app.play_status, "已获取链接，准备缓存: new");
         assert!(!state.song_request_titles.contains_key(&1));
     }
 }

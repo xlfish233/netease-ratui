@@ -10,7 +10,7 @@ pub mod netease;
 pub mod utils;
 
 pub use app::{App, View};
-pub use audio::{AudioCommand, AudioEvent};
+pub use audio::{AudioCommand, AudioEvent, AudioLoadStage};
 pub use effects::{CoreDispatch, CoreEffects};
 pub use infra::{NextSongCacheManager, RequestKey, RequestTracker};
 pub use messages::{AppCommand, AppEvent};
