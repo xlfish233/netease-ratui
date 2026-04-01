@@ -1,3 +1,4 @@
+use super::utils::is_unauth_login_page;
 use crate::app::{AppSnapshot, AppViewSnapshot, PlaylistMode, UiFocus, View};
 use crate::keybindings::KeyAction;
 use crate::messages::app::AppCommand;
@@ -9,6 +10,8 @@ pub(super) async fn handle_key(
     key: KeyEvent,
     tx: &mpsc::Sender<AppCommand>,
 ) -> bool {
+    let unauth_login_page = is_unauth_login_page(app);
+
     // Some terminals/platforms may report both press and release events; we only act on press/repeat.
     if matches!(key.kind, KeyEventKind::Release) {
         return false;
@@ -112,9 +115,11 @@ pub(super) async fn handle_key(
             if modifiers.contains(KeyModifiers::CONTROL) {
                 tracing::debug!("Ctrl+Tab 按下，切换页签");
                 let _ = tx.send(AppCommand::TabNext).await;
-            } else {
+            } else if !unauth_login_page {
                 tracing::debug!("Tab 按下，切换焦点");
                 let _ = tx.send(AppCommand::UiFocusNext).await;
+            } else {
+                tracing::debug!("未登录专页忽略 Tab 焦点切换");
             }
             return false;
         }
@@ -122,7 +127,9 @@ pub(super) async fn handle_key(
             code: KeyCode::BackTab,
             ..
         } => {
-            let _ = tx.send(AppCommand::UiFocusPrev).await;
+            if !unauth_login_page {
+                let _ = tx.send(AppCommand::UiFocusPrev).await;
+            }
         }
         KeyEvent {
             code: KeyCode::F(k @ 1..=4),
@@ -138,6 +145,9 @@ pub(super) async fn handle_key(
     // Alt+数字键：始终切换焦点（即使在搜索框中）
     match (key.code, key.modifiers) {
         (KeyCode::Char(c), m) if m.contains(KeyModifiers::ALT) && ('1'..='4').contains(&c) => {
+            if unauth_login_page {
+                return false;
+            }
             let focus = match c {
                 '1' => UiFocus::HeaderSearch,
                 '2' => UiFocus::BodyLeft,
@@ -155,7 +165,11 @@ pub(super) async fn handle_key(
     match (key.code, key.modifiers) {
         // Focus switching with number keys (1-4), but not when typing in search
         (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) && ('1'..='4').contains(&c) => {
-            if matches!(app.view, View::Search) && matches!(app.ui_focus, UiFocus::HeaderSearch) {
+            if unauth_login_page {
+                return false;
+            } else if matches!(app.view, View::Search)
+                && matches!(app.ui_focus, UiFocus::HeaderSearch)
+            {
                 // 在搜索框中，允许输入数字
             } else {
                 let focus = match c {
@@ -231,7 +245,11 @@ pub(super) async fn handle_key(
         _ => {}
     }
 
-    let focus = app.ui_focus;
+    let focus = if unauth_login_page {
+        UiFocus::BodyCenter
+    } else {
+        app.ui_focus
+    };
     match app.view {
         View::Login => {
             if focus != UiFocus::BodyCenter {
@@ -513,7 +531,12 @@ mod tests {
 
     #[tokio::test]
     async fn tab_press_sends_focus_next_once() {
-        let app = AppSnapshot::from_app(&App::default());
+        let app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        let app = AppSnapshot::from_app(&app);
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
 
         let key = KeyEvent {
@@ -526,6 +549,41 @@ mod tests {
         let should_quit = handle_key(&app, key, &tx).await;
         assert!(!should_quit);
         assert!(matches!(rx.try_recv(), Ok(AppCommand::UiFocusNext)));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn tab_press_is_ignored_on_unauth_login_page() {
+        let app = AppSnapshot::from_app(&App::default());
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&app, key, &tx).await;
+        assert!(!should_quit);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn ctrl_tab_still_switches_tabs_on_unauth_login_page() {
+        let app = AppSnapshot::from_app(&App::default());
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&app, key, &tx).await;
+        assert!(!should_quit);
+        assert!(matches!(rx.try_recv(), Ok(AppCommand::TabNext)));
         assert!(rx.try_recv().is_err());
     }
 
@@ -617,7 +675,12 @@ mod tests {
 
     #[tokio::test]
     async fn backtab_sends_focus_prev() {
-        let app = AppSnapshot::from_app(&App::default());
+        let app = App {
+            view: View::Playlists,
+            logged_in: true,
+            ..Default::default()
+        };
+        let app = AppSnapshot::from_app(&app);
         let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
 
         let key = KeyEvent {
@@ -630,6 +693,23 @@ mod tests {
         let should_quit = handle_key(&app, key, &tx).await;
         assert!(!should_quit);
         assert!(matches!(rx.try_recv(), Ok(AppCommand::UiFocusPrev)));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn backtab_is_ignored_on_unauth_login_page() {
+        let app = AppSnapshot::from_app(&App::default());
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let key = KeyEvent {
+            code: KeyCode::BackTab,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        };
+
+        let should_quit = handle_key(&app, key, &tx).await;
+        assert!(!should_quit);
         assert!(rx.try_recv().is_err());
     }
 
@@ -663,6 +743,44 @@ mod tests {
             assert!(
                 matches!(rx.try_recv(), Ok(AppCommand::UiFocusSet { focus }) if focus == expected_focus)
             );
+            assert!(rx.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn number_keys_do_not_switch_focus_on_unauth_login_page() {
+        let app = AppSnapshot::from_app(&App::default());
+
+        for key_char in ['1', '2', '3', '4'] {
+            let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+            let key = KeyEvent {
+                code: KeyCode::Char(key_char),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            };
+
+            let should_quit = handle_key(&app, key, &tx).await;
+            assert!(!should_quit);
+            assert!(rx.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn alt_number_keys_are_ignored_on_unauth_login_page() {
+        let app = AppSnapshot::from_app(&App::default());
+
+        for key_char in ['1', '2', '3', '4'] {
+            let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+            let key = KeyEvent {
+                code: KeyCode::Char(key_char),
+                modifiers: KeyModifiers::ALT,
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            };
+
+            let should_quit = handle_key(&app, key, &tx).await;
+            assert!(!should_quit);
             assert!(rx.try_recv().is_err());
         }
     }

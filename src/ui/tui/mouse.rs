@@ -1,4 +1,4 @@
-use super::utils::canvas_rect;
+use super::utils::{canvas_rect, is_unauth_login_page};
 use crate::app::{AppSnapshot, AppViewSnapshot, PlaylistMode, View, tab_configs};
 use crate::messages::app::AppCommand;
 use crossterm::{
@@ -137,6 +137,11 @@ async fn handle_mouse_with_canvas(
         }
         MouseEventKind::Down(MouseButton::Left) => {}
         _ => return,
+    }
+
+    if is_unauth_login_page(app) {
+        DOUBLE_CLICK.with(|dc| dc.borrow_mut().invalidate());
+        return;
     }
 
     // Tabs row (row 0 within header)
@@ -1183,6 +1188,32 @@ mod tests {
         assert!(
             matches!(cmd, AppCommand::PlayerVolumeDown),
             "期望 PlayerVolumeDown，实际收到 {:?}",
+            cmd
+        );
+        assert!(rx.try_recv().is_err(), "不应发送其他命令");
+    }
+
+    #[tokio::test]
+    async fn unauth_login_page_blocks_click_commands_but_keeps_scroll_volume() {
+        let snapshot = AppSnapshot::from_app(&App::default());
+        let (tx, mut rx) = mpsc::channel::<AppCommand>(8);
+
+        let click_mouse = make_mouse_event(1, 0, 0, 0);
+        run_mouse(&snapshot, click_mouse, &tx).await;
+        assert!(rx.try_recv().is_err(), "未登录专页点击不应触发隐藏布局命令");
+
+        let scroll_mouse = MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: MIN_CANVAS_WIDTH / 2,
+            row: MIN_CANVAS_HEIGHT / 2,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        run_mouse(&snapshot, scroll_mouse, &tx).await;
+
+        let cmd = rx.try_recv().expect("滚轮应继续调整音量");
+        assert!(
+            matches!(cmd, AppCommand::PlayerVolumeUp),
+            "期望 PlayerVolumeUp，实际收到 {:?}",
             cmd
         );
         assert!(rx.try_recv().is_err(), "不应发送其他命令");

@@ -1,9 +1,15 @@
-use crate::app::{PlayMode, PlayerSnapshot};
+use crate::app::{AppSnapshot, AppViewSnapshot, PlayMode, PlayerSnapshot, View};
 use ratatui::layout::Rect;
 use std::time::Instant;
 
 pub(super) const MIN_CANVAS_WIDTH: u16 = 122;
 pub(super) const MIN_CANVAS_HEIGHT: u16 = 29;
+
+pub(super) fn is_unauth_login_page(app: &AppSnapshot) -> bool {
+    !app.logged_in
+        && matches!(app.view, View::Login)
+        && matches!(app.view_state, AppViewSnapshot::Login(_))
+}
 
 pub(super) fn canvas_rect(area: Rect) -> Option<Rect> {
     if area.width < MIN_CANVAS_WIDTH || area.height < MIN_CANVAS_HEIGHT {

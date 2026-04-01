@@ -1,5 +1,5 @@
 use super::{CoreState, UiAction};
-use crate::app::{Toast, UiFocus, default_menu_items};
+use crate::app::{Toast, UiFocus, View, default_menu_items};
 use crate::core::effects::CoreEffects;
 use crate::messages::app::AppCommand;
 
@@ -10,17 +10,29 @@ pub async fn handle_ui(
 ) -> UiAction {
     match cmd {
         AppCommand::UiFocusNext => {
-            state.app.ui_focus = next_focus(state.app.ui_focus);
+            state.app.ui_focus = if focus_locked_to_login_center(&state.app) {
+                UiFocus::BodyCenter
+            } else {
+                next_focus(state.app.ui_focus)
+            };
             effects.emit_state(&state.app);
             UiAction::Handled
         }
         AppCommand::UiFocusPrev => {
-            state.app.ui_focus = prev_focus(state.app.ui_focus);
+            state.app.ui_focus = if focus_locked_to_login_center(&state.app) {
+                UiFocus::BodyCenter
+            } else {
+                prev_focus(state.app.ui_focus)
+            };
             effects.emit_state(&state.app);
             UiAction::Handled
         }
         AppCommand::UiFocusSet { focus } => {
-            state.app.ui_focus = *focus;
+            state.app.ui_focus = if focus_locked_to_login_center(&state.app) {
+                UiFocus::BodyCenter
+            } else {
+                *focus
+            };
             effects.emit_state(&state.app);
             UiAction::Handled
         }
@@ -97,6 +109,10 @@ fn prev_focus(focus: UiFocus) -> UiFocus {
     }
 }
 
+fn focus_locked_to_login_center(app: &crate::app::App) -> bool {
+    !app.logged_in && matches!(app.view, View::Login)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +123,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut state = CoreState::new(dir.path());
         let mut effects = CoreEffects::default();
+        state.app.view = View::Playlists;
+        state.app.logged_in = true;
 
         // Test setting focus to each possible value
         let test_cases = vec![
@@ -126,10 +144,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unauth_login_focus_set_is_clamped_to_body_center() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut state = CoreState::new(dir.path());
+        let mut effects = CoreEffects::default();
+
+        state.app.view = View::Login;
+        state.app.logged_in = false;
+        state.app.ui_focus = UiFocus::BodyCenter;
+
+        let outcome = handle_ui(
+            &AppCommand::UiFocusSet {
+                focus: UiFocus::BodyRight,
+            },
+            &mut state,
+            &mut effects,
+        )
+        .await;
+
+        assert!(matches!(outcome, UiAction::Handled));
+        assert_eq!(state.app.ui_focus, UiFocus::BodyCenter);
+    }
+
+    #[tokio::test]
+    async fn unauth_login_focus_next_stays_on_body_center() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut state = CoreState::new(dir.path());
+        let mut effects = CoreEffects::default();
+
+        state.app.view = View::Login;
+        state.app.logged_in = false;
+        state.app.ui_focus = UiFocus::BodyCenter;
+
+        let outcome = handle_ui(&AppCommand::UiFocusNext, &mut state, &mut effects).await;
+
+        assert!(matches!(outcome, UiAction::Handled));
+        assert_eq!(state.app.ui_focus, UiFocus::BodyCenter);
+    }
+
+    #[tokio::test]
     async fn ui_focus_next_cycles_forward() {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut state = CoreState::new(dir.path());
         let mut effects = CoreEffects::default();
+        state.app.view = View::Playlists;
+        state.app.logged_in = true;
 
         // Starting focus is BodyCenter (from App::default)
         assert_eq!(state.app.ui_focus, UiFocus::BodyCenter);
@@ -154,6 +213,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut state = CoreState::new(dir.path());
         let mut effects = CoreEffects::default();
+        state.app.view = View::Playlists;
+        state.app.logged_in = true;
 
         // Starting focus is BodyCenter (from App::default)
         assert_eq!(state.app.ui_focus, UiFocus::BodyCenter);

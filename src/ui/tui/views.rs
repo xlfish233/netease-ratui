@@ -10,7 +10,7 @@ use super::playlists_view::draw_playlists;
 use super::search_view::draw_search;
 use super::settings_view::draw_settings;
 use super::toast::draw_toast;
-use super::utils::{MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, canvas_rect};
+use super::utils::{MIN_CANVAS_HEIGHT, MIN_CANVAS_WIDTH, canvas_rect, is_unauth_login_page};
 use crate::app::{AppSnapshot, AppViewSnapshot, UiFocus, View};
 use ratatui::{
     Frame,
@@ -25,6 +25,27 @@ pub(super) fn draw_ui(f: &mut Frame, app: &AppSnapshot) {
         return;
     };
 
+    if is_unauth_login_page(app) {
+        let canvas_layout = split_canvas(canvas);
+
+        if let AppViewSnapshot::Login(state) = &app.view_state {
+            draw_login(f, canvas, state, app.logged_in, true);
+        }
+
+        if let Some(toast) = &app.toast {
+            draw_toast(f, canvas_layout.toast, toast);
+        }
+
+        if app.help_visible {
+            draw_help_overlay(f, canvas);
+        }
+
+        if app.menu_visible {
+            draw_menu_overlay(f, canvas, app);
+        }
+        return;
+    }
+
     let canvas_layout = split_canvas(canvas);
     let header_layout = split_header(canvas_layout.header);
     let body_layout = split_body(canvas_layout.body);
@@ -38,7 +59,7 @@ pub(super) fn draw_ui(f: &mut Frame, app: &AppSnapshot) {
     let center_active = app.ui_focus == UiFocus::BodyCenter;
     match (&app.view, &app.view_state) {
         (View::Login, AppViewSnapshot::Login(state)) => {
-            draw_login(f, body_layout.center, state, app.logged_in);
+            draw_login(f, body_layout.center, state, app.logged_in, false);
         }
         (View::Playlists, AppViewSnapshot::Playlists(state)) => {
             draw_playlists(f, body_layout.center, state, center_active);
@@ -97,4 +118,57 @@ fn draw_resize_prompt(f: &mut Frame, area: ratatui::layout::Rect) {
         .block(block)
         .wrap(Wrap { trim: false });
     f.render_widget(paragraph, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::draw_ui;
+    use crate::app::{App, AppSnapshot};
+
+    fn render_to_string(snapshot: &AppSnapshot) -> String {
+        let backend = ratatui::backend::TestBackend::new(122, 29);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|f| draw_ui(f, snapshot)).expect("draw");
+
+        let backend = terminal.backend();
+        let buffer = backend.buffer();
+        let width = buffer.area.width as usize;
+        buffer
+            .content()
+            .chunks(width)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn unauth_login_page_uses_full_canvas_without_header() {
+        let mut app = App::default();
+        app.login_qr_url = Some("https://music.163.com/login?codekey=test".to_owned());
+        app.login_qr_ascii = Some("██\n██".to_owned());
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let rendered = render_to_string(&snapshot);
+        assert!(rendered.contains("URL:"));
+        assert!(
+            !rendered.contains("Search[1]:"),
+            "未登录专页不应渲染常规 header"
+        );
+    }
+
+    #[test]
+    fn unauth_cookie_login_page_renders_music_u_input() {
+        let mut app = App::default();
+        app.login_cookie_input_visible = true;
+        app.login_cookie_input = "cookie-value".to_owned();
+        let snapshot = AppSnapshot::from_app(&app);
+
+        let rendered = render_to_string(&snapshot);
+        assert!(rendered.contains("MUSIC_U"));
+        assert!(rendered.contains("cookie-value"));
+        assert!(
+            !rendered.contains("Search[1]:"),
+            "未登录专页不应渲染常规 header"
+        );
+    }
 }
