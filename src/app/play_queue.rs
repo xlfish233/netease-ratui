@@ -54,6 +54,10 @@ impl PlayQueue {
         &self.songs
     }
 
+    pub fn order(&self) -> &[usize] {
+        &self.order
+    }
+
     pub fn ordered_songs(&self) -> Vec<Song> {
         self.order
             .iter()
@@ -89,13 +93,23 @@ impl PlayQueue {
         self.cursor = None;
     }
 
-    /// 设置光标位置（在播放队列 order 中的索引）
-    pub fn set_cursor_pos(&mut self, pos: usize) {
-        if pos < self.order.len() {
-            self.cursor = Some(pos);
-        } else {
+    pub fn restore(&mut self, songs: Vec<Song>, order: Vec<usize>, cursor: Option<usize>) -> bool {
+        self.songs = songs;
+        let len = self.songs.len();
+        if len == 0 {
+            self.order.clear();
             self.cursor = None;
+            return order.is_empty() && cursor.is_none();
         }
+
+        let valid_order = Self::is_valid_order(&order, len);
+        self.order = if valid_order {
+            order
+        } else {
+            (0..len).collect()
+        };
+        self.cursor = cursor.filter(|&pos| pos < self.order.len());
+        valid_order
     }
 
     pub fn peek_next_index(&self) -> Option<usize> {
@@ -190,5 +204,20 @@ impl PlayQueue {
         let start = start_index.unwrap_or(0).min(len.saturating_sub(1));
         let pos = self.order.iter().position(|&i| i == start).unwrap_or(0);
         self.cursor = Some(pos);
+    }
+
+    fn is_valid_order(order: &[usize], len: usize) -> bool {
+        if order.len() != len {
+            return false;
+        }
+
+        let mut seen = vec![false; len];
+        for &idx in order {
+            if idx >= len || seen[idx] {
+                return false;
+            }
+            seen[idx] = true;
+        }
+        true
     }
 }

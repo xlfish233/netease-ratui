@@ -83,8 +83,11 @@ async fn main() -> Result<(), AppError> {
 
     match cli.command.unwrap_or(Command::Tui) {
         Command::Tui => {
-            let (tx, rx) = core::spawn_app_actor(cfg, audio_backend);
+            let (tx, rx, app_actor) = core::spawn_app_actor(cfg, audio_backend);
             run_tui(AppSnapshot::from_app(&App::default()), tx, rx).await?;
+            app_actor
+                .await
+                .map_err(|e| AppError::Other(format!("App actor 退出失败: {e}")))?;
             Ok(())
         }
         Command::SkipLogin { keywords, limit } => {

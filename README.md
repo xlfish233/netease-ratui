@@ -153,10 +153,10 @@ cargo run -- qr-key
 ### player_state.json 格式
 
 ```json
-{
-  "version": 1,
+{ 
+  "version": 3,
   "player": {
-    "version": 1,
+    "version": 3,
     "play_song_id": 12345,
     "progress": {
       "started_at_epoch_ms": 1704067200000,
@@ -171,6 +171,16 @@ cargo run -- qr-key
           "id": 12345,
           "name": "歌曲名",
           "artists": "歌手名"
+        },
+        {
+          "id": 67890,
+          "name": "下一首",
+          "artists": "歌手B"
+        },
+        {
+          "id": 24680,
+          "name": "第三首",
+          "artists": "歌手C"
         }
       ],
       "order": [0, 1, 2],
@@ -192,6 +202,7 @@ cargo run -- qr-key
   "saved_at_epoch_ms": 1704067380000
 }
 ```
+`play_queue.order` 保存的是 `songs` 数组的索引顺序，`cursor` 是当前位于 `order` 中的位置；这样即使队列里存在重复 `song_id`，恢复时也不会丢失真实播放顺序。最新版本会写入 `play_queue.order` 与 `cursor`，恢复时直接按照保存的顺序（顺序/随机/单曲/列表循环）重放，并保持默认暂停状态；`play_mode`、`volume`、`play_br`、`crossfade_ms` 也会从状态文件恢复。
 
 ### settings.json
 

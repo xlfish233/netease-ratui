@@ -198,16 +198,7 @@ pub async fn handle_audio_event(
             let seek_to = app.pending_seek_ms;
 
             // 记录旧的播放进度
-            let old_elapsed_ms = if let Some(started) = app.play_started_at {
-                let elapsed = started.elapsed().as_millis() as u64;
-                if app.paused {
-                    elapsed.saturating_sub(app.play_paused_accum_ms)
-                } else {
-                    elapsed
-                }
-            } else {
-                0
-            };
+            let old_elapsed_ms = app.playback_elapsed_ms();
 
             tracing::info!(
                 song_id,
@@ -351,17 +342,7 @@ pub async fn handle_audio_event(
             .await;
         }
         AudioEvent::NeedsReload => {
-            // 计算当前播放进度
-            let current_elapsed_ms = if let Some(started) = app.play_started_at {
-                let elapsed = started.elapsed().as_millis() as u64;
-                if app.paused {
-                    elapsed.saturating_sub(app.play_paused_accum_ms)
-                } else {
-                    elapsed
-                }
-            } else {
-                0
-            };
+            let current_elapsed_ms = app.playback_elapsed_ms();
 
             tracing::info!(
                 play_song_id = ?app.play_song_id,
@@ -461,6 +442,7 @@ mod tests {
     use crate::core::CoreEffects;
     use crate::core::infra::{NextSongCacheManager, RequestKey, RequestTracker};
     use crate::features::player::audio::AudioEventCtx;
+    use std::time::Duration;
 
     #[test]
     fn loading_status_formats_percent_with_total_bytes() {
@@ -562,5 +544,43 @@ mod tests {
         assert_eq!(app.play_id, Some(9));
         assert_eq!(app.play_status, "播放中（边下边播，暂不可拖动）");
         assert!(!app.can_seek());
+    }
+
+    #[tokio::test]
+    async fn needs_reload_uses_frozen_elapsed_time_when_paused() {
+        let now = std::time::Instant::now();
+        let mut app = crate::app::App {
+            paused: true,
+            play_started_at: Some(now - Duration::from_secs(120)),
+            play_paused_at: Some(now - Duration::from_secs(90)),
+            play_song_id: Some(42),
+            play_br: 320_000,
+            now_playing: Some("Paused Song - Artist".to_owned()),
+            ..Default::default()
+        };
+        let mut request_tracker = RequestTracker::<RequestKey>::new();
+        let mut song_request_titles = std::collections::HashMap::new();
+        let mut req_id = 1u64;
+        let mut next_song_cache = NextSongCacheManager::default();
+        let mut effects = CoreEffects::default();
+        let mut ctx = AudioEventCtx {
+            request_tracker: &mut request_tracker,
+            song_request_titles: &mut song_request_titles,
+            req_id: &mut req_id,
+            next_song_cache: &mut next_song_cache,
+        };
+
+        handle_audio_event(&mut app, AudioEvent::NeedsReload, &mut ctx, &mut effects).await;
+
+        assert_eq!(app.pending_seek_ms, Some(30_000));
+        assert!(
+            ctx.request_tracker
+                .get_pending(&RequestKey::SongUrl)
+                .is_some()
+        );
+        assert_eq!(
+            ctx.song_request_titles.get(&42).map(String::as_str),
+            Some("Paused Song - Artist")
+        );
     }
 }

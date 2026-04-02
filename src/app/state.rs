@@ -9,6 +9,30 @@ use crate::keybindings::{KeyBindings, SharedKeyBindings};
 
 pub use crate::domain::model::{Playlist, Song};
 
+pub fn playback_elapsed_ms(
+    started_at: Option<Instant>,
+    paused: bool,
+    paused_at: Option<Instant>,
+    paused_accum_ms: u64,
+) -> u64 {
+    let Some(started_at) = started_at else {
+        return 0;
+    };
+
+    let now = if paused {
+        paused_at.unwrap_or_else(Instant::now)
+    } else {
+        Instant::now()
+    };
+
+    u64::try_from(
+        now.duration_since(started_at)
+            .as_millis()
+            .saturating_sub(paused_accum_ms as u128),
+    )
+    .unwrap_or(u64::MAX)
+}
+
 /// 默认操作菜单选项
 pub fn default_menu_items() -> Vec<String> {
     vec![
@@ -328,6 +352,15 @@ impl App {
                 .map(|hint| hint.seekable)
                 .unwrap_or(true)
     }
+
+    pub fn playback_elapsed_ms(&self) -> u64 {
+        playback_elapsed_ms(
+            self.play_started_at,
+            self.paused,
+            self.play_paused_at,
+            self.play_paused_accum_ms,
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -371,6 +404,15 @@ impl PlayerSnapshot {
                 .as_ref()
                 .map(|hint| hint.seekable)
                 .unwrap_or(true)
+    }
+
+    pub fn playback_elapsed_ms(&self) -> u64 {
+        playback_elapsed_ms(
+            self.play_started_at,
+            self.paused,
+            self.play_paused_at,
+            self.play_paused_accum_ms,
+        )
     }
 }
 

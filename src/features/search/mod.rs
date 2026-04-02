@@ -114,8 +114,7 @@ pub async fn handle_search_command(
                 app.play_status = format!("获取播放链接中: {title}");
                 effects.emit_state(app);
                 song_request_titles.clear();
-                let id =
-                    request_tracker.issue(RequestKey::SourcePlayable, || utils::next_id(req_id));
+                let id = request_tracker.issue(RequestKey::SongUrl, || utils::next_id(req_id));
                 song_request_titles.insert(s.id, title);
 
                 // 先停止当前播放

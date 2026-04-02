@@ -100,8 +100,6 @@ pub enum RequestKey {
     PlaylistTracks,
     /// 播放链接请求
     SongUrl,
-    /// 统一音源：可播放资源解析请求
-    SourcePlayable,
     /// 歌词请求
     Lyric,
 }

@@ -1,6 +1,5 @@
 use crate::app::{AppSnapshot, AppViewSnapshot, PlayMode, PlayerSnapshot, View};
 use ratatui::layout::Rect;
-use std::time::Instant;
 
 pub(super) const MIN_CANVAS_WIDTH: u16 = 122;
 pub(super) const MIN_CANVAS_HEIGHT: u16 = 29;
@@ -27,21 +26,10 @@ pub(super) fn canvas_rect(area: Rect) -> Option<Rect> {
 }
 
 pub(super) fn playback_time_ms(player: &PlayerSnapshot) -> (u64, Option<u64>) {
-    let Some(started) = player.play_started_at else {
+    if player.play_started_at.is_none() {
         return (0, None);
-    };
-
-    let now = if player.paused {
-        player.play_paused_at.unwrap_or_else(Instant::now)
-    } else {
-        Instant::now()
-    };
-
-    let elapsed = now
-        .duration_since(started)
-        .as_millis()
-        .saturating_sub(player.play_paused_accum_ms as u128) as u64;
-    (elapsed, player.play_total_ms)
+    }
+    (player.playback_elapsed_ms(), player.play_total_ms)
 }
 
 pub(super) fn current_lyric_index(

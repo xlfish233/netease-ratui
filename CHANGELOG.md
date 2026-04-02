@@ -56,6 +56,23 @@
   - 播放进度恢复逻辑加固，避免异常时间戳导致溢出/崩溃
   - 修改文件：`src/player_state/store.rs`
 
+- **播放状态恢复一致性修复**：恢复时保留真实播放队列顺序与冻结进度
+  - 新增共享 `playback_elapsed_ms` 语义，UI、音频重载、状态持久化统一使用同一套播放进度计算
+  - `player_state.json` 现在保存并恢复 `play_queue.order` 与 `cursor`，重复 `song_id` 的队列也不会丢失顺序
+  - 恢复后默认保持暂停，但会保留上次位置、播放模式、音量、音质和 crossfade 配置
+  - 修改文件：`src/app/state.rs`、`src/app/play_queue.rs`、`src/player_state/store.rs`、`src/features/player/audio.rs`、`src/features/player/playback.rs`、`src/ui/tui/utils.rs`
+
+- **退出最终保存修复**：应用退出时等待 App Actor 完成最后一次状态落盘
+  - `main` 在 TUI 退出后会等待 actor 结束，避免退出过快导致最后一次 `player_state.json` 保存丢失
+  - 新增集成测试覆盖退出保存链路
+  - 修改文件：`src/core/reducer.rs`、`src/main.rs`、`tests/quit_persistence.rs`
+
+- **搜索播放链路修复**：搜索结果播放改为追踪 `SongUrl` 请求
+  - `SearchPlaySelected` 使用 `RequestKey::SongUrl`，避免请求跟踪键错误导致的播放链路不一致
+  - 删除不再使用的 `RequestKey::SourcePlayable`
+  - 新增集成测试覆盖搜索播放请求类型
+  - 修改文件：`src/features/search/mod.rs`、`src/core/infra/request_tracker.rs`、`tests/search_playback.rs`
+
 - **Seek 非破坏性修复**：`Ctrl+←/→` Seek 改为先建后停模式
   - 先构建新 sink，成功后才停止旧播放，避免 Seek 后偶发无法继续播放
 
@@ -82,6 +99,8 @@
 - 配置 nightly 工具链和 dev 构建加速（`.cargo/config.toml`、`rust-toolchain.toml`）
 - CI 修复：移除 CI runner 不支持的 mold linker flag
 - 更新文档：ARCHITECTURE.md、README.md、CLAUDE.md
+- 文档清理：删除过时分析文档 `docs/PLAYER_NEXT_BUG_ANALYSIS.md` 和已发布的历史计划 `docs/release_plan_v0.0.8.md`
+- 文档同步：更新 `README.md` 中的 `player_state.json` v3 示例与队列恢复语义，更新 `docs/error_handling.md` 中的 `MessageError` / UI 错误流描述
 
 ## v0.0.9（2026-01-18）
 

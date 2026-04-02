@@ -49,13 +49,20 @@ netease-ratui 使用分层错误处理策略，在不同层次采用不同的错
   - 超过最大重试次数
   - 下载 URL 无效
 
+- `MessageError` - Actor / 事件消息边界使用的轻量级结构化错误
+  - `App(AppErrorVariant)`
+  - `Netease(NeteaseErrorVariant)`
+  - `Audio(AudioErrorVariant)`
+  - `WithContext { context, message }`
+  - `Other(String)`
+
 所有错误类型都通过 `thiserror` 自动实现了 `Display` 和 `Error` trait，支持错误链（`#[source]`）。
 
 ## 分层错误处理
 
 ### UI 层（ratatui）
 - **职责**: 接收并显示错误消息
-- **实现**: 接收 `AppEvent::Error(String)` 和 `AudioEvent::Error(String)`
+- **实现**: 接收 `AppEvent::Error(MessageError)` 和 `AudioEvent::Error(MessageError)`
 - **处理方式**: 在状态栏显示错误消息给用户
 - **不处理错误恢复**: 由用户决定后续操作（重试、切换歌曲等）
 
@@ -63,7 +70,7 @@ netease-ratui 使用分层错误处理策略，在不同层次采用不同的错
 - **职责**: 业务逻辑和错误传播
 - **实现**: 使用 `Result<T, E>` 传播错误
 - **处理方式**: 使用 `?` 操作符自动转换错误类型
-- **转换**: 将错误转换为 `AppEvent::Error` 发送到 UI
+- **转换**: 将错误包装为 `MessageError`，再通过 `AppEvent::Error` / `AudioEvent::Error` 发送到 UI
 
 ```rust
 // 示例：在 Core 层处理错误
@@ -99,8 +106,8 @@ std::thread::spawn(move || {
         match some_operation().await {
             Ok(result) => { /* 处理成功 */ }
             Err(e) => {
-                // 发送错误事件到主线程
-                let _ = tx_evt.send(AudioEvent::Error(e.to_string())).await;
+                // 发送结构化错误事件到主线程
+                let _ = tx_evt.send(AudioEvent::Error(e.into())).await;
             }
         }
     });
@@ -144,7 +151,9 @@ std::thread::spawn(move || {
 
 ## 当前项目中的 expect()
 
-### 1. audio_worker/engine.rs:394
+当前项目在生产路径中的 `expect()` 主要集中在两处 tokio runtime 创建；测试代码中的 `expect()` 不在本文讨论范围内。
+
+### 1. `src/audio_worker/engine.rs`
 
 ```rust
 let rt = tokio::runtime::Builder::new_current_thread()
@@ -159,7 +168,7 @@ let rt = tokio::runtime::Builder::new_current_thread()
 - **业务错误处理**: `OutputStreamBuilder::open_default_stream()` 失败会发送 `AudioEvent::Error`
 - **替代方案**: `tokio::task::spawn_blocking`（需架构改动）
 
-### 2. audio_worker/transfer.rs:488
+### 2. `src/audio_worker/transfer.rs`
 
 ```rust
 let rt = tokio::runtime::Runtime::new()
@@ -196,7 +205,7 @@ let rt = tokio::runtime::Runtime::new()
 
 ### 用户可见的错误
 
-所有错误最终都转换为 `AppEvent::Error(String)` 或 `AudioEvent::Error(String)`，在 UI 的状态栏显示：
+跨 Actor 的业务错误最终会包装为 `MessageError`，并通过 `AppEvent::Error(MessageError)` 或 `AudioEvent::Error(MessageError)` 进入 UI；TUI 层统一将其渲染为 `错误: {e}`。典型显示效果如下：
 
 ```
 错误: 无法连接到网易云音乐 API

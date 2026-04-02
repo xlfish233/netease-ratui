@@ -41,22 +41,6 @@ pub fn play_mode_label(m: crate::app::PlayMode) -> &'static str {
     }
 }
 
-fn playback_elapsed_ms(app: &App) -> u64 {
-    let Some(started) = app.play_started_at else {
-        return 0;
-    };
-
-    let now = if app.paused {
-        app.play_paused_at.unwrap_or_else(std::time::Instant::now)
-    } else {
-        std::time::Instant::now()
-    };
-
-    now.duration_since(started)
-        .as_millis()
-        .saturating_sub(app.play_paused_accum_ms as u128) as u64
-}
-
 fn blocked_seek_status(app: &App) -> Option<String> {
     if app.can_seek() {
         return None;
@@ -83,7 +67,7 @@ pub fn seek_relative(app: &mut App, effects: &mut CoreEffects, delta_ms: i64) {
     let Some(total_ms) = app.play_total_ms else {
         return;
     };
-    let cur = playback_elapsed_ms(app) as i64;
+    let cur = app.playback_elapsed_ms() as i64;
     let next = (cur + delta_ms).clamp(0, total_ms as i64) as u64;
 
     let now = std::time::Instant::now();

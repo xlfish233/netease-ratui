@@ -95,35 +95,12 @@ pub struct AppStateSnapshot {
     pub saved_at_epoch_ms: i64,
 }
 
-/// 计算播放进度（毫秒）
-fn playback_elapsed_ms(app: &App) -> u64 {
-    let Some(started) = app.play_started_at else {
-        return 0;
-    };
-
-    // Align with `features::player::playback::playback_elapsed_ms`:
-    // - If paused, freeze "now" at `play_paused_at` (so time won't move while paused).
-    // - Always subtract `play_paused_accum_ms`.
-    let now = if app.paused {
-        app.play_paused_at.unwrap_or_else(Instant::now)
-    } else {
-        Instant::now()
-    };
-
-    u64::try_from(
-        now.duration_since(started)
-            .as_millis()
-            .saturating_sub(app.play_paused_accum_ms as u128),
-    )
-    .unwrap_or(u64::MAX)
-}
-
 /// 将 App 转换为持久化格式
 fn app_to_snapshot(app: &App) -> AppStateSnapshot {
     let now = chrono::Utc::now().timestamp_millis();
 
     // 计算播放进度
-    let elapsed_ms = playback_elapsed_ms(app);
+    let elapsed_ms = app.playback_elapsed_ms();
 
     // 反推 started_at 时间戳：saved_at - elapsed = started_at
     let started_at_epoch_ms = if elapsed_ms > 0 {
@@ -151,12 +128,7 @@ fn app_to_snapshot(app: &App) -> AppStateSnapshot {
     // 转换播放队列
     let play_queue = PlayQueueState {
         songs: app.play_queue.songs().iter().map(SongLite::from).collect(),
-        order: app
-            .play_queue
-            .ordered_songs()
-            .iter()
-            .filter_map(|s| app.play_queue.songs().iter().position(|x| x.id == s.id))
-            .collect(),
+        order: app.play_queue.order().to_vec(),
         cursor: app.play_queue.cursor_pos(),
         mode: play_mode_to_string(app.play_mode),
     };
@@ -354,9 +326,16 @@ pub fn apply_snapshot_to_app(
         .collect();
 
     app.play_queue = PlayQueue::new(app.play_mode);
-    app.play_queue.set_songs(songs, None);
-    if let Some(cursor) = snapshot.player.play_queue.cursor {
-        app.play_queue.set_cursor_pos(cursor);
+    if !app.play_queue.restore(
+        songs,
+        snapshot.player.play_queue.order.clone(),
+        snapshot.player.play_queue.cursor,
+    ) {
+        tracing::warn!(
+            order_len = snapshot.player.play_queue.order.len(),
+            songs_len = snapshot.player.play_queue.songs.len(),
+            "🎵 [StateRestore] 保存的播放队列顺序无效，已回退到自然顺序"
+        );
     }
 
     // 恢复歌单（只恢复基本信息，不恢复歌曲详情）
@@ -460,7 +439,7 @@ pub fn save_player_state(data_dir: &Path, app: &App) -> Result<(), PlayerStateEr
     let snapshot = app_to_snapshot(app);
 
     // 计算播放进度用于日志
-    let elapsed_ms = playback_elapsed_ms(app);
+    let elapsed_ms = app.playback_elapsed_ms();
     let started_at_epoch_ms = snapshot.player.progress.started_at_epoch_ms;
     let now = chrono::Utc::now().timestamp_millis();
 
@@ -578,20 +557,7 @@ mod tests {
     }
 
     fn app_playback_elapsed_ms(app: &App) -> u64 {
-        let Some(started) = app.play_started_at else {
-            return 0;
-        };
-        let now = if app.paused {
-            app.play_paused_at.unwrap_or_else(Instant::now)
-        } else {
-            Instant::now()
-        };
-        u64::try_from(
-            now.duration_since(started)
-                .as_millis()
-                .saturating_sub(app.play_paused_accum_ms as u128),
-        )
-        .unwrap_or(u64::MAX)
+        app.playback_elapsed_ms()
     }
 
     #[test]
@@ -804,7 +770,7 @@ mod tests {
     #[test]
     fn test_playback_elapsed_ms_no_start() {
         let app = App::default();
-        let elapsed = playback_elapsed_ms(&app);
+        let elapsed = app_playback_elapsed_ms(&app);
         assert_eq!(elapsed, 0);
     }
 
@@ -923,24 +889,99 @@ mod tests {
     }
 
     #[test]
-    fn test_playqueue_set_cursor_pos() {
-        let mut queue = PlayQueue::new(PlayMode::Sequential);
+    fn test_apply_snapshot_restores_queue_order_and_none_cursor() {
+        let snapshot = AppStateSnapshot {
+            version: 3,
+            player: PlayerState {
+                version: 3,
+                play_song_id: Some(3),
+                progress: PlaybackProgress {
+                    started_at_epoch_ms: None,
+                    total_ms: Some(180_000),
+                    paused: true,
+                    paused_at_epoch_ms: None,
+                    paused_accum_ms: 0,
+                },
+                play_queue: PlayQueueState {
+                    songs: vec![
+                        SongLite {
+                            id: 1,
+                            name: "Song 1".to_string(),
+                            artists: "Artist".to_string(),
+                            duration_ms: None,
+                        },
+                        SongLite {
+                            id: 2,
+                            name: "Song 2".to_string(),
+                            artists: "Artist".to_string(),
+                            duration_ms: None,
+                        },
+                        SongLite {
+                            id: 3,
+                            name: "Song 3".to_string(),
+                            artists: "Artist".to_string(),
+                            duration_ms: None,
+                        },
+                    ],
+                    order: vec![2, 0, 1],
+                    cursor: None,
+                    mode: "Shuffle".to_string(),
+                },
+                volume: 0.7,
+                play_br: 320000,
+                crossfade_ms: 300,
+            },
+            playlists: vec![],
+            playlists_selected: 0,
+            playlist_preloads: HashMap::new(),
+            saved_at_epoch_ms: chrono::Utc::now().timestamp_millis(),
+        };
 
-        // 空队列时设置 cursor
-        queue.set_cursor_pos(0);
-        assert_eq!(queue.cursor_pos(), None);
+        let mut app = App::default();
+        apply_snapshot_to_app(&snapshot, &mut app).unwrap();
 
-        // 添加歌曲
-        let songs = vec![song(1, "Song 1", "Artist 1"), song(2, "Song 2", "Artist 2")];
-        queue.set_songs(songs, None);
+        assert_eq!(app.play_mode, PlayMode::Shuffle);
+        assert_eq!(app.play_queue.order(), &[2, 0, 1]);
+        assert_eq!(app.play_queue.cursor_pos(), None);
+        assert!(app.play_queue.current().is_none());
+        let ordered_ids: Vec<_> = app
+            .play_queue
+            .ordered_songs()
+            .iter()
+            .map(|song| song.id)
+            .collect();
+        assert_eq!(ordered_ids, vec![3, 1, 2]);
+    }
 
-        // 有效位置
-        queue.set_cursor_pos(1);
-        assert_eq!(queue.cursor_pos(), Some(1));
+    #[test]
+    fn test_app_to_snapshot_preserves_order_with_duplicate_song_ids() {
+        let mut app = App {
+            play_mode: PlayMode::Shuffle,
+            ..App::default()
+        };
+        app.play_queue = PlayQueue::new(PlayMode::Shuffle);
+        let restored = app.play_queue.restore(
+            vec![
+                song(1, "Song A", "Artist"),
+                song(1, "Song A duplicate", "Artist"),
+                song(2, "Song B", "Artist"),
+            ],
+            vec![1, 0, 2],
+            Some(1),
+        );
+        assert!(restored);
 
-        // 超出范围
-        queue.set_cursor_pos(10);
-        assert_eq!(queue.cursor_pos(), None);
+        let snapshot = app_to_snapshot(&app);
+        assert_eq!(snapshot.player.play_queue.order, vec![1, 0, 2]);
+        assert_eq!(snapshot.player.play_queue.cursor, Some(1));
+        let song_ids: Vec<_> = snapshot
+            .player
+            .play_queue
+            .songs
+            .iter()
+            .map(|song| song.id)
+            .collect();
+        assert_eq!(song_ids, vec![1, 1, 2]);
     }
 
     #[test]

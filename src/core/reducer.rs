@@ -7,6 +7,7 @@ use crate::settings as app_settings;
 
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use crate::core::effects::{CoreDispatch, CoreEffect, CoreEffects, run_effects};
 use crate::core::infra::{NextSongCacheManager, PreloadManager, RequestKey, RequestTracker};
@@ -22,20 +23,7 @@ mod settings;
 mod ui;
 
 fn playback_elapsed_ms_for_log(app: &crate::app::App) -> u64 {
-    let Some(started) = app.play_started_at else {
-        return 0;
-    };
-    let now = if app.paused {
-        app.play_paused_at.unwrap_or_else(std::time::Instant::now)
-    } else {
-        std::time::Instant::now()
-    };
-    u64::try_from(
-        now.duration_since(started)
-            .as_millis()
-            .saturating_sub(app.play_paused_accum_ms as u128),
-    )
-    .unwrap_or(u64::MAX)
+    app.playback_elapsed_ms()
 }
 
 enum CoreMsg {
@@ -163,7 +151,11 @@ async fn reduce(
 pub fn spawn_app_actor(
     cfg: NeteaseClientConfig,
     audio_backend: AudioBackend,
-) -> (mpsc::Sender<AppCommand>, mpsc::Receiver<AppEvent>) {
+) -> (
+    mpsc::Sender<AppCommand>,
+    mpsc::Receiver<AppEvent>,
+    JoinHandle<()>,
+) {
     let (tx_cmd, mut rx_cmd) = mpsc::channel::<AppCommand>(64);
     let (tx_evt, rx_evt) = mpsc::channel::<AppEvent>(64);
 
@@ -195,7 +187,7 @@ pub fn spawn_app_actor(
         audio_settings,
     );
 
-    tokio::spawn(async move {
+    let join_handle = tokio::spawn(async move {
         let mut state = CoreState::new_with_settings(&data_dir, settings);
 
         // 加载 keybindings.toml（失败时回退到默认绑定）
@@ -205,7 +197,9 @@ pub fn spawn_app_actor(
         let mut state_save_task: Option<tokio::task::JoinHandle<()>> = None;
 
         // ========== 加载保存的状态 ==========
-        match crate::player_state::load_player_state_async(&data_dir).await {
+        let restored_player_state = match crate::player_state::load_player_state_async(&data_dir)
+            .await
+        {
             Ok(snapshot) => {
                 match crate::player_state::apply_snapshot_to_app(&snapshot, &mut state.app) {
                     Ok(()) => {
@@ -243,9 +237,11 @@ pub fn spawn_app_actor(
                                 );
                             }
                         }
+                        true
                     }
                     Err(e) => {
                         tracing::warn!("状态恢复失败: {}, 使用默认状态", e);
+                        false
                     }
                 }
             }
@@ -253,14 +249,20 @@ pub fn spawn_app_actor(
                 if e.kind() == std::io::ErrorKind::NotFound =>
             {
                 tracing::debug!("首次启动，无历史状态");
+                false
             }
             Err(e) => {
                 tracing::warn!("加载状态失败: {}, 使用默认状态", e);
+                false
             }
-        }
+        };
         // ========== 加载完成 ==========
 
-        settings_handlers::apply_settings_to_app(&mut state.app, &state.settings);
+        if restored_player_state {
+            state.app.lyrics_offset_ms = state.settings.lyrics_offset_ms;
+        } else {
+            settings_handlers::apply_settings_to_app(&mut state.app, &state.settings);
+        }
         let _ = tx_audio
             .send(AudioCommand::SetCacheBr(state.app.play_br))
             .await;
@@ -358,5 +360,5 @@ pub fn spawn_app_actor(
         }
     });
 
-    (tx_cmd, rx_evt)
+    (tx_cmd, rx_evt, join_handle)
 }
