@@ -28,6 +28,10 @@ flowchart LR
 - 负责渲染与输入处理，不直接写业务状态
 - `AppSnapshot` 作为渲染输入，避免大对象深拷贝
 - 事件 -> `AppCommand`，统一送入 `core::reducer`
+- `keyboard.rs`：键盘事件处理，支持 PageUp/PageDown/Home/End 翻页、菜单交互、Toast 不阻塞按键
+- `mouse.rs`：鼠标事件处理，支持单击选中、双击操作（500ms 窗口）、进度条 Seek、滚轮音量
+- `toast.rs`：Toast 通知系统，自动过期（Error 8s/Warning 5s/Info 3s），不拦截键盘
+- `menu.rs`：操作菜单覆盖层，居中弹窗，键盘导航
 
 ### Core 层（`src/core`）
 
@@ -45,6 +49,9 @@ flowchart LR
 
 - `src/netease`：请求、加密、Cookie 持久化、事件上报
 - `src/audio_worker`：音频播放、缓存、预取、下载
+  - `streaming.rs`：流式播放，边下载边播放（256KB 预缓冲），实现 `Read` + `Seek` trait
+  - 传输层支持 `Playable` 事件，下载达到预缓冲阈值后触发
+  - 引擎先以 streaming 模式启动（`seekable=false`），下载完成后无缝切换到缓存文件（`seekable=true`）
 - 音频传输使用 `tokio::sync::mpsc` 与 `select!` 协调播放与缓存任务
 - 播放结束检测由引擎定时轮询 `sink` 状态触发 `Ended` 事件（避免每首歌启动额外线程）
 
@@ -105,12 +112,14 @@ flowchart LR
 
 ## 目录结构（要点）
 
-- `src/ui`：TUI 渲染与输入
+- `src/ui`：TUI 渲染与输入（keyboard/mouse/toast/menu）
 - `src/core`：reducer、effects、infra
 - `src/features`：业务模块
+- `src/keybindings`：可配置快捷键系统（TOML 配置）
 - `src/player_state`：播放状态持久化
+- `src/error`：统一错误处理（MessageError、PlayerStateError 等）
 - `src/netease`：API 与网关
-- `src/audio_worker`：播放与缓存
+- `src/audio_worker`：播放与缓存（含流式播放 streaming）
 - `src/app` / `src/domain`：状态与模型
 
 ## 关键流程示例

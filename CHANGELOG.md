@@ -1,12 +1,87 @@
 # Changelog
 
-## Unreleased
+## v0.0.10（2026-04-02）
 
-- **修复**：播放状态持久化改为异步读写，避免阻塞主循环
-  - 启动加载、定时保存、退出保存使用 `tokio::fs` + 后台任务
+### 新功能
+
+- **流式播放**：支持边下载边播放音频，大文件无需等待完整下载即可开始收听
+  - 预缓冲 256KB 后立即开始播放，下载完成后无缝切换到缓存文件模式
+  - 流式播放期间 Seek 不可用（下载完成后自动启用）
+  - 加载状态反馈：Prebuffering / Buffering / Ready / Stalled
+  - 流式下载失败时若已开始播放则不中断，未开始播放才允许重试
+  - 修改文件：`src/audio_worker/streaming.rs`（新增）、`src/audio_worker/engine.rs`、`src/audio_worker/download.rs`、`src/audio_worker/messages.rs`、`src/audio_worker/transfer.rs`、`src/audio_worker/player.rs`
+
+- **鼠标交互增强**：全面的鼠标操作支持
+  - 列表单击选中（歌单、歌曲、搜索结果）
+  - 列表双击触发操作（双击歌单打开、双击歌曲播放）
+  - 进度条点击 Seek（点击 footer 区域按比例定位）
+  - 滚轮音量调节（全局生效）
+  - 500ms 双击检测窗口，跨面板点击不误触发
+  - 修改文件：`src/ui/tui/mouse.rs`
+
+- **可配置快捷键**：支持通过 TOML 配置文件自定义键盘快捷键
+  - 配置文件路径：`{data_dir}/keybindings.toml`
+  - 支持：Quit、UiToggleHelp、MenuOpen、PlayerTogglePause、PlayerPrev、PlayerNext、PlayerCycleMode、PlayerStop
+  - 支持一个操作绑定多个按键，支持空字符串解绑
+  - `use_default_key_bindings = true/false` 控制是否加载默认绑定
+  - 文件缺失使用默认，解析失败回退默认并 warn
+  - 新增模块：`src/keybindings/`
+
+- **Toast 通知系统**：非阻塞浮动通知条
+  - Error（红色 8s）、Warning（黄色 5s）、Info（灰色 3s）自动过期
+  - 不拦截键盘事件，操作反馈即时可见
+  - 触发场景：缓存清除、菜单占位项点击等
+  - 新增文件：`src/ui/tui/toast.rs`
+
+- **操作菜单覆盖层**：按 `m` 键弹出操作菜单
+  - 居中弹窗，键盘上下导航
+  - 当前为占位选项（收藏、下载等），点击提示"功能即将上线"
+
+- **进度条可视化**：播放进度以文本字符形式展示
+  - 格式：`进度: [######------------------] 01:30 / 04:00`
+  - 配合暂停标记 `(暂停)` 显示
+
+- **翻页支持**：PageUp/PageDown/Home/End 适用于所有列表视图
+  - 搜索结果、歌单列表、歌曲列表均支持翻页
+  - 歌单左右面板翻页独立
+
+- **未登录页面**：未登录时显示全屏登录引导页
+  - 左侧二维码登录区域，右侧操作说明
+  - 保留二维码登录（`l`）和 Cookie 登录（`c`）两种方式
+
+### 修复
+
+- **播放状态持久化异步化**：改为 `tokio::fs` 异步读写，避免阻塞主循环
+  - 启动加载、定时保存、退出保存使用后台任务
   - 播放进度恢复逻辑加固，避免异常时间戳导致溢出/崩溃
-- **修复**：`Ctrl+←/→` Seek 改为非破坏性切换（构建新 sink 成功后再停止旧播放），避免 Seek 后偶发无法继续播放
-- **重构**：播放结束检测改为引擎轮询（避免每首歌启动额外线程）
+  - 修改文件：`src/player_state/store.rs`
+
+- **Seek 非破坏性修复**：`Ctrl+←/→` Seek 改为先建后停模式
+  - 先构建新 sink，成功后才停止旧播放，避免 Seek 后偶发无法继续播放
+
+- **Toast 不阻塞按键**：移除 Toast 的按键拦截，所有级别 Toast 均自动过期
+
+- **搜索输入 Space 键冲突**：修复搜索输入框中空格键触发播放的问题
+
+- **事件循环嵌套 if**：简化 event_loop 中的嵌套逻辑
+
+### 重构
+
+- **统一错误处理**：引入 `MessageError` 替代事件枚举中的 `String` 错误传递
+  - 可 Clone、轻量级、结构化，支持错误上下文和可重试判断
+  - 新增 `PlayerStateError` 独立错误类型
+  - 新增文件：`src/error/message.rs`、`src/error/player_state.rs`
+
+- **移除多源架构遗留代码**：删除 SourceHub、SourceId、TrackKey 等 747 行未完成的多音源架构代码
+  - 项目仅保留网易云单一音源，简化代码结构
+
+- **播放结束检测**：改为引擎轮询（避免每首歌启动额外线程）
+
+### 其他
+
+- 配置 nightly 工具链和 dev 构建加速（`.cargo/config.toml`、`rust-toolchain.toml`）
+- CI 修复：移除 CI runner 不支持的 mold linker flag
+- 更新文档：ARCHITECTURE.md、README.md、CLAUDE.md
 
 ## v0.0.9（2026-01-18）
 

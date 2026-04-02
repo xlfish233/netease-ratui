@@ -25,13 +25,16 @@
 
 ## 特性
 
-- 登录与鉴权：匿名态初始化、二维码登录、Cookie 登录
-- 歌单与搜索：加载用户歌单与歌曲、搜索并播放选中歌曲
+- 登录与鉴权：匿名态初始化、二维码登录、Cookie 登录，未登录时全屏引导页
+- 歌单与搜索：加载用户歌单与歌曲、搜索并播放选中歌曲，PageUp/PageDown/Home/End 翻页支持
 - 歌词体验：自动滚动、当前行高亮、偏移调整
-- 播放能力：暂停/继续、上一首/下一首、Seek、音量与播放模式切换
+- 播放能力：暂停/继续、上一首/下一首、Seek、音量与播放模式切换，**流式播放**（边下载边播放）
 - 预加载与缓存：歌单预加载、音频缓存与下一首预取
 - 设置持久化：音质/音量/播放模式/歌词 offset 等写入 `settings.json`
-- **播放状态持久化：自动保存播放队列、播放进度、音量设置，重启后精确恢复**
+- **播放状态持久化：自动保存播放队列、播放进度、音量设置，重启后精确恢复**（异步 IO，不阻塞主循环）
+- **可配置快捷键**：通过 `keybindings.toml` 自定义键盘绑定
+- **鼠标交互**：单击选中、双击播放/打开、进度条点击 Seek、滚轮音量
+- Toast 通知、操作菜单覆盖层、进度条可视化
 - 日志体系：tracing 日志落盘，便于排查问题
 - 直观交互：UI 面板显示快捷键提示（F1-F4 切换视图，1-4 切换焦点，Alt+1-4 搜索中切换）
 
@@ -45,20 +48,8 @@
 **以下是主要界面展示**：
 
 #### 1. 登录页面
-支持二维码登录和 Cookie 登录两种方式。
-![登录页面](screenshots/login.png)
-
-#### 2. 主界面 - 歌单视图
-三栏布局：歌单列表（左）| 歌曲列表（中）| 播放队列（右）
-![主界面](screenshots/main.png)
-
-#### 3. 播放中
-实时显示播放进度、歌词、控制按钮。
-![播放中](screenshots/playing.png)
-
-#### 4. 设置界面
-调整音质、音量、播放模式，管理缓存。
-![设置](screenshots/settings.png)
+支持二维码登录和 Cookie 登录两种方式，未登录时全屏引导。
+![登录页面](screenshots/demo.png)
 
 **如何贡献截图**：
 1. 运行应用并截图各个界面
@@ -234,16 +225,33 @@ cargo run -- qr-key
 - `NETEASE_API_DOMAIN`：覆盖 API 域名（默认 `https://interface.music.163.com`）
 - `NETEASE_NO_AUDIO=1`：禁用音频输出（无声模式）
 
+### keybindings.toml
+
+支持通过 TOML 文件自定义键盘快捷键（位于数据目录）：
+
+```toml
+use_default_key_bindings = true  # 默认 true
+
+[bindings]
+Quit = "q"
+PlayerTogglePause = ["Space", "p"]  # 多键绑定
+UiToggleHelp = ""  # 空字符串解绑
+```
+
+支持的操作：`Quit`、`UiToggleHelp`、`MenuOpen`、`PlayerTogglePause`、`PlayerPrev`、`PlayerNext`、`PlayerCycleMode`、`PlayerStop`。文件缺失使用默认，解析失败回退默认。
+
 ## 快捷键
 
 全局：
 
 - `F1-F4` 切换页签；`1-4` 切换焦点；`Alt+1-4` 搜索中切换焦点；`Tab` 循环焦点；`q` 退出；`?` 帮助
-- `Space` 播放/暂停；`[`/`]` 上一首/下一首
-- `Ctrl+S` 停止；`Ctrl+←/→` Seek（±5s）
-- `Alt+↑/↓` 音量；`M` 切换播放模式
+- `Space` 播放/暂停；`[`/`]` 上一首/下一首；`Ctrl+S` 停止
+- `Ctrl+←/→` Seek（±5s）；`Alt+↑/↓` 音量；`M` 切换播放模式
 - `Alt+←/→` 歌词 offset（±200ms），`Shift+Alt+←/→`（±50ms，仅歌词页）
-- 鼠标左键点击页签切换页面
+- `PageUp/PageDown/Home/End` 列表翻页
+- `m` 打开操作菜单
+- 鼠标左键点击页签切换页面；单击选中列表项；双击播放/打开
+- 滚轮调节音量；点击进度条 Seek（非流式播放时）
 
 登录页：
 

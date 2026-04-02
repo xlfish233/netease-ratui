@@ -41,12 +41,14 @@ UI (keyboard/mouse)
 ### Key Modules
 
 - `src/core/reducer.rs` - Main state reducer, only writer of `App` state
-- `src/core/reducer/` - Feature-specific reducers (login, search, playlists, player, lyrics, settings)
+- `src/core/reducer/` - Feature-specific reducers (login, search, playlists, player, lyrics, settings, ui)
 - `src/core/infra/` - RequestTracker (prevents stale responses), PreloadManager, NextSongCacheManager
 - `src/features/` - Business logic by domain
+- `src/keybindings/` - Configurable keybindings system (TOML config, `keybindings.toml`)
 - `src/netease/` - API gateway with weapi/eapi/linuxapi encryption
-- `src/audio_worker/` - Audio playback on dedicated thread with LocalSet for !Send rodio resources
-- `src/ui/tui/` - TUI components and event handling
+- `src/audio_worker/` - Audio playback on dedicated thread with LocalSet for !Send rodio resources; includes progressive streaming (`streaming.rs`)
+- `src/ui/tui/` - TUI components and event handling (keyboard/mouse/toast/menu)
+- `src/error/` - Unified error types; use `MessageError` in event enums
 
 ### State Flow
 
@@ -83,13 +85,18 @@ The project uses a unified error handling pattern with structured error types:
 
 Default `~/.local/share/netease-ratui`:
 - `settings.json` - UI settings
+- `keybindings.toml` - Custom keybindings (optional)
+- `player_state.json` - Playback state persistence
 - `netease_state.json` - Cookie & device info
 - `audio_cache/` - Audio cache
 - `logs/` - Tracing logs
 
 ## Notes
 
-- Rust 2024 edition - requires latest toolchain
+- Rust 2024 edition - requires nightly toolchain (configured in `rust-toolchain.toml`)
 - AudioWorker runs on dedicated thread with single-threaded tokio runtime
+- Progressive streaming: audio plays after 256KB prebuffer, then seamlessly switches to cached file when download completes
 - Crossfade default 300ms, configurable in settings
 - Ended detection is polled in the audio engine (no per-track thread)
+- Mouse support: click selection, double-click actions, progress bar seek, scroll wheel volume
+- Toast notifications are non-blocking (auto-expire, don't intercept keyboard events)

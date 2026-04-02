@@ -113,16 +113,20 @@ cargo run -- --log-filter "netease_ratui=trace,reqwest=warn,hyper=warn"
 
 ## 当前测试覆盖
 
-- **总测试数**: 50 个
+- **总测试数**: 214 个
 - **核心模块**:
-  - `RequestTracker`: 9 个测试
-  - `AudioCache`: 9 个测试
-  - `DTO 转换`: 15 个测试
-  - Reducer 各模块: 10 个测试
-  - AudioEvent/AudioCommand: 7 个测试（新增）
+  - `ui::tui`（键盘/鼠标/Toast/菜单/Widget）: 87 个测试
+  - `error`（统一错误处理）: 25 个测试
+  - `core::reducer`（各子模块）: 21 个测试
+  - `audio_worker`（缓存/流式/消息）: 21 个测试
+  - `player_state`（持久化）: 15 个测试
+  - `netease::models::convert`（DTO 转换）: 15 个测试
+  - `keybindings`（可配置快捷键）: 10 个测试
+  - `core::infra::request_tracker`: 8 个测试
+  - `features::player`（播放逻辑）: 5 个测试
 - **集成测试**:
   - `settings`: 3 个测试
-  - `player_reload`: 4 个测试（新增）
+  - 事件枚举完整性验证: 4 个测试
 
 ## 贡献测试
 
