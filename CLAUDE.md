@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 cargo run                    # Run TUI (default)
-cargo test                   # Run all tests
-cargo test test_name         # Run single test
-cargo test -- --list         # List all tests
+cargo nextest run            # Run all tests
+cargo nextest run test_name  # Run single test
+cargo nextest run --list     # List all tests
 cargo fmt --check            # Format check
 cargo clippy -- -D warnings  # Lint check
 make check                   # Run all checks (fmt + clippy + test)

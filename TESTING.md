@@ -10,13 +10,13 @@
 
 ```bash
 # 运行所有单元测试
-cargo test --lib
+cargo nextest run --lib
 
 # 运行特定模块的测试
-cargo test --lib netease::models::convert
+cargo nextest run --lib netease::models::convert
 
 # 运行特定测试
-cargo test test_extract_unikey
+cargo nextest run test_extract_unikey
 ```
 
 ### 集成测试
@@ -25,22 +25,23 @@ cargo test test_extract_unikey
 
 ```bash
 # 运行所有集成测试
-cargo test --tests
+cargo nextest run --tests
 ```
 
 ## 代码覆盖率
 
-使用 `cargo-tarpaulin` 生成代码覆盖率报告：
+使用 `cargo-llvm-cov` 配合 `cargo-nextest` 生成代码覆盖率报告：
 
 ```bash
-# 安装 tarpaulin
-cargo install cargo-tarpaulin
+# 安装依赖
+cargo install cargo-nextest cargo-llvm-cov
+rustup component add llvm-tools-preview
 
 # 生成 HTML 报告
-cargo tarpaulin --out Html --timeout 300 -- --test-threads=1
+cargo llvm-cov nextest --html --output-dir target/coverage
 
-# 生成 XML 报告（用于 CI）
-cargo tarpaulin --out Xml --output-dir coverage --timeout 300 -- --test-threads=1
+# 生成 LCOV 报告（用于 CI）
+cargo llvm-cov nextest --lcov --output-path coverage/lcov.info
 ```
 
 覆盖率报告会在 CI 中自动生成并上传到 Codecov。
@@ -87,8 +88,8 @@ GitHub Actions CI 会自动运行：
 
 1. **格式检查** (`cargo fmt --check`)
 2. **Clippy** (`cargo clippy --all-targets -- -D warnings`)
-3. **测试** (`cargo test`)
-4. **覆盖率** (`cargo tarpaulin`) - 仅 Linux
+3. **测试** (`cargo nextest run`)
+4. **覆盖率** (`cargo llvm-cov nextest --lcov`) - 仅 Linux
 
 ## 日志排查
 
@@ -113,7 +114,7 @@ cargo run -- --log-filter "netease_ratui=trace,reqwest=warn,hyper=warn"
 
 ## 当前测试覆盖
 
-- **总测试数**: 214 个
+- **总测试数**: 427 个
 - **核心模块**:
   - `ui::tui`（键盘/鼠标/Toast/菜单/Widget）: 87 个测试
   - `error`（统一错误处理）: 25 个测试

@@ -20,8 +20,8 @@ repos:
         pass_filenames: false
 
       - id: cargo-test
-        name: cargo test
-        entry: cargo test
+        name: cargo nextest
+        entry: cargo nextest run
         language: system
         files: \.rs$
         pass_filenames: false

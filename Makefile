@@ -6,7 +6,7 @@ all: test
 # 运行所有测试
 test:
 	@echo "Running tests..."
-	cargo test
+	cargo nextest run
 
 # 格式化代码
 fmt:
@@ -36,7 +36,7 @@ clean:
 # 运行覆盖率检查
 coverage:
 	@echo "Running coverage..."
-	cargo tarpaulin --out Html --timeout 300 -- --test-threads=1
+	cargo llvm-cov nextest --html --output-dir target/coverage
 
 # 运行所有检查（CI 相同的流程）
 check: fmt-check clippy test

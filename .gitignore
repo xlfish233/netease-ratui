@@ -3,8 +3,6 @@
 !/.idea/.gitignore
 
 # Test coverage
-tarpaulin-report.html
-cobertura.xml
 *.profraw
 
 # Test artifacts

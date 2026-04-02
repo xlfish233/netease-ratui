@@ -45,19 +45,22 @@ jobs:
       - name: Clippy
         run: cargo clippy --target ${{ matrix.target }} --all-targets -- -D warnings
 
+      - name: Install nextest
+        run: cargo install cargo-nextest --locked
+
       - name: Test
-        run: cargo test --target ${{ matrix.target }}
+        run: cargo nextest run --target ${{ matrix.target }}
 
       - name: Coverage (Linux only)
         if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
-          cargo install cargo-tarpaulin
-          cargo tarpaulin --out Xml --output-dir coverage --timeout 300 -- --test-threads=1
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov
+          cargo llvm-cov nextest --lcov --output-path coverage/lcov.info
 
       - name: Upload coverage to Codecov
         if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
         uses: codecov/codecov-action@v4
         with:
-          files: ./coverage/cobertura.xml
+          files: ./coverage/lcov.info
           fail_ci_if_error: false
-          verbose: true

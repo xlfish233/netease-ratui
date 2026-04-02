@@ -1,0 +1,7 @@
+[profile.default]
+slow-timeout = "60s"
+
+[profile.ci]
+status-level = "skip"
+final-status-level = "fail"
+failure-output = "immediate-final"
